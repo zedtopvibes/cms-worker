@@ -15,7 +15,7 @@ function debugLog(...args) {
   if (DEBUG) {
     console.log('[DEBUG]', new Date().toISOString(), ...args);
   }
-}
+} 
 
 // Helper function to validate file extension
 function isValidFile(filename) {
