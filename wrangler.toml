@@ -1,3 +1,3 @@
-name = "cms-worker"          # Worker service name
+name = "cms"          # Worker service name
 compatibility_date = "2026-01-28"
 main = "index.js"            # main file to deploy
