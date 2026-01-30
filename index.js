@@ -15,7 +15,7 @@ function debugLog(...args) {
   if (DEBUG) {
     console.log('[DEBUG]', new Date().toISOString(), ...args);
   }
-} 
+}
 
 // Helper function to validate file extension
 function isValidFile(filename) {
@@ -610,3 +610,110 @@ export default {
             <p><code>/stats/{filename}</code></p>
             <p>Returns download count for a specific file.</p>
             <p><strong>Example:</strong> <code><a href="/stats/example.pdf" target="_blank">/stats/example.pdf</a></code></p>
+          </div>
+          
+          <div class="endpoint">
+            <h3><span class="method get">GET</span> Get All Stats</h3>
+            <p><code>/all-stats</code></p>
+            <p>Returns download counts for all files.</p>
+            <p><strong>Example:</strong> <code><a href="/all-stats" target="_blank">/all-stats</a></code></p>
+          </div>
+          
+          <h2>🔗 File Management</h2>
+          
+          <div class="endpoint">
+            <h3><span class="method get">GET</span> Generate Secure Download URL</h3>
+            <p><code>/generate/{filename}</code></p>
+            <p>Header: <code>Authorization: Bearer ${AUTH_TOKEN || 'your-secret-token'}</code></p>
+            <p>Returns a JSON with direct download URL.</p>
+          </div>
+          
+          <div class="endpoint">
+            <h3><span class="method post">POST</span> Upload File</h3>
+            <p><code>/upload</code></p>
+            <p>Form data: <code>file</code> and optional <code>filename</code></p>
+            <p>Header: <code>Authorization: Bearer ${AUTH_TOKEN || 'your-secret-token'}</code></p>
+          </div>
+          
+          <div class="endpoint">
+            <h3><span class="method get">GET</span> List All Files</h3>
+            <p><code>/files</code></p>
+            <p>Returns list of all files with download counts.</p>
+            <p><strong>Example:</strong> <code><a href="/files" target="_blank">/files</a></code></p>
+          </div>
+          
+          <h2>🐛 Debug Endpoints</h2>
+          
+          <div class="endpoint">
+            <h3><span class="method debug">GET</span> Test KV Storage</h3>
+            <p><code>/debug/kv</code></p>
+            <p>Tests if KV namespace is working correctly.</p>
+            <p><strong>Example:</strong> <code><a href="/debug/kv" target="_blank">/debug/kv</a></code></p>
+          </div>
+          
+          <div class="endpoint">
+            <h3><span class="method post">POST</span> Reset Download Count</h3>
+            <p><code>/reset-stats/{filename}</code></p>
+            <p>Header: <code>Authorization: Bearer ${AUTH_TOKEN || 'your-secret-token'}</code></p>
+            <p>Resets download count for a file (admin only).</p>
+          </div>
+          
+          <h2>🔧 Testing Download Counts</h2>
+          <pre>
+// Test with curl
+curl -v "https://your-worker.workers.dev/download/example.pdf"
+curl "https://your-worker.workers.dev/stats/example.pdf"
+curl "https://your-worker.workers.dev/debug/kv"
+curl "https://your-worker.workers.dev/all-stats"
+
+// Test with fetch API
+fetch('/download/example.pdf')
+  .then(res => console.log('Downloaded'))
+  .then(() => fetch('/stats/example.pdf'))
+  .then(res => res.json())
+  .then(stats => console.log('Download count:', stats.downloads))
+          </pre>
+          
+          <footer style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; text-align: center;">
+            <p>R2 Direct Download Service • Automatic download tracking • Cloudflare Workers</p>
+            <p>Current time: <span id="time"></span></p>
+          </footer>
+          
+          <script>
+            document.getElementById('time').textContent = new Date().toLocaleString();
+            setInterval(() => {
+              document.getElementById('time').textContent = new Date().toLocaleString();
+            }, 1000);
+            
+            // Test functionality
+            async function testDownload() {
+              const testFile = 'test-' + Date.now() + '.txt';
+              const formData = new FormData();
+              formData.append('file', new Blob(['Test content'], { type: 'text/plain' }), testFile);
+              
+              const response = await fetch('/upload', {
+                method: 'POST',
+                headers: {
+                  'Authorization': 'Bearer ${AUTH_TOKEN || 'your-secret-token'}'
+                },
+                body: formData
+              });
+              
+              const result = await response.json();
+              alert('Upload test: ' + (result.success ? 'Success' : 'Failed'));
+            }
+          </script>
+        </body>
+        </html>
+      `, {
+        headers: { 
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-cache'
+        }
+      });
+    }
+
+    debugLog('Route not found:', path);
+    return new Response('Not Found', { status: 404 });
+  }
+};
