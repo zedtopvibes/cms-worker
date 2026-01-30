@@ -181,7 +181,7 @@ export default {
     else if (path === '/') {
       return new Response(`
         <!DOCTYPE html>
-        <html>
+        <html> 
         <head>
           <title>R2 Direct Download</title>
           <style>
