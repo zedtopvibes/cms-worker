@@ -1,7 +1,3 @@
-{
-"name": "cms-worker",
-"compatibility_date": "2026-01-28",
-"assets": {
-"directory": "./"
-}
-}
+name = "cms-worker"
+compatibility_date = "2026-01-30"
+main = "index.js"   # <-- point to your Worker file
