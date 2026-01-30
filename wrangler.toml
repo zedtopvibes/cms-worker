@@ -1,3 +1,7 @@
-name = "cms-worker"                   # Worker name
-compatibility_date = "2026-01-28"     # Cloudflare runtime version
-main = "index.js"                      # <-- your Worker file
+{
+  "name": "cms-worker",
+  "compatibility_date": "2026-01-28",
+  "assets": {
+    "directory": "./"
+  }
+}
