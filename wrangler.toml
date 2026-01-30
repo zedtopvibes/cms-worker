@@ -1,5 +1,5 @@
 {
   "name": "cms-worker",
-  "compatibility_date": "2026-01-28"
-  }
+  "compatibility_date": "2026-01-30",
+  "main": "src/index.js" // or "src/index.js", "worker.js", etc.
 }
