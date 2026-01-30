@@ -610,4 +610,3 @@ export default {
             <p><code>/stats/{filename}</code></p>
             <p>Returns download count for a specific file.</p>
             <p><strong>Example:</strong> <code><a href="/stats/example.pdf" target="_blank">/stats/example.pdf</a></code></p>
-     
