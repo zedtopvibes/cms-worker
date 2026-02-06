@@ -1,8 +1,3 @@
-name = "cms"
-compatibility_date = "2026-01-28"
-main = "index.js"
-
-[[r2_buckets]]
-binding = "MEDIA_BUCKET"  # <- this is the variable your Worker code uses
-bucket_name = "media"     # <- the actual R2 bucket name
-preview_bucket_name = "media"
+name = "music-worker"
+main = "worker.js"
+compatibility_date = "2025-02-01"
