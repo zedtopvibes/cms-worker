@@ -205,7 +205,7 @@ export default {
       <body>
         <h1>Create New Album</h1>
         <form action="/album/create" method="POST" enctype="multipart/form-data">
-          <label>Album Title</label>
+          <label>Album Title</label> 
           <input type="text" name="title" required>
 
           <label>Album Description</label>
