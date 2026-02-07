@@ -152,7 +152,7 @@ export default {
       return artists[artistId] ? artists[artistId].albums || [] : [];
     };
 
-    // === FIXED: getArtistAlbumsAndSingles with album-artist assignment support ===
+    // === FIXED: getArtistAlbumsAndSingles with CORRECT stats ===
     const getArtistAlbumsAndSingles = async (artistId) => {
       const artists = await getArtists();
       const albums = await getAlbums();
@@ -166,6 +166,7 @@ export default {
       const assignedAlbums = artist.albums || [];
       const artistAlbums = [];
       const albumSongIds = new Set();
+      let totalSongsInAlbums = 0; // NEW: Track artist's songs in albums
       
       // Process explicitly assigned albums FIRST
       for (const albumId of assignedAlbums) {
@@ -196,12 +197,17 @@ export default {
             }
           }
           
+          // FIX: Count artist's songs in this album
+          const artistSongCount = albumSongsByArtist.length;
+          totalSongsInAlbums += artistSongCount;
+          
           artistAlbums.push({
             id: albumId,
             title: album.title,
             description: album.description,
             thumbnail: thumbUrl,
-            songCount: albumSongsByArtist.length,
+            songCount: album.songs.length, // FIXED: Show TOTAL songs in album
+            artistSongCount: artistSongCount, // NEW: Artist's songs count
             songs: albumSongsByArtist,
             created: album.created,
             explicitlyAssigned: true
@@ -239,12 +245,17 @@ export default {
             } catch (e) {}
           }
           
+          // FIX: Count artist's songs in this album
+          const artistSongCount = albumSongsByArtist.length;
+          totalSongsInAlbums += artistSongCount;
+          
           artistAlbums.push({
             id: albumId,
             title: album.title,
             description: album.description,
             thumbnail: thumbUrl,
-            songCount: albumSongsByArtist.length,
+            songCount: album.songs.length, // FIXED: Show TOTAL songs in album
+            artistSongCount: artistSongCount, // NEW: Artist's songs count
             songs: albumSongsByArtist,
             created: album.created,
             explicitlyAssigned: false
@@ -283,12 +294,17 @@ export default {
       sortedSingles.sort((a, b) => b.uploaded - a.uploaded);
       const singleKeys = sortedSingles.map(s => s.key);
       
+      // FIXED: Calculate correct totals
+      const totalSingles = singleKeys.length;
+      const totalSongs = totalSingles + totalSongsInAlbums; // TRUE total
+      
       return {
         albums: artistAlbums,
         singles: singleKeys,
-        totalSongs: artist.songs.length,
+        totalSongs: totalSongs, // FIXED: Includes both singles and album songs
+        totalSongsInAlbums: totalSongsInAlbums, // NEW: For detailed stats
+        totalSingles: totalSingles,
         totalAlbums: artistAlbums.length,
-        totalSingles: singleKeys.length,
         assignedAlbumsCount: assignedAlbums.length
       };
     };
@@ -851,7 +867,7 @@ export default {
     }
 
     // =========================
-    // ARTISTS PAGE WITH ALBUM-ARTIST ASSIGNMENT
+    // ARTISTS PAGE WITH FIXED STATS
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -916,7 +932,7 @@ export default {
         });
       }
 
-      // Single artist page
+      // Single artist page with FIXED STATS
       const artists = await getArtists();
       const artist = artists[artistId];
       
@@ -924,8 +940,8 @@ export default {
         return new Response("Artist not found", { status: 404 });
       }
 
-      // Get artist's albums and singles
-      const { albums: artistAlbums, singles, totalSongs, totalAlbums, totalSingles, assignedAlbumsCount } = await getArtistAlbumsAndSingles(artistId);
+      // Get artist's albums and singles WITH CORRECT STATS
+      const { albums: artistAlbums, singles, totalSongs, totalSongsInAlbums, totalSingles, totalAlbums, assignedAlbumsCount } = await getArtistAlbumsAndSingles(artistId);
 
       // Get artist thumbnail
       let artistThumb = "";
@@ -937,13 +953,18 @@ export default {
         }
       }
 
-      // Generate albums section
+      // Generate albums section with FIXED song counts
       let albumsSection = '';
       if (artistAlbums.length > 0) {
         const albumCards = artistAlbums.map(album => {
           const assignmentBadge = album.explicitlyAssigned ? 
             '<span style="background:#2ecc71; color:white; padding:2px 8px; border-radius:12px; font-size:0.7em; margin-left:5px;">Assigned</span>' : 
             '<span style="background:#95a5a6; color:white; padding:2px 8px; border-radius:12px; font-size:0.7em; margin-left:5px;">Inferred</span>';
+          
+          // Show total songs vs artist's songs
+          const songCountText = album.artistSongCount === album.songCount ? 
+            `${album.songCount} songs` :
+            `${album.songCount} songs (${album.artistSongCount} by ${artist.name})`;
           
           return `
             <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:180px; vertical-align:top;">
@@ -954,7 +975,7 @@ export default {
                 <a href="/album/${album.id}" style="text-decoration:none; color:#333;">${album.title}</a>
                 ${assignmentBadge}
               </h3>
-              <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">${album.songCount} songs</p>
+              <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">${songCountText}</p>
             </div>
           `;
         }).join('');
@@ -1021,6 +1042,7 @@ export default {
         `;
       }
 
+      // HTML with FIXED STATS
       const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -1035,6 +1057,7 @@ export default {
           .stat-card { background:#fff; padding:15px 20px; border-radius:8px; text-align:center; min-width:120px; box-shadow:0 2px 5px rgba(0,0,0,0.05); }
           .stat-number { font-size:1.5rem; font-weight:bold; color:#3498db; margin-bottom:5px; }
           .stat-label { font-size:0.9rem; color:#7f8c8d; }
+          .stat-subtext { font-size:0.7rem; color:#666; margin-top:3px; }
           img { max-width:100%; height:auto; border-radius:8px; }
         </style>
       </head>
@@ -1047,6 +1070,7 @@ export default {
             <div class="stat-card">
               <div class="stat-number">${totalSongs}</div>
               <div class="stat-label">Total Songs</div>
+              <div class="stat-subtext">${totalSongsInAlbums} in albums<br>${totalSingles} singles</div>
             </div>
             <div class="stat-card">
               <div class="stat-number">${totalAlbums}</div>
@@ -1058,7 +1082,7 @@ export default {
             </div>
             <div class="stat-card">
               <div class="stat-number">${assignedAlbumsCount || 0}</div>
-              <div class="stat-label">Assigned</div>
+              <div class="stat-label">Assigned Albums</div>
             </div>
           </div>
           <p>
