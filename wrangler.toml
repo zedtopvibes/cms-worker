@@ -1,3 +1,7 @@
 name = "cms"
 main = "worker.js"
 compatibility_date = "2025-02-01"
+
+[[r2_buckets]]
+binding = "media"
+bucket_name = "media"
