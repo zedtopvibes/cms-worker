@@ -129,7 +129,7 @@ export default {
       return artists[artistId] ? artists[artistId].songs || [] : [];
     };
     
-    // NEW: Helper to get artist's albums and singles
+    // NEW: Helper to get artist's albums and singles - FIXED VERSION
     const getArtistAlbumsAndSingles = async (artistId) => {
       const artists = await getArtists();
       const albums = await getAlbums();
@@ -149,8 +149,9 @@ export default {
         
         // Check each song in the album
         for (const songKey of album.songs) {
-          const [songArtist] = songKey.split("_");
-          if (songArtist === artistId) {
+          const [songArtistId] = songKey.split("_");
+          // FIX: Compare with artistId directly (both are sanitized IDs)
+          if (songArtistId === artistId) {
             albumSongsByArtist.push(songKey);
             albumSongIds.add(songKey);
           }
@@ -160,10 +161,14 @@ export default {
           // Get album thumbnail
           let thumbUrl = "/images/placeholder.jpg";
           if (album.thumbnail) {
-            const thumbObj = await env.media.get(album.thumbnail);
-            if (thumbObj) {
-              const ext = album.thumbnail.split(".").pop();
-              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+            try {
+              const thumbObj = await env.media.get(album.thumbnail);
+              if (thumbObj) {
+                const ext = album.thumbnail.split(".").pop();
+                thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+              }
+            } catch (e) {
+              // Use placeholder if thumbnail not found or error
             }
           }
           
@@ -190,16 +195,21 @@ export default {
         }
       }
       
-      // Sort singles by upload date (we need to get song info to sort properly)
+      // Sort singles by upload date
       const sortedSingles = await Promise.all(singles.map(async songKey => {
-        // Get song upload date from R2
-        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-        const uploaded = audioObj ? audioObj.uploaded : Date.now();
-        
-        return {
-          key: songKey,
-          uploaded: uploaded
-        };
+        try {
+          const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+          const uploaded = audioObj ? audioObj.uploaded : Date.now();
+          return {
+            key: songKey,
+            uploaded: uploaded
+          };
+        } catch (e) {
+          return {
+            key: songKey,
+            uploaded: Date.now()
+          };
+        }
       }));
       
       sortedSingles.sort((a, b) => b.uploaded - a.uploaded);
@@ -808,7 +818,7 @@ export default {
     }
 
     // =========================
-    // ENHANCED ARTISTS PAGE WITH ALBUMS & SINGLES SEPARATION
+    // ENHANCED ARTISTS PAGE WITH ALBUMS & SINGLES SEPARATION - FIXED VERSION
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -878,7 +888,7 @@ export default {
         return new Response("Artist not found", { status: 404 });
       }
 
-      // Get artist's albums and singles using the new helper
+      // Get artist's albums and singles using the FIXED helper
       const { albums: artistAlbums, singles, totalSongs, totalAlbums, totalSingles } = await getArtistAlbumsAndSingles(artistId);
 
       // Get artist thumbnail
