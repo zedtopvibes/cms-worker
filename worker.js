@@ -2019,6 +2019,9 @@ export default {
             <a href="/artist">View Artists</a>
             <a href="/artist/create">Create Artist</a>
             <!-- === ARTISTS FEATURE END === -->
+            <!-- === ALBUM MANAGEMENT START === -->
+            <a href="/manage-albums">Manage Albums</a>
+            <!-- === ALBUM MANAGEMENT END === -->
           </div>
         </div>
         
@@ -3147,6 +3150,9 @@ export default {
             <a href="/artist/create">Create New Artist</a>
             <a href="/artist">View All Artists</a>
             <a href="/upload">Upload New Song</a>
+            <!-- === ALBUM MANAGEMENT START === -->
+            <a href="/manage-albums">Manage Albums</a>
+            <!-- === ALBUM MANAGEMENT END === -->
           </div>
         </div>
         
@@ -3521,6 +3527,1267 @@ export default {
       }
     }
     // === ENHANCED ARTIST MANAGEMENT FEATURE END ===
+
+    // === ALBUM MANAGEMENT FEATURE START ===
+    // =========================
+    // ALBUM MANAGEMENT FEATURE
+    // =========================
+
+    // Helper functions for album management
+    const getAlbumWithDetails = async (albumId) => {
+      const albums = await getAlbums();
+      const album = albums[albumId];
+      
+      if (!album) return null;
+      
+      // Get album thumbnail URL
+      let thumbnailUrl = "/images/placeholder.jpg";
+      if (album.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(album.thumbnail);
+          if (thumbObj) {
+            const ext = album.thumbnail.split(".").pop();
+            thumbnailUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+          }
+        } catch (e) {
+          // Use placeholder
+        }
+      }
+      
+      // Get artist information for the album
+      const artists = await getArtists();
+      const albumArtists = {};
+      
+      // Find all artists who have songs in this album
+      for (const songKey of album.songs) {
+        const [artistId] = songKey.split("_");
+        if (artists[artistId] && !albumArtists[artistId]) {
+          albumArtists[artistId] = {
+            id: artistId,
+            name: artists[artistId].name,
+            songCount: 0
+          };
+        }
+        if (albumArtists[artistId]) {
+          albumArtists[artistId].songCount++;
+        }
+      }
+      
+      return {
+        ...album,
+        thumbnailUrl,
+        artists: Object.values(albumArtists),
+        artistCount: Object.keys(albumArtists).length
+      };
+    };
+
+    const getAllAlbumsWithDetails = async () => {
+      const albums = await getAlbums();
+      const allArtists = await getArtists();
+      const allSongs = await getAllSongs(env);
+      
+      const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
+      
+      const enrichedAlbums = await Promise.all(albumList.map(async album => {
+        // Get thumbnail URL
+        let thumbnailUrl = "/images/placeholder.jpg";
+        if (album.thumbnail) {
+          try {
+            const thumbObj = await env.media.get(album.thumbnail);
+            if (thumbObj) {
+              const ext = album.thumbnail.split(".").pop();
+              thumbnailUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+            }
+          } catch (e) {
+            // Use placeholder
+          }
+        }
+        
+        // Find all artists in this album
+        const albumArtists = {};
+        for (const songKey of album.songs) {
+          const [artistId] = songKey.split("_");
+          if (allArtists[artistId] && !albumArtists[artistId]) {
+            albumArtists[artistId] = {
+              id: artistId,
+              name: allArtists[artistId].name,
+              songCount: 0
+            };
+          }
+          if (albumArtists[artistId]) {
+            albumArtists[artistId].songCount++;
+          }
+        }
+        
+        // Get song details for this album
+        const songDetails = await Promise.all(album.songs.map(async songKey => {
+          const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+          if (!audioObj) return null;
+          
+          const [artistId, ...titleParts] = songKey.split("_");
+          const title = titleParts.join(" ");
+          const artistName = allArtists[artistId] ? allArtists[artistId].name : artistId;
+          
+          return {
+            id: songKey,
+            title: title,
+            artist: artistName,
+            artistId: artistId,
+            audioUrl: `/songs/${encodeURIComponent(songKey + ".mp3")}`
+          };
+        }));
+        
+        // Get available artists for assignment
+        const availableArtists = Object.values(allArtists).filter(artist => 
+          !albumArtists[artist.id]
+        );
+        
+        // Get available songs for assignment (songs not in this album)
+        const availableSongs = allSongs.filter(song => 
+          !album.songs.includes(song.id)
+        );
+        
+        return {
+          ...album,
+          thumbnailUrl,
+          artists: Object.values(albumArtists),
+          artistCount: Object.keys(albumArtists).length,
+          songDetails: songDetails.filter(s => s !== null),
+          availableArtists,
+          availableSongs
+        };
+      }));
+      
+      return enrichedAlbums;
+    };
+
+    const deleteAlbum = async (albumId) => {
+      try {
+        const albums = await getAlbums();
+        
+        if (!albums[albumId]) {
+          return { success: false, error: "Album not found" };
+        }
+        
+        // Delete album thumbnail if exists
+        if (albums[albumId].thumbnail) {
+          await env.media.delete(albums[albumId].thumbnail);
+        }
+        
+        // Delete album record
+        delete albums[albumId];
+        await saveAlbums(albums);
+        
+        // Clear homepage cache
+        homepageCache = null;
+        cacheTimestamp = 0;
+        
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    };
+
+    const updateAlbum = async (albumId, updates) => {
+      try {
+        const { title, description } = updates;
+        
+        if (!title) {
+          return { success: false, error: "Album title is required" };
+        }
+        
+        const albums = await getAlbums();
+        
+        if (!albums[albumId]) {
+          return { success: false, error: "Album not found" };
+        }
+        
+        // Update album details
+        albums[albumId].title = title;
+        albums[albumId].description = description || "";
+        
+        await saveAlbums(albums);
+        
+        // Clear homepage cache
+        homepageCache = null;
+        cacheTimestamp = 0;
+        
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    };
+
+    const updateAlbumArtists = async (albumId, artistUpdates) => {
+      try {
+        const albums = await getAlbums();
+        const allArtists = await getArtists();
+        const allSongs = await getAllSongs(env);
+        
+        if (!albums[albumId]) {
+          return { success: false, error: "Album not found" };
+        }
+        
+        let modified = false;
+        
+        // Process artist assignments
+        for (const artistId in artistUpdates) {
+          const shouldBeInAlbum = artistUpdates[artistId] === true;
+          
+          // Get all songs by this artist
+          const artistSongs = allSongs.filter(song => {
+            const [songArtistId] = song.id.split("_");
+            return songArtistId === artistId;
+          });
+          
+          if (shouldBeInAlbum) {
+            // Add all songs by this artist to the album
+            for (const song of artistSongs) {
+              if (!albums[albumId].songs.includes(song.id)) {
+                albums[albumId].songs.push(song.id);
+                modified = true;
+              }
+            }
+          } else {
+            // Remove all songs by this artist from the album
+            albums[albumId].songs = albums[albumId].songs.filter(songKey => {
+              const [songArtistId] = songKey.split("_");
+              if (songArtistId === artistId) {
+                modified = true;
+                return false;
+              }
+              return true;
+            });
+          }
+        }
+        
+        if (modified) {
+          await saveAlbums(albums);
+          // Clear homepage cache
+          homepageCache = null;
+          cacheTimestamp = 0;
+        }
+        
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    };
+
+    const updateAlbumSongs = async (albumId, songUpdates) => {
+      try {
+        const albums = await getAlbums();
+        
+        if (!albums[albumId]) {
+          return { success: false, error: "Album not found" };
+        }
+        
+        let modified = false;
+        
+        for (const songId in songUpdates) {
+          const shouldBeInAlbum = songUpdates[songId] === true;
+          const songIndex = albums[albumId].songs.indexOf(songId);
+          
+          if (shouldBeInAlbum && songIndex === -1) {
+            // Add song to album
+            albums[albumId].songs.push(songId);
+            modified = true;
+          } else if (!shouldBeInAlbum && songIndex !== -1) {
+            // Remove song from album
+            albums[albumId].songs.splice(songIndex, 1);
+            modified = true;
+          }
+        }
+        
+        if (modified) {
+          await saveAlbums(albums);
+          // Clear homepage cache
+          homepageCache = null;
+          cacheTimestamp = 0;
+        }
+        
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    };
+
+    // =========================
+    // ALBUM MANAGEMENT PAGE (GET)
+    // =========================
+    if (path === "/manage-albums" && req.method === "GET") {
+      const albums = await getAllAlbumsWithDetails();
+      const allArtists = await getArtists();
+      const allSongs = await getAllSongs(env);
+      
+      const albumRows = albums.map(album => {
+        const artistList = album.artists.map(artist => {
+          return `
+            <div class="assigned-artist" style="display:flex; justify-content:space-between; align-items:center; padding:5px 10px; margin-bottom:5px; background:#f8f9fa; border-radius:4px;">
+              <span>${artist.name} (${artist.songCount} song${artist.songCount !== 1 ? 's' : ''})</span>
+              <button type="button" onclick="removeArtistFromAlbum('${album.id}', '${artist.id}')" 
+                      class="btn btn-remove" style="padding:2px 8px; font-size:0.8rem;">Remove</button>
+            </div>
+          `;
+        }).join("");
+        
+        const availableArtistsOptions = album.availableArtists.map(artist => {
+          return `
+            <option value="${artist.id}">${artist.name}</option>
+          `;
+        }).join("");
+        
+        const songList = album.songDetails.map(song => {
+          return `
+            <div class="assigned-song" style="display:flex; justify-content:space-between; align-items:center; padding:5px 10px; margin-bottom:5px; background:#f8f9fa; border-radius:4px;">
+              <span>${song.title} (by ${song.artist})</span>
+              <button type="button" onclick="removeSongFromAlbum('${album.id}', '${song.id}')" 
+                      class="btn btn-remove" style="padding:2px 8px; font-size:0.8rem;">Remove</button>
+            </div>
+          `;
+        }).join("");
+        
+        const availableSongsOptions = album.availableSongs.map(song => {
+          return `
+            <option value="${song.id}">${song.title} (by ${song.artist})</option>
+          `;
+        }).join("");
+        
+        return `
+          <div class="album-row" style="border:1px solid #ddd; border-radius:8px; padding:15px; margin-bottom:15px; background:#fff;">
+            <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:flex-start;">
+              <div style="flex:1; min-width:200px; text-align:center;">
+                <img src="${album.thumbnailUrl}" alt="${album.title}" 
+                     style="width:150px; height:150px; object-fit:cover; border-radius:8px; margin-bottom:10px;">
+                <h3 style="margin:0 0 5px 0;">${album.title}</h3>
+                <p style="margin:0 0 10px 0; color:#666; font-size:0.9em;">
+                  ${album.songs.length} song${album.songs.length !== 1 ? 's' : ''} • 
+                  ${album.artistCount} artist${album.artistCount !== 1 ? 's' : ''}
+                </p>
+                <div style="margin-top:10px;">
+                  <button onclick="editAlbum('${album.id}')" class="btn btn-edit">Edit</button>
+                  <button onclick="deleteAlbum('${album.id}')" class="btn btn-delete">Delete</button>
+                  <a href="/album/${album.id}" target="_blank" class="btn btn-view">View</a>
+                </div>
+              </div>
+              
+              <div style="flex:2; min-width:300px;">
+                <div style="margin-bottom:15px;">
+                  <strong>Description:</strong>
+                  <p style="margin:5px 0; font-size:0.9em; color:#555; max-height:100px; overflow-y:auto; padding:5px; background:#f9f9f9; border-radius:4px;">
+                    ${album.description || '<em>No description</em>'}
+                  </p>
+                </div>
+                
+                <div style="display:flex; flex-wrap:wrap; gap:20px;">
+                  <div style="flex:1; min-width:250px;">
+                    <strong>Artists in Album:</strong>
+                    <div style="margin-top:5px; padding:10px; background:#f9f9fa; border-radius:4px; max-height:200px; overflow-y:auto;">
+                      ${artistList || '<p style="margin:0; color:#888;"><em>No artists assigned</em></p>'}
+                    </div>
+                    
+                    <div style="margin-top:10px;">
+                      <strong>Add Artist:</strong>
+                      <div style="display:flex; gap:10px; margin-top:5px;">
+                        <select id="artistSelect_${album.id}" class="artist-select" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                          <option value="">-- Select an artist --</option>
+                          ${availableArtistsOptions}
+                        </select>
+                        <button onclick="addArtistToAlbum('${album.id}')" class="btn btn-assign">Add</button>
+                      </div>
+                      <p style="margin:5px 0 0 0; font-size:0.8em; color:#666;">
+                        Adds all songs by this artist to the album
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div style="flex:1; min-width:250px;">
+                    <strong>Songs in Album:</strong>
+                    <div style="margin-top:5px; padding:10px; background:#f9f9fa; border-radius:4px; max-height:200px; overflow-y:auto;">
+                      ${songList || '<p style="margin:0; color:#888;"><em>No songs assigned</em></p>'}
+                    </div>
+                    
+                    <div style="margin-top:10px;">
+                      <strong>Add Specific Song:</strong>
+                      <div style="display:flex; gap:10px; margin-top:5px;">
+                        <select id="songSelect_${album.id}" class="song-select" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                          <option value="">-- Select a song --</option>
+                          ${availableSongsOptions}
+                        </select>
+                        <button onclick="addSongToAlbumManually('${album.id}')" class="btn btn-assign">Add</button>
+                      </div>
+                      <p style="margin:5px 0 0 0; font-size:0.8em; color:#666;">
+                        Add individual songs to the album
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+      
+      const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Manage Albums</title>
+        <style>
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+          }
+          
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+          
+          .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+          }
+          
+          h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2rem;
+          }
+          
+          .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+          }
+          
+          .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+          }
+          
+          .nav-links a {
+            color: #3498db;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+          }
+          
+          .nav-links a:hover {
+            background-color: #f0f7ff;
+          }
+          
+          .stats {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+          }
+          
+          .stat-card {
+            background: #fff;
+            padding: 15px 25px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            min-width: 150px;
+          }
+          
+          .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #3498db;
+            margin-bottom: 5px;
+          }
+          
+          .stat-label {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+          }
+          
+          .albums-container {
+            margin-top: 20px;
+          }
+          
+          .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+          }
+          
+          .search-box {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+          }
+          
+          .filter-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+          }
+          
+          .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+          }
+          
+          .btn-edit {
+            background: #3498db;
+            color: white;
+          }
+          
+          .btn-delete {
+            background: #e74c3c;
+            color: white;
+          }
+          
+          .btn-view {
+            background: #2ecc71;
+            color: white;
+          }
+          
+          .btn-assign {
+            background: #9b59b6;
+            color: white;
+          }
+          
+          .btn-remove {
+            background: #e67e22;
+            color: white;
+          }
+          
+          .btn-save {
+            background: #2ecc71;
+            color: white;
+          }
+          
+          .btn-cancel {
+            background: #95a5a6;
+            color: white;
+          }
+          
+          .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+          }
+          
+          .btn:active {
+            transform: translateY(0);
+          }
+          
+          .empty-state {
+            text-align: center;
+            padding: 40px;
+            background: #fff;
+            border-radius: 10px;
+            color: #7f8c8d;
+          }
+          
+          .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+          }
+          
+          .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+          }
+          
+          .modal h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+          }
+          
+          .form-group {
+            margin-bottom: 20px;
+          }
+          
+          .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #2c3e50;
+          }
+          
+          .form-group input,
+          .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+          }
+          
+          .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+          }
+          
+          .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+          }
+          
+          .artist-select,
+          .song-select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+          }
+          
+          .assigned-artist,
+          .assigned-song {
+            transition: background-color 0.2s;
+          }
+          
+          .assigned-artist:hover,
+          .assigned-song:hover {
+            background-color: #e9ecef;
+          }
+          
+          @media (max-width: 768px) {
+            .header {
+              padding: 15px;
+            }
+            
+            h1 {
+              font-size: 1.5rem;
+            }
+            
+            .stat-card {
+              min-width: 120px;
+              padding: 12px 15px;
+            }
+            
+            .stat-number {
+              font-size: 1.5rem;
+            }
+            
+            .controls {
+              flex-direction: column;
+              align-items: stretch;
+            }
+            
+            .search-box {
+              width: 100%;
+            }
+            
+            .filter-buttons {
+              justify-content: center;
+            }
+            
+            .album-row > div {
+              flex-direction: column;
+            }
+            
+            .modal-content {
+              padding: 20px;
+              width: 95%;
+            }
+          }
+          
+          @media (max-width: 480px) {
+            body {
+              padding: 10px;
+            }
+            
+            .nav-links {
+              flex-direction: column;
+              align-items: center;
+            }
+            
+            .nav-links a {
+              width: 100%;
+              text-align: center;
+            }
+            
+            .stats {
+              gap: 10px;
+            }
+            
+            .stat-card {
+              min-width: 100px;
+              padding: 10px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Album Management</h1>
+          <p class="subtitle">Edit, delete, and organize albums, artists, and songs</p>
+          
+          <div class="stats">
+            <div class="stat-card">
+              <div class="stat-number">${albums.length}</div>
+              <div class="stat-label">Total Albums</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number">${allSongs.length}</div>
+              <div class="stat-label">Total Songs</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number">${Object.keys(allArtists).length}</div>
+              <div class="stat-label">Total Artists</div>
+            </div>
+          </div>
+          
+          <div class="nav-links">
+            <a href="/">← Home</a>
+            <a href="/manage">Manage Songs</a>
+            <a href="/manage-artist">Manage Artists</a>
+            <a href="/album/create">Create New Album</a>
+            <a href="/album">View All Albums</a>
+            <a href="/upload">Upload New Song</a>
+          </div>
+        </div>
+        
+        <div class="controls">
+          <input type="text" id="searchInput" class="search-box" placeholder="Search albums by title..." 
+                 onkeyup="filterAlbums()">
+          <div class="filter-buttons">
+            <button onclick="filterAlbums('all')" class="btn">All Albums</button>
+            <button onclick="filterAlbums('mostSongs')" class="btn">Most Songs First</button>
+            <button onclick="filterAlbums('recent')" class="btn">Recent First</button>
+          </div>
+        </div>
+        
+        <div class="albums-container" id="albumsList">
+          ${albums.length > 0 ? albumRows : `
+            <div class="empty-state">
+              <h3>No albums found</h3>
+              <p>Create your first album to get started!</p>
+              <a href="/album/create" class="btn" style="margin-top:15px;">Create Album</a>
+            </div>
+          `}
+        </div>
+        
+        <div id="editModal" class="modal">
+          <div class="modal-content">
+            <h2>Edit Album</h2>
+            <form id="editForm" onsubmit="saveAlbumChanges(event)">
+              <div class="form-group">
+                <label for="editTitle">Album Title</label>
+                <input type="text" id="editTitle" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="editDescription">Description</label>
+                <textarea id="editDescription"></textarea>
+              </div>
+              
+              <input type="hidden" id="editAlbumId">
+              
+              <div class="modal-buttons">
+                <button type="submit" class="btn btn-save">Save Changes</button>
+                <button type="button" onclick="closeEditModal()" class="btn btn-cancel">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        
+        <script>
+          let currentAlbums = ${JSON.stringify(albums.map(a => ({
+            id: a.id,
+            title: a.title,
+            description: a.description,
+            created: a.created,
+            songCount: a.songs.length,
+            artistCount: a.artistCount
+          })))};
+          
+          function filterAlbums(filter = '') {
+            const searchInput = document.getElementById('searchInput');
+            const searchTerm = searchInput.value.toLowerCase();
+            const albumRows = document.querySelectorAll('.album-row');
+            
+            albumRows.forEach(row => {
+              const title = row.querySelector('h3').textContent.toLowerCase();
+              const matchesSearch = title.includes(searchTerm) || searchTerm === '';
+              
+              row.style.display = matchesSearch ? '' : 'none';
+            });
+            
+            if (filter === 'mostSongs') {
+              sortAlbums('mostSongs');
+            } else if (filter === 'recent') {
+              sortAlbums('recent');
+            }
+          }
+          
+          function sortAlbums(order) {
+            const container = document.getElementById('albumsList');
+            const rows = Array.from(container.querySelectorAll('.album-row'));
+            
+            rows.sort((a, b) => {
+              const aId = a.querySelector('button').getAttribute('onclick').split("'")[1];
+              const bId = b.querySelector('button').getAttribute('onclick').split("'")[1];
+              
+              const aAlbum = currentAlbums.find(album => album.id === aId);
+              const bAlbum = currentAlbums.find(album => album.id === bId);
+              
+              if (order === 'mostSongs') {
+                return bAlbum.songCount - aAlbum.songCount;
+              } else if (order === 'recent') {
+                return bAlbum.created - aAlbum.created;
+              } else {
+                return aAlbum.title.localeCompare(bAlbum.title);
+              }
+            });
+            
+            rows.forEach(row => container.appendChild(row));
+          }
+          
+          function editAlbum(albumId) {
+            const album = currentAlbums.find(a => a.id === albumId);
+            if (!album) return;
+            
+            document.getElementById('editTitle').value = album.title;
+            document.getElementById('editDescription').value = album.description || '';
+            document.getElementById('editAlbumId').value = albumId;
+            
+            document.getElementById('editModal').style.display = 'flex';
+          }
+          
+          function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+            document.getElementById('editForm').reset();
+          }
+          
+          async function saveAlbumChanges(event) {
+            event.preventDefault();
+            
+            const albumId = document.getElementById('editAlbumId').value;
+            const title = document.getElementById('editTitle').value;
+            const description = document.getElementById('editDescription').value;
+            
+            const response = await fetch('/manage-albums/update', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                albumId,
+                title,
+                description
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              alert('Album updated successfully!');
+              location.reload();
+            } else {
+              alert('Error: ' + result.error);
+            }
+          }
+          
+          async function deleteAlbum(albumId) {
+            if (!confirm('Are you sure you want to delete this album? This will not delete the songs, only remove them from the album.')) {
+              return;
+            }
+            
+            const response = await fetch('/manage-albums/delete', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ albumId })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              alert('Album deleted successfully!');
+              location.reload();
+            } else {
+              alert('Error deleting album: ' + result.error);
+            }
+          }
+          
+          async function addArtistToAlbum(albumId) {
+            const select = document.getElementById('artistSelect_' + albumId);
+            const artistId = select.value;
+            
+            if (!artistId) {
+              alert('Please select an artist first');
+              return;
+            }
+            
+            if (!confirm('This will add ALL songs by this artist to the album. Continue?')) {
+              return;
+            }
+            
+            const response = await fetch('/manage-albums/add-artist', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                albumId,
+                artistId
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              alert('Artist added to album successfully!');
+              location.reload();
+            } else {
+              alert('Error adding artist: ' + result.error);
+            }
+          }
+          
+          async function removeArtistFromAlbum(albumId, artistId) {
+            if (!confirm('This will remove ALL songs by this artist from the album. Continue?')) {
+              return;
+            }
+            
+            const response = await fetch('/manage-albums/remove-artist', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                albumId,
+                artistId
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              alert('Artist removed from album successfully!');
+              location.reload();
+            } else {
+              alert('Error removing artist: ' + result.error);
+            }
+          }
+          
+          async function addSongToAlbumManually(albumId) {
+            const select = document.getElementById('songSelect_' + albumId);
+            const songId = select.value;
+            
+            if (!songId) {
+              alert('Please select a song first');
+              return;
+            }
+            
+            const response = await fetch('/manage-albums/add-song', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                albumId,
+                songId
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              alert('Song added to album successfully!');
+              location.reload();
+            } else {
+              alert('Error adding song: ' + result.error);
+            }
+          }
+          
+          async function removeSongFromAlbum(albumId, songId) {
+            if (!confirm('Remove this song from the album?')) {
+              return;
+            }
+            
+            const response = await fetch('/manage-albums/remove-song', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                albumId,
+                songId
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              alert('Song removed from album successfully!');
+              location.reload();
+            } else {
+              alert('Error removing song: ' + result.error);
+            }
+          }
+          
+          // Close modal when clicking outside
+          document.getElementById('editModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+              closeEditModal();
+            }
+          });
+          
+          // Initialize
+          filterAlbums();
+        </script>
+      </body>
+      </html>
+      `;
+      
+      return new Response(html, { 
+        headers: { 
+          ...CORS_HEADERS, 
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=300"
+        } 
+      });
+    }
+
+    // =========================
+    // UPDATE ALBUM HANDLER (POST)
+    // =========================
+    if (path === "/manage-albums/update" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { albumId, title, description } = data;
+        
+        if (!albumId || !title) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing required fields" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const result = await updateAlbum(albumId, { title, description });
+        
+        return new Response(JSON.stringify(result), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    // =========================
+    // DELETE ALBUM HANDLER (POST)
+    // =========================
+    if (path === "/manage-albums/delete" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { albumId } = data;
+        
+        if (!albumId) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing album ID" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const result = await deleteAlbum(albumId);
+        
+        return new Response(JSON.stringify(result), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    // =========================
+    // ADD ARTIST TO ALBUM HANDLER (POST)
+    // =========================
+    if (path === "/manage-albums/add-artist" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { albumId, artistId } = data;
+        
+        if (!albumId || !artistId) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing required data" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const result = await updateAlbumArtists(albumId, { [artistId]: true });
+        
+        return new Response(JSON.stringify(result), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    // =========================
+    // REMOVE ARTIST FROM ALBUM HANDLER (POST)
+    // =========================
+    if (path === "/manage-albums/remove-artist" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { albumId, artistId } = data;
+        
+        if (!albumId || !artistId) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing required data" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const result = await updateAlbumArtists(albumId, { [artistId]: false });
+        
+        return new Response(JSON.stringify(result), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    // =========================
+    // ADD SONG TO ALBUM HANDLER (POST)
+    // =========================
+    if (path === "/manage-albums/add-song" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { albumId, songId } = data;
+        
+        if (!albumId || !songId) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing required data" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const result = await updateAlbumSongs(albumId, { [songId]: true });
+        
+        return new Response(JSON.stringify(result), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    // =========================
+    // REMOVE SONG FROM ALBUM HANDLER (POST)
+    // =========================
+    if (path === "/manage-albums/remove-song" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { albumId, songId } = data;
+        
+        if (!albumId || !songId) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing required data" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const result = await updateAlbumSongs(albumId, { [songId]: false });
+        
+        return new Response(JSON.stringify(result), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+    // === ALBUM MANAGEMENT FEATURE END ===
 
     return new Response("Not found", { status: 404 });
   }
