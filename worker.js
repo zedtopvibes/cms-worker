@@ -75,6 +75,41 @@ export default {
       `;
       // === NEW FEATURE END ===
 
+      // === ARTISTS FEATURE START ===
+      // Get existing artists for dropdown
+      const getArtists = async () => {
+        try {
+          const artistsObj = await env.media.get("artists/index.json");
+          if (!artistsObj) return {};
+          const text = await artistsObj.text();
+          return JSON.parse(text || "{}");
+        } catch (e) {
+          return {};
+        }
+      };
+      
+      const artists = await getArtists();
+      const artistOptions = Object.keys(artists).map(id => {
+        const artist = artists[id];
+        return `<option value="${id}">${artist.name}</option>`;
+      }).join("");
+      
+      // Add artists dropdown and create artist link
+      const artistSection = `
+        <label>Artist</label>
+        <select name="artist" id="artistSelect" required style="padding:8px; margin-top:5px;">
+          <option value="">-- Select Artist --</option>
+          ${artistOptions}
+          <option value="__create_new__">[Create New Artist]</option>
+        </select>
+        <p style="margin-top:5px; font-size:0.9em;">
+          <a href="/artist/create" id="createArtistLink" style="color:#007bff; text-decoration:none; display:none;">Create New Artist</a>
+          <span id="existingArtistNote" style="display:none;">Or select existing artist above</span>
+        </p>
+        <input type="text" name="artist_name" id="artistNameInput" placeholder="Enter new artist name" style="padding:8px; margin-top:5px; display:none;">
+      `;
+      // === ARTISTS FEATURE END ===
+
       const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -100,6 +135,43 @@ export default {
                 }
               });
             }
+            
+            // === ARTISTS FEATURE START ===
+            const artistSelect = document.getElementById('artistSelect');
+            const createArtistLink = document.getElementById('createArtistLink');
+            const existingArtistNote = document.getElementById('existingArtistNote');
+            const artistNameInput = document.getElementById('artistNameInput');
+            
+            if (artistSelect) {
+              artistSelect.addEventListener('change', function() {
+                if (this.value === '__create_new__') {
+                  createArtistLink.style.display = 'block';
+                  existingArtistNote.style.display = 'inline';
+                  artistNameInput.style.display = 'block';
+                  artistNameInput.required = true;
+                } else {
+                  createArtistLink.style.display = 'none';
+                  existingArtistNote.style.display = 'none';
+                  artistNameInput.style.display = 'none';
+                  artistNameInput.required = false;
+                }
+              });
+            }
+            
+            if (createArtistLink) {
+              createArtistLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                const newArtistName = artistNameInput.value.trim();
+                if (newArtistName) {
+                  // Store the artist name in sessionStorage to pre-fill the create artist form
+                  sessionStorage.setItem('newArtistName', newArtistName);
+                  window.location.href = '/artist/create';
+                } else {
+                  alert('Please enter an artist name first');
+                }
+              });
+            }
+            // === ARTISTS FEATURE END ===
           });
         </script>
       </head>
@@ -109,8 +181,9 @@ export default {
           <label>Song Title</label>
           <input type="text" name="title" required>
 
-          <label>Artist Name</label>
-          <input type="text" name="artist" required>
+          <!-- === ARTISTS FEATURE START === -->
+          ${artistSection}
+          <!-- === ARTISTS FEATURE END === -->
 
           <label>Description (inside song page)</label>
           <textarea name="description" rows="3" required></textarea>
@@ -147,13 +220,59 @@ export default {
       // === NEW FEATURE START ===
       const albumId = formData.get("album");
       // === NEW FEATURE END ===
+      
+      // === ARTISTS FEATURE START ===
+      const artistNameInput = formData.get("artist_name");
+      // === ARTISTS FEATURE END ===
 
-      if (!title || !artist || !audioFile || !imageFile) {
+      if (!title || !audioFile || !imageFile) {
         return new Response("Missing fields", { status: 400 });
       }
 
+      // === ARTISTS FEATURE START ===
+      let artistName = artist;
+      let artistId = artist;
+      
+      // If creating new artist, use the input name
+      if (artist === "__create_new__" && artistNameInput) {
+        artistName = artistNameInput;
+        artistId = sanitize(artistNameInput);
+        
+        // Create the new artist
+        const getArtists = async () => {
+          try {
+            const artistsObj = await env.media.get("artists/index.json");
+            if (!artistsObj) return {};
+            const text = await artistsObj.text();
+            return JSON.parse(text || "{}");
+          } catch (e) {
+            return {};
+          }
+        };
+        
+        const saveArtists = async (artists) => {
+          await env.media.put("artists/index.json", JSON.stringify(artists));
+        };
+        
+        const artists = await getArtists();
+        
+        // Check if artist already exists
+        if (!artists[artistId]) {
+          artists[artistId] = {
+            id: artistId,
+            name: artistName,
+            description: "",
+            thumbnail: "",
+            created: Date.now(),
+            songs: []
+          };
+          await saveArtists(artists);
+        }
+      }
+      // === ARTISTS FEATURE END ===
+
       const safeTitle = sanitize(title);
-      const safeArtist = sanitize(artist);
+      const safeArtist = sanitize(artistName);
       const baseName = `${safeArtist}_${safeTitle}`;
 
       const audioKey = `songs/${baseName}.mp3`;
@@ -172,6 +291,36 @@ export default {
         await addSongToAlbum(albumId, baseName);
       }
       // === NEW FEATURE END ===
+      
+      // === ARTISTS FEATURE START ===
+      // Add song to artist
+      const getArtists = async () => {
+        try {
+          const artistsObj = await env.media.get("artists/index.json");
+          if (!artistsObj) return {};
+          const text = await artistsObj.text();
+          return JSON.parse(text || "{}");
+        } catch (e) {
+          return {};
+        }
+      };
+      
+      const saveArtists = async (artists) => {
+        await env.media.put("artists/index.json", JSON.stringify(artists));
+      };
+      
+      const addSongToArtist = async (artistId, songKey) => {
+        const artists = await getArtists();
+        if (artists[artistId]) {
+          if (!artists[artistId].songs.includes(songKey)) {
+            artists[artistId].songs.push(songKey);
+            await saveArtists(artists);
+          }
+        }
+      };
+      
+      await addSongToArtist(artistId, baseName);
+      // === ARTISTS FEATURE END ===
 
       const html = `
         <h1>Upload Successful!</h1>
@@ -404,6 +553,306 @@ export default {
     }
     // === NEW FEATURE END ===
 
+    // === ARTISTS FEATURE START ===
+    // =========================
+    // ARTISTS HELPER FUNCTIONS
+    // =========================
+    const getArtists = async () => {
+      try {
+        const artistsObj = await env.media.get("artists/index.json");
+        if (!artistsObj) return {};
+        const text = await artistsObj.text();
+        return JSON.parse(text || "{}");
+      } catch (e) {
+        return {};
+      }
+    };
+
+    const saveArtists = async (artists) => {
+      await env.media.put("artists/index.json", JSON.stringify(artists));
+    };
+
+    const addSongToArtist = async (artistId, songKey) => {
+      const artists = await getArtists();
+      if (artists[artistId]) {
+        if (!artists[artistId].songs.includes(songKey)) {
+          artists[artistId].songs.push(songKey);
+          await saveArtists(artists);
+        }
+      }
+    };
+
+    const getArtistSongs = async (artistId) => {
+      const artists = await getArtists();
+      return artists[artistId] ? artists[artistId].songs || [] : [];
+    };
+
+    // =========================
+    // CREATE ARTIST PAGE (GET)
+    // =========================
+    if (path === "/artist/create" && req.method === "GET") {
+      // Check for pre-filled artist name from session storage
+      let artistNameValue = "";
+      const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Create Artist</title>
+        <style>
+          body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; }
+          form { display:flex; flex-direction:column; max-width:400px; margin:auto; }
+          label { margin-top:10px; font-weight:bold; }
+          input, textarea { padding:8px; margin-top:5px; }
+          button { margin-top:20px; padding:10px; background:#28a745; color:#fff; border:none; cursor:pointer; border-radius:5px; }
+          button:hover { background:#218838; }
+          .back-link { margin-top:20px; }
+        </style>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            // Check for stored artist name
+            const storedName = sessionStorage.getItem('newArtistName');
+            if (storedName) {
+              document.getElementById('artistName').value = storedName;
+              sessionStorage.removeItem('newArtistName');
+            }
+          });
+        </script>
+      </head>
+      <body>
+        <h1>Create New Artist</h1>
+        <form action="/artist/create" method="POST" enctype="multipart/form-data">
+          <label>Artist Name</label>
+          <input type="text" name="name" id="artistName" required>
+
+          <label>Artist Description</label>
+          <textarea name="description" rows="3"></textarea>
+
+          <label>Artist Thumbnail (.jpg, .png) (Optional)</label>
+          <input type="file" name="thumbnail" accept="image/*">
+
+          <button type="submit">Create Artist</button>
+        </form>
+        <div class="back-link">
+          <a href="/upload">← Back to Upload</a>
+        </div>
+      </body>
+      </html>
+      `;
+      return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
+    }
+
+    // =========================
+    // CREATE ARTIST HANDLER (POST)
+    // =========================
+    if (path === "/artist/create" && req.method === "POST") {
+      const formData = await req.formData();
+      const name = formData.get("name");
+      const description = formData.get("description");
+      const thumbnailFile = formData.get("thumbnail");
+
+      if (!name) {
+        return new Response("Missing artist name", { status: 400 });
+      }
+
+      const artistId = sanitize(name);
+      const artists = await getArtists();
+
+      // Check if artist already exists
+      if (artists[artistId]) {
+        const html = `
+          <h1>Artist Already Exists</h1>
+          <p>Artist "${name}" already exists.</p>
+          <p><a href="/upload">← Back to Upload</a></p>
+        `;
+        return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
+      }
+
+      let thumbnailKey = "";
+      if (thumbnailFile && thumbnailFile.size > 0) {
+        // Store thumbnail
+        const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
+        thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+        await env.media.put(thumbnailKey, thumbnailFile.stream());
+      }
+
+      // Create artist record
+      artists[artistId] = {
+        id: artistId,
+        name: name,
+        description: description || "",
+        thumbnail: thumbnailKey,
+        created: Date.now(),
+        songs: []
+      };
+
+      await saveArtists(artists);
+
+      const html = `
+        <h1>Artist Created Successfully!</h1>
+        <p>Artist: ${name}</p>
+        <p><a href="/artist/${artistId}">View Artist Page</a></p>
+        <p><a href="/upload">← Back to Upload</a></p>
+      `;
+      return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
+    }
+
+    // =========================
+    // ARTISTS PAGE
+    // =========================
+    if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
+      const artistId = decodeURIComponent(path.replace("/artist/", ""));
+      
+      if (artistId === "") {
+        // List all artists
+        const artists = await getArtists();
+        const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
+        
+        const artistCards = await Promise.all(artistList.map(async artist => {
+          let thumbUrl = "/images/placeholder.jpg";
+          if (artist.thumbnail) {
+            const thumbObj = await env.media.get(artist.thumbnail);
+            if (thumbObj) {
+              const ext = artist.thumbnail.split(".").pop();
+              thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+            }
+          }
+          
+          return `
+            <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:200px; vertical-align:top; text-align:center;">
+              <img src="${thumbUrl}" alt="${artist.name}" style="width:150px; height:150px; object-fit:cover; border-radius:50%; margin-bottom:10px;">
+              <h3 style="margin:10px 0 5px 0;"><a href="/artist/${artist.id}">${artist.name}</a></h3>
+              <p style="font-size:0.9em; color:#666; margin:0 0 10px 0;">${artist.songs.length} songs</p>
+              <p style="font-size:0.8em; color:#888;">${new Date(artist.created).toLocaleDateString()}</p>
+            </div>
+          `;
+        }));
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <title>All Artists</title>
+          <style>
+            body { font-family: Arial,sans-serif; padding:20px; background:#f0f0f0; }
+            .header { text-align:center; margin-bottom:30px; }
+            .artists-grid { text-align:center; }
+            .artist-card { display:inline-block; margin:15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>All Artists</h1>
+            <p><a href="/">← Back to Home</a> | <a href="/upload">Upload New Song</a> | <a href="/artist/create">Create New Artist</a></p>
+          </div>
+          <div class="artists-grid">
+            ${artistCards.join("")}
+          </div>
+        </body>
+        </html>
+        `;
+        return new Response(html, { headers: { "Content-Type": "text/html" } });
+      }
+
+      // Single artist page
+      const artists = await getArtists();
+      const artist = artists[artistId];
+      
+      if (!artist) {
+        return new Response("Artist not found", { status: 404 });
+      }
+
+      // Get artist songs
+      const songList = await Promise.all(artist.songs.map(async songKey => {
+        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+        if (!audioObj) return null;
+
+        const [songArtist, ...titleParts] = songKey.split("_");
+        const title = titleParts.join(" ");
+
+        let thumbUrl = "/images/placeholder.jpg";
+        const jpgObj = await env.media.get(`images/${songKey}.jpg`);
+        const pngObj = await env.media.get(`images/${songKey}.png`);
+        if (jpgObj) thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+        else if (pngObj) thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+
+        return `
+          <div class="song" style="display:flex;align-items:center;margin-bottom:10px; padding:10px; background:#fff; border-radius:8px;">
+            <img src="${thumbUrl}" alt="${title}" style="width:60px;height:60px;object-fit:cover;margin-right:10px;border-radius:8px;">
+            <div style="flex-grow:1;">
+              <a href="/song/${encodeURIComponent(songKey + ".mp3")}" style="font-weight:bold;">${title}</a>
+              <br>
+              <small>${songArtist}</small>
+            </div>
+          </div>
+        `;
+      }));
+
+      // Get artist thumbnail
+      let artistThumb = "";
+      if (artist.thumbnail) {
+        const thumbObj = await env.media.get(artist.thumbnail);
+        if (thumbObj) {
+          const ext = artist.thumbnail.split(".").pop();
+          artistThumb = `<img src="/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}" alt="${artist.name}" style="width:200px; height:200px; object-fit:cover; border-radius:50%; margin:10px 0;">`;
+        }
+      }
+
+      const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>${artist.name}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: Arial,sans-serif; background:#f0f0f0; padding:20px; }
+          .artist-header { text-align:center; margin-bottom:30px; }
+          .songs-list { max-width:600px; margin:0 auto; }
+          img { max-width:100%; height:auto; border-radius:8px; }
+        </style>
+      </head>
+      <body>
+        <div class="artist-header">
+          <h1>${artist.name}</h1>
+          ${artistThumb}
+          <p>${artist.description}</p>
+          <p><small>Created: ${new Date(artist.created).toLocaleDateString()}</small></p>
+          <p>
+            <a href="/artist">← All Artists</a> | 
+            <a href="/">Home</a> | 
+            <a href="/upload">Upload</a>
+          </p>
+        </div>
+        
+        <div class="songs-list">
+          <h2>Songs (${artist.songs.length})</h2>
+          ${songList.filter(s => s).join("")}
+          ${artist.songs.length === 0 ? '<p>No songs by this artist yet.</p>' : ''}
+        </div>
+      </body>
+      </html>
+      `;
+      return new Response(html, { headers: { "Content-Type": "text/html" } });
+    }
+
+    // =========================
+    // SERVE ARTIST THUMBNAILS
+    // =========================
+    if (path.startsWith("/artists/thumbnails/")) {
+      const fileName = decodeURIComponent(path.slice(1));
+      const obj = await env.media.get(fileName);
+      if (!obj) return new Response("Artist thumbnail not found", { status: 404 });
+
+      let contentType = "application/octet-stream";
+      if (fileName.endsWith(".jpg")) contentType = "image/jpeg";
+      else if (fileName.endsWith(".png")) contentType = "image/png";
+
+      return new Response(obj.body, { headers: { "Content-Type": contentType } });
+    }
+    // === ARTISTS FEATURE END ===
+
     // =========================
     // HOMEPAGE
     // =========================
@@ -478,6 +927,48 @@ export default {
         html = html.replace('</section>', `</section>${albumsSection}`);
       }
       // === NEW FEATURE END ===
+
+      // === ARTISTS FEATURE START ===
+      // Add artists section to homepage
+      const artists = await getArtists();
+      const artistList = Object.values(artists).sort((a, b) => b.created - a.created).slice(0, 6); // Show latest 6 artists
+      
+      const artistsHtml = await Promise.all(artistList.map(async artist => {
+        let thumbUrl = "/images/placeholder.jpg";
+        if (artist.thumbnail) {
+          const thumbObj = await env.media.get(artist.thumbnail);
+          if (thumbObj) {
+            const ext = artist.thumbnail.split(".").pop();
+            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+          }
+        }
+        
+        return `
+          <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:180px; vertical-align:top; text-align:center;">
+            <img src="${thumbUrl}" alt="${artist.name}" style="width:150px; height:150px; object-fit:cover; border-radius:50%; margin-bottom:10px;">
+            <h3 style="margin:0 0 5px 0; font-size:1rem;"><a href="/artist/${artist.id}" style="text-decoration:none; color:#333;">${artist.name}</a></h3>
+            <p style="font-size:0.8em; color:#666; margin:0 0 5px 0;">${artist.songs.length} song${artist.songs.length !== 1 ? 's' : ''}</p>
+            <a href="/artist/${artist.id}" style="font-size:0.8em; color:#007bff; text-decoration:none;">View Artist →</a>
+          </div>
+        `;
+      }));
+
+      // If there are artists, add the artists section
+      if (artistList.length > 0) {
+        const artistsSection = `
+          <div style="margin-top:40px;">
+            <div class="section-title">Featured Artists</div>
+            <div style="text-align:center; margin-top:15px;">
+              ${artistsHtml.join("")}
+            </div>
+            ${artistList.length >= 6 ? `<p style="text-align:center; margin-top:15px;"><a href="/artist" style="color:#007bff; text-decoration:none;">View All Artists →</a></p>` : ''}
+          </div>
+        `;
+        
+        // Insert artists section after albums section
+        html = html.replace('</section>', `</section>${artistsSection}`);
+      }
+      // === ARTISTS FEATURE END ===
 
       return new Response(html, { headers: { "Content-Type": "text/html" } });
     }
@@ -579,6 +1070,13 @@ export default {
     }
     // === NEW FEATURE END ===
 
+    // === ARTISTS FEATURE START ===
+    // =========================
+    // SERVE ARTIST THUMBNAILS (already added above)
+    // =========================
+    // This route handler is already defined above in the artists section
+    // === ARTISTS FEATURE END ===
+
     // === NEW FEATURE START ===
     // =========================
     // SONG MANAGEMENT FEATURE
@@ -658,6 +1156,24 @@ export default {
           await saveAlbums(albums);
         }
         
+        // === ARTISTS FEATURE START ===
+        // Remove from all artists
+        const artists = await getArtists();
+        let artistsModified = false;
+        
+        for (const artistId in artists) {
+          const index = artists[artistId].songs.indexOf(songId);
+          if (index !== -1) {
+            artists[artistId].songs.splice(index, 1);
+            artistsModified = true;
+          }
+        }
+        
+        if (artistsModified) {
+          await saveArtists(artists);
+        }
+        // === ARTISTS FEATURE END ===
+        
         return { success: true };
       } catch (error) {
         return { success: false, error: error.message };
@@ -727,6 +1243,44 @@ export default {
           if (albumsModified) {
             await saveAlbums(albums);
           }
+          
+          // === ARTISTS FEATURE START ===
+          // Update artist references
+          const artists = await getArtists();
+          let artistsModified = false;
+          
+          // Remove from old artist
+          for (const artistId in artists) {
+            const index = artists[artistId].songs.indexOf(songId);
+            if (index !== -1) {
+              artists[artistId].songs.splice(index, 1);
+              artistsModified = true;
+            }
+          }
+          
+          // Add to new artist (create if doesn't exist)
+          const newArtistId = sanitize(artist);
+          if (!artists[newArtistId]) {
+            artists[newArtistId] = {
+              id: newArtistId,
+              name: artist,
+              description: "",
+              thumbnail: "",
+              created: Date.now(),
+              songs: []
+            };
+            artistsModified = true;
+          }
+          
+          if (!artists[newArtistId].songs.includes(newBaseName)) {
+            artists[newArtistId].songs.push(newBaseName);
+            artistsModified = true;
+          }
+          
+          if (artistsModified) {
+            await saveArtists(artists);
+          }
+          // === ARTISTS FEATURE END ===
           
           return { success: true, newId: newBaseName };
         } else {
@@ -1176,6 +1730,10 @@ export default {
             <a href="/upload">Upload New Song</a>
             <a href="/album">View Albums</a>
             <a href="/album/create">Create Album</a>
+            <!-- === ARTISTS FEATURE START === -->
+            <a href="/artist">View Artists</a>
+            <a href="/artist/create">Create Artist</a>
+            <!-- === ARTISTS FEATURE END === -->
           </div>
         </div>
         
@@ -1467,7 +2025,7 @@ export default {
           success: false, 
           error: error.message 
         }), { 
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
         });
       }
     }
