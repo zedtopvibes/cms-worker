@@ -128,6 +128,91 @@ export default {
       const artists = await getArtists();
       return artists[artistId] ? artists[artistId].songs || [] : [];
     };
+    
+    // NEW: Helper to get artist's albums and singles
+    const getArtistAlbumsAndSingles = async (artistId) => {
+      const artists = await getArtists();
+      const albums = await getAlbums();
+      const artist = artists[artistId];
+      
+      if (!artist) {
+        return { albums: [], singles: [], totalSongs: 0, totalAlbums: 0, totalSingles: 0 };
+      }
+      
+      // Get all albums that contain songs by this artist
+      const artistAlbums = [];
+      const albumSongIds = new Set(); // Track songs that are in albums
+      
+      for (const albumId in albums) {
+        const album = albums[albumId];
+        const albumSongsByArtist = [];
+        
+        // Check each song in the album
+        for (const songKey of album.songs) {
+          const [songArtist] = songKey.split("_");
+          if (songArtist === artistId) {
+            albumSongsByArtist.push(songKey);
+            albumSongIds.add(songKey);
+          }
+        }
+        
+        if (albumSongsByArtist.length > 0) {
+          // Get album thumbnail
+          let thumbUrl = "/images/placeholder.jpg";
+          if (album.thumbnail) {
+            const thumbObj = await env.media.get(album.thumbnail);
+            if (thumbObj) {
+              const ext = album.thumbnail.split(".").pop();
+              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+            }
+          }
+          
+          artistAlbums.push({
+            id: albumId,
+            title: album.title,
+            description: album.description,
+            thumbnail: thumbUrl,
+            songCount: albumSongsByArtist.length,
+            songs: albumSongsByArtist,
+            created: album.created
+          });
+        }
+      }
+      
+      // Sort albums by creation date (newest first)
+      artistAlbums.sort((a, b) => b.created - a.created);
+      
+      // Get singles (songs not in any album)
+      const singles = [];
+      for (const songKey of artist.songs) {
+        if (!albumSongIds.has(songKey)) {
+          singles.push(songKey);
+        }
+      }
+      
+      // Sort singles by upload date (we need to get song info to sort properly)
+      const sortedSingles = await Promise.all(singles.map(async songKey => {
+        // Get song upload date from R2
+        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+        const uploaded = audioObj ? audioObj.uploaded : Date.now();
+        
+        return {
+          key: songKey,
+          uploaded: uploaded
+        };
+      }));
+      
+      sortedSingles.sort((a, b) => b.uploaded - a.uploaded);
+      const singleKeys = sortedSingles.map(s => s.key);
+      
+      return {
+        albums: artistAlbums,
+        singles: singleKeys,
+        totalSongs: artist.songs.length,
+        totalAlbums: artistAlbums.length,
+        totalSingles: singleKeys.length
+      };
+    };
     // === ARTISTS FEATURE END ===
 
     // =========================
@@ -723,7 +808,7 @@ export default {
     }
 
     // =========================
-    // ARTISTS PAGE
+    // ENHANCED ARTISTS PAGE WITH ALBUMS & SINGLES SEPARATION
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -785,7 +870,7 @@ export default {
         });
       }
 
-      // Single artist page
+      // Single artist page with albums and singles separation
       const artists = await getArtists();
       const artist = artists[artistId];
       
@@ -793,37 +878,8 @@ export default {
         return new Response("Artist not found", { status: 404 });
       }
 
-      // Get artist songs
-      const songList = await Promise.all(artist.songs.map(async songKey => {
-        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-        if (!audioObj) return null;
-
-        const [songArtist, ...titleParts] = songKey.split("_");
-        const title = titleParts.join(" ");
-
-        let thumbUrl = "/images/placeholder.jpg";
-        // OPTIMIZED: Check .jpg first, then .png
-        const jpgObj = await env.media.get(`images/${songKey}.jpg`);
-        if (jpgObj) {
-          thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
-        } else {
-          const pngObj = await env.media.get(`images/${songKey}.png`);
-          if (pngObj) {
-            thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
-          }
-        }
-
-        return `
-          <div class="song" style="display:flex;align-items:center;margin-bottom:10px; padding:10px; background:#fff; border-radius:8px;">
-            <img src="${thumbUrl}" alt="${title}" style="width:60px;height:60px;object-fit:cover;margin-right:10px;border-radius:8px;">
-            <div style="flex-grow:1;">
-              <a href="/song/${encodeURIComponent(songKey + ".mp3")}" style="font-weight:bold;">${title}</a>
-              <br>
-              <small>${songArtist}</small>
-            </div>
-          </div>
-        `;
-      }));
+      // Get artist's albums and singles using the new helper
+      const { albums: artistAlbums, singles, totalSongs, totalAlbums, totalSingles } = await getArtistAlbumsAndSingles(artistId);
 
       // Get artist thumbnail
       let artistThumb = "";
@@ -833,6 +889,79 @@ export default {
           const ext = artist.thumbnail.split(".").pop();
           artistThumb = `<img src="/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}" alt="${artist.name}" style="width:200px; height:200px; object-fit:cover; border-radius:50%; margin:10px 0;">`;
         }
+      }
+
+      // Generate albums section
+      let albumsSection = '';
+      if (artistAlbums.length > 0) {
+        const albumCards = artistAlbums.map(album => {
+          return `
+            <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:180px; vertical-align:top;">
+              <a href="/album/${album.id}">
+                <img src="${album.thumbnail}" alt="${album.title}" style="width:100%; height:150px; object-fit:cover; border-radius:4px;">
+              </a>
+              <h3 style="margin:10px 0 5px 0; font-size:1rem;">
+                <a href="/album/${album.id}" style="text-decoration:none; color:#333;">${album.title}</a>
+              </h3>
+              <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">${album.songCount} song${album.songCount !== 1 ? 's' : ''}</p>
+              <p style="font-size:0.8em; color:#888;">${new Date(album.created).toLocaleDateString()}</p>
+            </div>
+          `;
+        }).join('');
+        
+        albumsSection = `
+          <div style="margin-top:30px;">
+            <h2>Albums (${totalAlbums})</h2>
+            <div style="margin-top:15px; display:flex; flex-wrap:wrap; gap:15px; justify-content:center;">
+              ${albumCards}
+            </div>
+          </div>
+        `;
+      }
+
+      // Generate singles section
+      let singlesSection = '';
+      if (singles.length > 0) {
+        const singleList = await Promise.all(singles.map(async songKey => {
+          const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+          if (!audioObj) return null;
+
+          const [songArtist, ...titleParts] = songKey.split("_");
+          const title = titleParts.join(" ");
+
+          let thumbUrl = "/images/placeholder.jpg";
+          // OPTIMIZED: Check .jpg first, then .png
+          const jpgObj = await env.media.get(`images/${songKey}.jpg`);
+          if (jpgObj) {
+            thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+          } else {
+            const pngObj = await env.media.get(`images/${songKey}.png`);
+            if (pngObj) {
+              thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+            }
+          }
+
+          return `
+            <div class="song" style="display:flex;align-items:center;margin-bottom:10px; padding:10px; background:#fff; border-radius:8px;">
+              <img src="${thumbUrl}" alt="${title}" style="width:60px;height:60px;object-fit:cover;margin-right:10px;border-radius:8px;">
+              <div style="flex-grow:1;">
+                <a href="/song/${encodeURIComponent(songKey + ".mp3")}" style="font-weight:bold;">${title}</a>
+                <br>
+                <small>${songArtist}</small>
+              </div>
+              <span style="background:#ff6b6b; color:white; padding:3px 8px; border-radius:12px; font-size:0.8em;">Single</span>
+            </div>
+          `;
+        }));
+
+        singlesSection = `
+          <div style="margin-top:30px;">
+            <h2>Singles (${totalSingles})</h2>
+            <div style="max-width:600px; margin:15px auto 0 auto;">
+              ${singleList.filter(s => s).join("")}
+            </div>
+          </div>
+        `;
       }
 
       const html = `
@@ -845,8 +974,12 @@ export default {
         <style>
           body { font-family: Arial,sans-serif; background:#f0f0f0; padding:20px; }
           .artist-header { text-align:center; margin-bottom:30px; }
-          .songs-list { max-width:600px; margin:0 auto; }
+          .stats { display:flex; justify-content:center; gap:20px; margin:15px 0 25px 0; flex-wrap:wrap; }
+          .stat-card { background:#fff; padding:15px 20px; border-radius:8px; text-align:center; min-width:120px; box-shadow:0 2px 5px rgba(0,0,0,0.05); }
+          .stat-number { font-size:1.5rem; font-weight:bold; color:#3498db; margin-bottom:5px; }
+          .stat-label { font-size:0.9rem; color:#7f8c8d; }
           img { max-width:100%; height:auto; border-radius:8px; }
+          .section-title { margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #3498db; }
         </style>
       </head>
       <body>
@@ -854,7 +987,21 @@ export default {
           <h1>${artist.name}</h1>
           ${artistThumb}
           <p>${artist.description}</p>
-          <p><small>Created: ${new Date(artist.created).toLocaleDateString()}</small></p>
+          <div class="stats">
+            <div class="stat-card">
+              <div class="stat-number">${totalSongs}</div>
+              <div class="stat-label">Total Songs</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number">${totalAlbums}</div>
+              <div class="stat-label">Albums</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number">${totalSingles}</div>
+              <div class="stat-label">Singles</div>
+            </div>
+          </div>
+          <p><small>Joined: ${new Date(artist.created).toLocaleDateString()}</small></p>
           <p>
             <a href="/artist">← All Artists</a> | 
             <a href="/">Home</a> | 
@@ -862,11 +1009,11 @@ export default {
           </p>
         </div>
         
-        <div class="songs-list">
-          <h2>Songs (${artist.songs.length})</h2>
-          ${songList.filter(s => s).join("")}
-          ${artist.songs.length === 0 ? '<p>No songs by this artist yet.</p>' : ''}
-        </div>
+        ${albumsSection}
+        ${singlesSection}
+        
+        ${artistAlbums.length === 0 && singles.length === 0 ? 
+          '<div style="text-align:center; padding:40px; background:#fff; border-radius:8px; max-width:600px; margin:0 auto;"><p>No songs by this artist yet.</p></div>' : ''}
       </body>
       </html>
       `;
@@ -2197,7 +2344,7 @@ export default {
     }
     // === NEW FEATURE END ===
 
-    // === ARTIST MANAGEMENT FEATURE START ===
+    // === ENHANCED ARTIST MANAGEMENT FEATURE START ===
     // =========================
     // ARTIST MANAGEMENT FEATURE
     // =========================
@@ -2995,7 +3142,7 @@ export default {
         
         <div class="controls">
           <input type="text" id="searchInput" class="search-box" placeholder="Search artists by name..." 
-                 onkeyup="filterArtists()">
+             onkeyup="filterArtists()">
           <div class="filter-buttons">
             <button onclick="filterArtists('all')" class="btn">All Artists</button>
             <button onclick="filterArtists('mostSongs')" class="btn">Most Songs First</button>
@@ -3363,7 +3510,7 @@ export default {
         });
       }
     }
-    // === ARTIST MANAGEMENT FEATURE END ===
+    // === ENHANCED ARTIST MANAGEMENT FEATURE END ===
 
     return new Response("Not found", { status: 404 });
   }
