@@ -332,198 +332,477 @@ export default {
     }
 
     // =========================
-    // MANAGE PLAYLISTS PAGE
-    // =========================
-    if (path === "/manage-playlists" && req.method === "GET") {
-      const playlists = await getPlaylists();
-      const allSongs = await env.media.list({ prefix: "songs/" });
+// MANAGE PLAYLISTS PAGE (Fixed Version)
+// =========================
+if (path === "/manage-playlists" && req.method === "GET") {
+  const playlists = await getPlaylists();
+  const allSongs = await env.media.list({ prefix: "songs/" });
+  
+  // Get song details for display
+  const songDetails = await Promise.all(
+    allSongs.objects.map(async (songObj) => {
+      const songKey = songObj.key.split("/")[1].replace(".mp3", "");
+      const [artist, ...titleParts] = songKey.split("_");
+      const title = titleParts.join(" ");
       
-      // Get song details for display
-      const songDetails = await Promise.all(
-        allSongs.objects.map(async (songObj) => {
-          const songKey = songObj.key.split("/")[1].replace(".mp3", "");
-          const [artist, ...titleParts] = songKey.split("_");
-          const title = titleParts.join(" ");
-          
-          let thumbUrl = "/images/placeholder.jpg";
-          const jpgObj = await env.media.get(`images/${songKey}.jpg`);
-          if (jpgObj) {
-            thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
-          } else {
-            const pngObj = await env.media.get(`images/${songKey}.png`);
-            if (pngObj) {
-              thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
-            }
+      let thumbUrl = "/images/placeholder.jpg";
+      try {
+        const jpgObj = await env.media.get(`images/${songKey}.jpg`);
+        if (jpgObj) {
+          thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+        } else {
+          const pngObj = await env.media.get(`images/${songKey}.png`);
+          if (pngObj) {
+            thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
           }
-          
-          return {
-            key: songKey,
-            title: title,
-            artist: artist,
-            thumbnail: thumbUrl
-          };
-        })
-      );
+        }
+      } catch (e) {
+        // Use placeholder if error
+      }
       
-      // Get playlist details
-      const playlistDetails = Object.values(playlists).map(playlist => ({
-        id: playlist.id,
-        title: playlist.title,
-        songCount: playlist.songs.length,
-        isPublic: playlist.isPublic
-      }));
-      
-      // Generate song checkboxes for each playlist
-      const playlistSections = Object.values(playlists).map(playlist => {
-        const songCheckboxes = songDetails.map(song => {
-          const isChecked = playlist.songs.includes(song.key);
-          return `
-            <div class="song-checkbox" style="display:flex; align-items:center; margin:5px 0; padding:5px; background:#f8f9fa; border-radius:4px;">
-              <input type="checkbox" 
-                     name="songs" 
-                     value="${song.key}" 
-                     ${isChecked ? 'checked' : ''}
-                     onchange="updatePlaylistSong('${playlist.id}', '${song.key}', this.checked)"
-                     style="margin-right:10px;">
-              <img src="${song.thumbnail}" alt="${song.title}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; margin-right:10px;">
-              <div>
-                <strong>${song.title}</strong><br>
-                <small style="color:#666;">${song.artist}</small>
-              </div>
-            </div>
-          `;
-        }).join('');
-        
-        return `
-          <div class="playlist-section" style="background:#fff; border:1px solid #ddd; border-radius:8px; padding:15px; margin-bottom:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-              <h3 style="margin:0;">${playlist.title}</h3>
-              <div>
-                <button onclick="deletePlaylist('${playlist.id}')" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px;">Delete</button>
-                <a href="/playlist/${playlist.id}" style="background:#3498db; color:white; padding:5px 10px; border-radius:4px; text-decoration:none; margin-left:10px;">View</a>
-              </div>
-            </div>
-            <p><strong>${playlist.songs.length} songs</strong> | Status: ${playlist.isPublic ? 'Public' : 'Private'}</p>
-            <div class="song-list" style="max-height:300px; overflow-y:auto; border:1px solid #eee; padding:10px; margin-top:10px;">
-              ${songCheckboxes}
-            </div>
+      return {
+        key: songKey,
+        title: title,
+        artist: artist,
+        thumbnail: thumbUrl
+      };
+    })
+  );
+  
+  // Generate playlist sections
+  const playlistSections = Object.values(playlists).map(playlist => {
+    // Sort songs by title for better organization
+    const sortedSongs = [...songDetails].sort((a, b) => a.title.localeCompare(b.title));
+    
+    const songCheckboxes = sortedSongs.map(song => {
+      const isChecked = playlist.songs.includes(song.key);
+      return `
+        <div class="song-checkbox" 
+             style="display:flex; align-items:center; margin:5px 0; padding:5px; background:#f8f9fa; border-radius:4px;"
+             data-playlist="${playlist.id}"
+             data-song="${song.key}">
+          <input type="checkbox" 
+                 id="song_${playlist.id}_${song.key}"
+                 ${isChecked ? 'checked' : ''}
+                 onchange="updateSongInPlaylist('${playlist.id}', '${song.key}', this.checked)"
+                 style="margin-right:10px; cursor:pointer;">
+          <img src="${song.thumbnail}" alt="${song.title}" 
+               style="width:40px; height:40px; object-fit:cover; border-radius:4px; margin-right:10px;">
+          <div style="flex-grow:1;">
+            <strong>${song.title}</strong><br>
+            <small style="color:#666;">${song.artist}</small>
           </div>
-        `;
-      }).join('');
-      
-      const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Manage Playlists</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { font-family: Arial,sans-serif; background:#f0f0f0; padding:20px; }
-          .header { text-align:center; margin-bottom:30px; }
-          .container { max-width:1000px; margin:0 auto; }
-          .create-btn { 
-            display:inline-block; 
-            background:#2ecc71; 
-            color:white; 
-            padding:10px 20px; 
-            text-decoration:none; 
-            border-radius:5px; 
-            margin:10px; 
-            border:none;
-            cursor:pointer;
-          }
-          .controls { text-align:center; margin-bottom:20px; }
-          .empty-state { text-align:center; padding:40px; background:#fff; border-radius:8px; }
-        </style>
-        <script>
-          async function updatePlaylistSong(playlistId, songKey, add) {
-            const endpoint = add ? '/playlist/add-song' : '/playlist/remove-song';
-            
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                playlistId: playlistId, 
-                songKey: songKey 
-              })
-            });
-            
-            const result = await response.json();
-            if (!result.success) {
-              alert('Error: ' + result.error);
-              // Revert checkbox state
-              const checkbox = document.querySelector(\`input[value="\${songKey}"][onchange*="\${playlistId}"]\`);
-              if (checkbox) {
-                checkbox.checked = !add;
-              }
-            }
-          }
-          
-          async function deletePlaylist(playlistId) {
-            if (!confirm('Are you sure you want to delete this playlist? This action cannot be undone.')) {
-              return;
-            }
-            
-            const response = await fetch('/playlist/delete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ playlistId: playlistId })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-              alert('Playlist deleted successfully!');
-              location.reload();
-            } else {
-              alert('Error: ' + result.error);
-            }
-          }
-          
-          function createNewPlaylist() {
-            window.location.href = '/playlist/create';
-          }
-          
-          function toggleAllSongs(playlistId, checkAll) {
-            const checkboxes = document.querySelectorAll(\`.playlist-section h3:contains("\${playlistId}") + .song-list input[type="checkbox"]\`);
-            checkboxes.forEach(checkbox => {
-              checkbox.checked = checkAll;
-              updatePlaylistSong(playlistId, checkbox.value, checkAll);
-            });
-          }
-        </script>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Manage Playlists</h1>
-            <p>Add or remove songs from playlists. A song can appear in multiple playlists.</p>
-            <div class="controls">
-              <button onclick="createNewPlaylist()" class="create-btn">Create New Playlist</button>
-              <a href="/playlist" style="color:#3498db; text-decoration:none; margin-left:10px;">View All Playlists</a>
-              <a href="/" style="color:#7f8c8d; text-decoration:none; margin-left:10px;">← Home</a>
-            </div>
-          </div>
-          
-          ${playlistSections || `
-            <div class="empty-state">
-              <h3>No Playlists Yet</h3>
-              <p>Create your first playlist to get started!</p>
-              <button onclick="createNewPlaylist()" class="create-btn">Create Playlist</button>
-            </div>
-          `}
-          
-          <div style="margin-top:30px; text-align:center; color:#666; font-size:0.9em;">
-            <p><strong>Tip:</strong> Check multiple boxes to add songs to playlists. Uncheck to remove.</p>
+          <div style="font-size:0.8em; color:#7f8c8d;">
+            ${playlist.songs.includes(song.key) ? '✓ In playlist' : ''}
           </div>
         </div>
-      </body>
-      </html>
       `;
-      return new Response(html, { 
-        headers: { ...CORS_HEADERS, "Content-Type": "text/html" } 
+    }).join('');
+    
+    return `
+      <div class="playlist-section" id="playlist-${playlist.id}" style="background:#fff; border:1px solid #ddd; border-radius:8px; padding:15px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+          <div>
+            <h3 style="margin:0; display:inline-block;">${playlist.title}</h3>
+            <span style="margin-left:10px; font-size:0.8em; color:${playlist.isPublic ? '#2ecc71' : '#e74c3c'};">
+              ${playlist.isPublic ? 'Public' : 'Private'}
+            </span>
+          </div>
+          <div>
+            <button onclick="deletePlaylist('${playlist.id}')" 
+                    style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px;">
+              Delete
+            </button>
+            <a href="/playlist/${playlist.id}" 
+               style="background:#3498db; color:white; padding:5px 10px; border-radius:4px; text-decoration:none; margin-left:10px;">
+              View
+            </a>
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <p><strong>${playlist.songs.length} songs</strong> • Created: ${new Date(playlist.created).toLocaleDateString()}</p>
+          <div style="margin:10px 0;">
+            <button onclick="selectAllSongs('${playlist.id}', true)" 
+                    style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-right:5px; font-size:0.9em;">
+              Select All
+            </button>
+            <button onclick="selectAllSongs('${playlist.id}', false)" 
+                    style="background:#95a5a6; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-right:5px; font-size:0.9em;">
+              Deselect All
+            </button>
+          </div>
+        </div>
+        <div class="song-list" style="max-height:400px; overflow-y:auto; border:1px solid #eee; padding:10px; margin-top:10px;">
+          ${songCheckboxes}
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  const html = `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Manage Playlists</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      body { 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; 
+        background:#f0f0f0; 
+        padding:20px;
+        margin:0;
+      }
+      .header { 
+        text-align:center; 
+        margin-bottom:30px; 
+        padding:20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color:white;
+        border-radius:12px;
+      }
+      .container { 
+        max-width:1200px; 
+        margin:0 auto; 
+        padding:0 20px;
+      }
+      .create-btn { 
+        display:inline-block; 
+        background:#2ecc71; 
+        color:white; 
+        padding:12px 24px; 
+        text-decoration:none; 
+        border-radius:8px; 
+        margin:10px; 
+        border:none;
+        cursor:pointer;
+        font-weight:600;
+        transition:all 0.3s ease;
+        box-shadow:0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
+      }
+      .create-btn:hover { 
+        background:#27ae60; 
+        transform:translateY(-2px);
+        box-shadow:0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08);
+      }
+      .controls { 
+        text-align:center; 
+        margin-bottom:30px; 
+        padding:20px;
+        background:white;
+        border-radius:12px;
+        box-shadow:0 2px 10px rgba(0,0,0,0.1);
+      }
+      .empty-state { 
+        text-align:center; 
+        padding:60px 40px; 
+        background:#fff; 
+        border-radius:12px;
+        box-shadow:0 2px 10px rgba(0,0,0,0.1);
+        margin:20px 0;
+      }
+      .empty-state h3 { color:#2c3e50; margin-bottom:15px; }
+      .empty-state p { color:#7f8c8d; max-width:500px; margin:0 auto 25px; }
+      .status-message {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 600;
+        z-index: 1000;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      }
+      .status-success {
+        background: #2ecc71;
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .status-error {
+        background: #e74c3c;
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .playlist-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+      }
+      @media (max-width: 768px) {
+        .playlist-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .song-checkbox:hover {
+        background: #edf2f7;
+        transform: translateX(5px);
+        transition: all 0.2s ease;
+      }
+      input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+    </style>
+    <script>
+      // Show status message
+      function showStatus(message, isSuccess) {
+        const statusDiv = document.getElementById('status-message');
+        if (!statusDiv) {
+          const div = document.createElement('div');
+          div.id = 'status-message';
+          div.className = 'status-message';
+          document.body.appendChild(div);
+        }
+        
+        const statusEl = document.getElementById('status-message');
+        statusEl.textContent = message;
+        statusEl.className = 'status-message ' + (isSuccess ? 'status-success' : 'status-error');
+        
+        // Hide after 3 seconds
+        setTimeout(() => {
+          statusEl.className = 'status-message';
+        }, 3000);
+      }
+      
+      // Update song in playlist
+      async function updateSongInPlaylist(playlistId, songKey, add) {
+        const endpoint = add ? '/playlist/add-song' : '/playlist/remove-song';
+        const checkbox = document.getElementById('song_' + playlistId + '_' + songKey);
+        
+        // Disable checkbox while updating
+        checkbox.disabled = true;
+        
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({ 
+              playlistId: playlistId, 
+              songKey: songKey 
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            // Update the status text
+            const songElement = checkbox.closest('.song-checkbox');
+            const statusDiv = songElement.querySelector('div > div:nth-child(3)');
+            if (statusDiv) {
+              statusDiv.textContent = add ? '✓ In playlist' : '';
+              statusDiv.style.color = add ? '#2ecc71' : '#7f8c8d';
+            }
+            
+            // Update song count
+            const playlistSection = document.getElementById('playlist-' + playlistId);
+            const songCountElement = playlistSection.querySelector('p > strong');
+            if (songCountElement) {
+              const currentText = songCountElement.textContent;
+              const currentCount = parseInt(currentText.match(/\d+/)[0]);
+              const newCount = add ? currentCount + 1 : currentCount - 1;
+              songCountElement.textContent = newCount + ' songs';
+            }
+            
+            showStatus(result.message || (add ? 'Song added to playlist' : 'Song removed from playlist'), true);
+          } else {
+            // Revert checkbox if failed
+            checkbox.checked = !add;
+            showStatus('Error: ' + (result.error || 'Operation failed'), false);
+          }
+        } catch (error) {
+          // Revert checkbox on network error
+          checkbox.checked = !add;
+          showStatus('Network error. Please try again.', false);
+          console.error('Error:', error);
+        } finally {
+          // Re-enable checkbox
+          checkbox.disabled = false;
+        }
+      }
+      
+      // Select all songs in a playlist
+      async function selectAllSongs(playlistId, selectAll) {
+        const checkboxes = document.querySelectorAll(\`#playlist-${playlistId} input[type="checkbox"]\`);
+        const updates = [];
+        
+        // Disable all checkboxes
+        checkboxes.forEach(cb => cb.disabled = true);
+        
+        // Process each checkbox
+        for (const checkbox of checkboxes) {
+          const songKey = checkbox.id.replace('song_' + playlistId + '_', '');
+          
+          // Only update if state is changing
+          if (checkbox.checked !== selectAll) {
+            updates.push(updateSongInPlaylist(playlistId, songKey, selectAll));
+          }
+        }
+        
+        // Wait for all updates to complete
+        try {
+          await Promise.all(updates);
+          showStatus(\`\${selectAll ? 'Added all' : 'Removed all'} songs \${updates.length > 0 ? 'successfully' : ''}\`, true);
+        } catch (error) {
+          showStatus('Some operations failed', false);
+        }
+        
+        // Re-enable checkboxes
+        setTimeout(() => {
+          checkboxes.forEach(cb => cb.disabled = false);
+        }, 1000);
+      }
+      
+      // Delete playlist
+      async function deletePlaylist(playlistId) {
+        if (!confirm('Are you sure you want to delete the playlist "' + 
+                    document.querySelector('#playlist-' + playlistId + ' h3').textContent + 
+                    '"? This action cannot be undone.')) {
+          return;
+        }
+        
+        try {
+          const response = await fetch('/playlist/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playlistId: playlistId })
+          });
+          
+          const result = await response.json();
+          if (result.success) {
+            showStatus('Playlist deleted successfully!', true);
+            // Remove the playlist section from the page
+            const playlistElement = document.getElementById('playlist-' + playlistId);
+            if (playlistElement) {
+              playlistElement.style.opacity = '0.5';
+              playlistElement.style.transition = 'opacity 0.3s ease';
+              setTimeout(() => {
+                playlistElement.remove();
+                // Check if no playlists left
+                if (document.querySelectorAll('.playlist-section').length === 0) {
+                  location.reload();
+                }
+              }, 300);
+            }
+          } else {
+            showStatus('Error: ' + result.error, false);
+          }
+        } catch (error) {
+          showStatus('Network error. Please try again.', false);
+          console.error('Error:', error);
+        }
+      }
+      
+      // Create new playlist
+      function createNewPlaylist() {
+        window.location.href = '/playlist/create';
+      }
+      
+      // Search/filter songs in playlist
+      function filterSongs(playlistId, searchTerm) {
+        const songElements = document.querySelectorAll(\`#playlist-${playlistId} .song-checkbox\`);
+        searchTerm = searchTerm.toLowerCase();
+        
+        songElements.forEach(element => {
+          const title = element.querySelector('strong').textContent.toLowerCase();
+          const artist = element.querySelector('small').textContent.toLowerCase();
+          const matches = title.includes(searchTerm) || artist.includes(searchTerm);
+          element.style.display = matches ? 'flex' : 'none';
+        });
+      }
+      
+      // Initialize on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        // Add search inputs to each playlist section
+        const playlistSections = document.querySelectorAll('.playlist-section');
+        playlistSections.forEach(section => {
+          const playlistId = section.id.replace('playlist-', '');
+          const searchHtml = \`
+            <div style="margin:10px 0;">
+              <input type="text" 
+                     placeholder="Search songs..." 
+                     oninput="filterSongs('\${playlistId}', this.value)"
+                     style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;"
+                     aria-label="Search songs in playlist">
+            </div>
+          \`;
+          const songList = section.querySelector('.song-list');
+          section.insertBefore(document.createRange().createContextualFragment(searchHtml), songList);
+        });
       });
-    }
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1 style="margin:0 0 10px 0;">🎵 Manage Playlists</h1>
+        <p style="margin:0; opacity:0.9; max-width:600px; margin:0 auto;">
+          Add or remove songs from playlists. A song can appear in multiple playlists.
+        </p>
+      </div>
+      
+      <div class="controls">
+        <button onclick="createNewPlaylist()" class="create-btn">+ Create New Playlist</button>
+        <a href="/playlist" style="color:#3498db; text-decoration:none; margin-left:10px; font-weight:600;">View All Playlists</a>
+        <a href="/" style="color:#7f8c8d; text-decoration:none; margin-left:10px;">← Back to Home</a>
+      </div>
+      
+      ${Object.keys(playlists).length > 0 ? `
+        <div style="margin-bottom:20px; padding:15px; background:white; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+          <h3 style="margin:0 0 10px 0; color:#2c3e50;">📊 Quick Stats</h3>
+          <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div style="background:#f8f9fa; padding:10px 15px; border-radius:6px;">
+              <strong>${Object.keys(playlists).length}</strong> Playlists
+            </div>
+            <div style="background:#f8f9fa; padding:10px 15px; border-radius:6px;">
+              <strong>${songDetails.length}</strong> Total Songs
+            </div>
+            <div style="background:#f8f9fa; padding:10px 15px; border-radius:6px;">
+              <strong>${Object.values(playlists).reduce((sum, p) => sum + p.songs.length, 0)}</strong> Total Assignments
+            </div>
+          </div>
+        </div>
+        
+        <div class="playlist-grid">
+          ${playlistSections}
+        </div>
+        
+        <div style="margin-top:30px; text-align:center; color:#666; font-size:0.9em; padding:20px; background:white; border-radius:8px;">
+          <p><strong>💡 Tips:</strong></p>
+          <ul style="list-style:none; padding:0; margin:10px 0;">
+            <li>✓ Click checkboxes to add/remove songs from playlists</li>
+            <li>✓ Use "Select All" / "Deselect All" for bulk operations</li>
+            <li>✓ Search songs by title or artist within each playlist</li>
+            <li>✓ A song can be in multiple playlists at the same time</li>
+          </ul>
+        </div>
+      ` : `
+        <div class="empty-state">
+          <h3>🎶 No Playlists Yet</h3>
+          <p>Playlists help you organize your music collection. Create your first playlist to get started!</p>
+          <button onclick="createNewPlaylist()" class="create-btn">+ Create Your First Playlist</button>
+          <p style="margin-top:20px; font-size:0.9em;">
+            <a href="/playlist" style="color:#3498db;">View example playlists</a> or 
+            <a href="/upload" style="color:#2ecc71;">upload some songs first</a>
+          </p>
+        </div>
+      `}
+    </div>
+  </body>
+  </html>
+  `;
+  return new Response(html, { 
+    headers: { ...CORS_HEADERS, "Content-Type": "text/html" } 
+  });
+}
 
     // =========================
     // PLAYLIST PAGE (View only, no management)
