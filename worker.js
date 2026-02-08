@@ -1109,6 +1109,538 @@ export default {
     }
 
     // =========================
+    // NEW DESIGN HOMEPAGE (ADDED FEATURE)
+    // =========================
+    if (path === "/new-design") {
+      const now = Date.now();
+      
+      // Use cache if available
+      if (homepageCache && (now - cacheTimestamp < CACHE_DURATION)) {
+        return new Response(homepageCache, { 
+          headers: { 
+            "Content-Type": "text/html",
+            "Cache-Control": "public, max-age=300"
+          } 
+        });
+      }
+
+      try {
+        // Get latest albums
+        const albums = await getAlbums();
+        const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
+        
+        // Get latest songs
+        const list = await env.media.list({ prefix: "songs/", limit: 50 });
+        const files = list.objects || [];
+        files.sort((a,b) => b.uploaded - a.uploaded);
+        const latestSongs = files.slice(0, 20);
+        
+        // Process latest songs for Latest Updates section
+        const latestUpdatesHtml = await Promise.all(latestSongs.map(async (f, index) => {
+          const fileName = f.key.split("/")[1];
+          const baseName = fileName.replace(".mp3","");
+          const [artist, ...titleParts] = baseName.split("_");
+          const title = titleParts.join(" ");
+          
+          // Format date
+          const date = new Date(f.uploaded);
+          const formattedDate = date.toLocaleDateString('en-US', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          });
+          
+          return `
+            <div class="update-item">
+              <div class="update-content">
+                <strong>${artist} - ${title}</strong>
+                <span class="update-date">© ${formattedDate}</span>
+              </div>
+            </div>
+          `;
+        }));
+        
+        // Process albums for Latest 2024 Albums section
+        const currentYear = new Date().getFullYear();
+        const albums2024 = albumList.filter(album => {
+          const albumYear = new Date(album.created).getFullYear();
+          return albumYear === 2024 || albumYear === currentYear;
+        }).slice(0, 8);
+        
+        const albums2024Html = await Promise.all(albums2024.map(async album => {
+          let thumbUrl = "/images/placeholder.jpg";
+          if (album.thumbnail) {
+            try {
+              const thumbObj = await env.media.get(album.thumbnail);
+              if (thumbObj) {
+                const ext = album.thumbnail.split(".").pop();
+                thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+              }
+            } catch (e) {}
+          }
+          
+          // Format date
+          const date = new Date(album.created);
+          const formattedDate = date.toLocaleDateString('en-US', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          });
+          
+          return `
+            <div class="album-card">
+              <div class="album-thumbnail">
+                <img src="${thumbUrl}" alt="${album.title}" loading="lazy">
+              </div>
+              <div class="album-info">
+                <strong>${album.title}</strong>
+                <span class="album-date">© ${formattedDate}</span>
+              </div>
+            </div>
+          `;
+        }));
+
+        // HTML for the new design
+        const html = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <title>ZEDALBUMS.TOP</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+              background-color: #0a0a0a;
+              color: #ffffff;
+              line-height: 1.6;
+              padding: 20px;
+              max-width: 1200px;
+              margin: 0 auto;
+            }
+            
+            .site-header {
+              text-align: center;
+              margin-bottom: 40px;
+              padding-bottom: 20px;
+              border-bottom: 1px solid #333;
+            }
+            
+            .site-title {
+              font-size: 2.5rem;
+              font-weight: 800;
+              letter-spacing: 1px;
+              margin-bottom: 10px;
+              background: linear-gradient(45deg, #ff5500, #ffaa00);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              background-clip: text;
+            }
+            
+            .site-subtitle {
+              color: #888;
+              font-size: 1rem;
+              letter-spacing: 3px;
+              text-transform: uppercase;
+            }
+            
+            .search-container {
+              max-width: 600px;
+              margin: 30px auto 50px;
+            }
+            
+            .search-box {
+              width: 100%;
+              padding: 15px 20px;
+              font-size: 1.1rem;
+              background: #1a1a1a;
+              border: 2px solid #333;
+              border-radius: 25px;
+              color: white;
+              transition: all 0.3s ease;
+            }
+            
+            .search-box:focus {
+              outline: none;
+              border-color: #ff5500;
+              box-shadow: 0 0 0 3px rgba(255, 85, 0, 0.1);
+            }
+            
+            .search-box::placeholder {
+              color: #666;
+              letter-spacing: 1px;
+            }
+            
+            .section {
+              margin-bottom: 50px;
+            }
+            
+            .section-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 20px;
+              padding-bottom: 10px;
+              border-bottom: 2px solid #ff5500;
+            }
+            
+            .section-title {
+              font-size: 1.5rem;
+              font-weight: 600;
+              color: #ffffff;
+            }
+            
+            .view-all {
+              color: #ff5500;
+              text-decoration: none;
+              font-size: 0.9rem;
+              font-weight: 500;
+              transition: color 0.3s ease;
+            }
+            
+            .view-all:hover {
+              color: #ffaa00;
+              text-decoration: underline;
+            }
+            
+            .updates-list {
+              background: #1a1a1a;
+              border-radius: 10px;
+              overflow: hidden;
+            }
+            
+            .update-item {
+              padding: 15px 20px;
+              border-bottom: 1px solid #333;
+              transition: background 0.3s ease;
+            }
+            
+            .update-item:hover {
+              background: #252525;
+            }
+            
+            .update-item:last-child {
+              border-bottom: none;
+            }
+            
+            .update-content {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            
+            .update-date {
+              color: #888;
+              font-size: 0.9rem;
+              font-weight: 500;
+            }
+            
+            .albums-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+              gap: 20px;
+              margin-top: 20px;
+            }
+            
+            .album-card {
+              background: #1a1a1a;
+              border-radius: 10px;
+              overflow: hidden;
+              transition: transform 0.3s ease, box-shadow 0.3s ease;
+            }
+            
+            .album-card:hover {
+              transform: translateY(-5px);
+              box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            }
+            
+            .album-thumbnail {
+              height: 150px;
+              overflow: hidden;
+            }
+            
+            .album-thumbnail img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              transition: transform 0.5s ease;
+            }
+            
+            .album-card:hover .album-thumbnail img {
+              transform: scale(1.05);
+            }
+            
+            .album-info {
+              padding: 15px;
+            }
+            
+            .album-info strong {
+              display: block;
+              margin-bottom: 5px;
+              font-size: 0.95rem;
+              line-height: 1.4;
+            }
+            
+            .album-date {
+              color: #888;
+              font-size: 0.8rem;
+              font-weight: 500;
+            }
+            
+            .site-footer {
+              text-align: center;
+              margin-top: 60px;
+              padding-top: 20px;
+              border-top: 1px solid #333;
+              color: #666;
+              font-size: 0.9rem;
+            }
+            
+            .nav-links {
+              display: flex;
+              justify-content: center;
+              gap: 20px;
+              margin-top: 30px;
+            }
+            
+            .nav-link {
+              color: #ff5500;
+              text-decoration: none;
+              padding: 8px 16px;
+              border: 1px solid #333;
+              border-radius: 20px;
+              transition: all 0.3s ease;
+              font-size: 0.9rem;
+            }
+            
+            .nav-link:hover {
+              background: #ff5500;
+              color: white;
+              border-color: #ff5500;
+            }
+            
+            @media (max-width: 768px) {
+              .site-title {
+                font-size: 2rem;
+              }
+              
+              .albums-grid {
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+              }
+              
+              .update-content {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+              }
+              
+              .nav-links {
+                flex-direction: column;
+                align-items: center;
+              }
+              
+              .nav-link {
+                width: 200px;
+                text-align: center;
+              }
+            }
+            
+            @media (max-width: 480px) {
+              .albums-grid {
+                grid-template-columns: 1fr;
+              }
+              
+              body {
+                padding: 15px;
+              }
+              
+              .section-title {
+                font-size: 1.3rem;
+              }
+            }
+            
+            .album-thumbnail img[src="/images/placeholder.jpg"] {
+              filter: grayscale(100%) brightness(0.3);
+            }
+            
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(20px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .section {
+              animation: fadeIn 0.6s ease-out;
+            }
+            
+            ::-webkit-scrollbar {
+              width: 10px;
+            }
+            
+            ::-webkit-scrollbar-track {
+              background: #1a1a1a;
+            }
+            
+            ::-webkit-scrollbar-thumb {
+              background: #ff5500;
+              border-radius: 5px;
+            }
+            
+            ::-webkit-scrollbar-thumb:hover {
+              background: #ffaa00;
+            }
+          </style>
+          <script>
+            document.addEventListener('DOMContentLoaded', function() {
+              const searchBox = document.querySelector('.search-box');
+              
+              if (searchBox) {
+                searchBox.addEventListener('keypress', function(e) {
+                  if (e.key === 'Enter') {
+                    const query = this.value.trim();
+                    if (query) {
+                      sessionStorage.setItem('searchQuery', query);
+                      window.location.href = '/?search=' + encodeURIComponent(query);
+                    }
+                  }
+                });
+              }
+              
+              const storedQuery = sessionStorage.getItem('searchQuery');
+              if (storedQuery && searchBox) {
+                searchBox.value = storedQuery;
+                sessionStorage.removeItem('searchQuery');
+              }
+              
+              const albumCards = document.querySelectorAll('.album-card');
+              albumCards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                  this.style.zIndex = '10';
+                });
+                
+                card.addEventListener('mouseleave', function() {
+                  this.style.zIndex = '1';
+                });
+              });
+            });
+            
+            function viewAllAlbums() {
+              window.location.href = '/album';
+            }
+            
+            function viewAllUpdates() {
+              window.location.href = '/';
+            }
+          </script>
+        </head>
+        <body>
+          <header class="site-header">
+            <h1 class="site-title">ZEDALBUMS.TOP</h1>
+            <div class="site-subtitle">Zambian Music Library</div>
+          </header>
+          
+          <div class="search-container">
+            <input 
+              type="text" 
+              class="search-box" 
+              placeholder="SEARCH ALBUMS..." 
+              aria-label="Search albums"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+            >
+          </div>
+          
+          <main>
+            <section class="section">
+              <div class="section-header">
+                <h2 class="section-title">Latest Updates</h2>
+                <a href="/" class="view-all" onclick="viewAllUpdates(); return false;">
+                  View All →
+                </a>
+              </div>
+              <div class="updates-list">
+                ${latestUpdatesHtml.join('')}
+                ${latestUpdatesHtml.length === 0 ? 
+                  '<div class="update-item"><div class="update-content"><em>No updates yet</em></div></div>' : ''}
+              </div>
+            </section>
+            
+            <section class="section">
+              <div class="section-header">
+                <h2 class="section-title">Latest ${new Date().getFullYear()} Albums</h2>
+                <a href="/album" class="view-all" onclick="viewAllAlbums(); return false;">
+                  View All →
+                </a>
+              </div>
+              <div class="albums-grid">
+                ${albums2024Html.join('')}
+                ${albums2024Html.length === 0 ? 
+                  '<div class="album-card"><div class="album-info"><em>No albums yet</em></div></div>' : ''}
+              </div>
+            </section>
+            
+            <div class="nav-links">
+              <a href="/" class="nav-link">← Back to Main Site</a>
+              <a href="/upload" class="nav-link">Upload New Music</a>
+              <a href="/artist" class="nav-link">Browse Artists</a>
+              <a href="/album" class="nav-link">Browse All Albums</a>
+            </div>
+          </main>
+          
+          <footer class="site-footer">
+            <p>© ${new Date().getFullYear()} ZEDALBUMS.TOP - Zambian Music Archive</p>
+            <p style="margin-top: 10px; font-size: 0.8rem; color: #555;">
+              <a href="/new-design" style="color: #666; text-decoration: none;">New Design</a> • 
+              <a href="/" style="color: #666; text-decoration: none;">Classic Design</a>
+            </p>
+          </footer>
+        </body>
+        </html>
+        `;
+        
+        // Cache the generated HTML
+        homepageCache = html;
+        cacheTimestamp = now;
+        
+        return new Response(html, { 
+          headers: { 
+            "Content-Type": "text/html",
+            "Cache-Control": "public, max-age=300"
+          } 
+        });
+      } catch (error) {
+        // If new design fails, fall back to main homepage
+        console.error("New design error:", error);
+        return new Response(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>ZEDALBUMS.TOP - Design Unavailable</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 50px; text-align: center; background: #0a0a0a; color: white; }
+              a { color: #ff5500; text-decoration: none; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <h1>Design Temporarily Unavailable</h1>
+            <p>The new design is experiencing issues. Please try the main site.</p>
+            <p><a href="/">← Go to Main Site</a></p>
+          </body>
+          </html>
+        `, { 
+          headers: { "Content-Type": "text/html" } 
+        });
+      }
+    }
+
+    // =========================
     // HOMEPAGE
     // =========================
     if (path === "/") {
