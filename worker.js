@@ -106,6 +106,26 @@ export default {
       return playlists[playlistId];
     };
 
+    const updatePlaylist = async (playlistId, updates) => {
+      const playlists = await getPlaylists();
+      if (playlists[playlistId]) {
+        playlists[playlistId] = { ...playlists[playlistId], ...updates };
+        await savePlaylists(playlists);
+        return true;
+      }
+      return false;
+    };
+
+    const deletePlaylist = async (playlistId) => {
+      const playlists = await getPlaylists();
+      if (playlists[playlistId]) {
+        delete playlists[playlistId];
+        await savePlaylists(playlists);
+        return true;
+      }
+      return false;
+    };
+
     // === ALBUMS FUNCTIONS ===
     const getAlbums = async () => {
       const now = Date.now();
@@ -228,147 +248,6 @@ export default {
       return artists[artistId] ? artists[artistId].albums || [] : [];
     };
 
-    // === FIXED: getArtistAlbumsAndSingles with CORRECT stats ===
-    const getArtistAlbumsAndSingles = async (artistId) => {
-      const artists = await getArtists();
-      const albums = await getAlbums();
-      const artist = artists[artistId];
-      
-      if (!artist) {
-        return { albums: [], singles: [], totalSongs: 0, totalAlbums: 0, totalSingles: 0 };
-      }
-      
-      const assignedAlbums = artist.albums || [];
-      const artistAlbums = [];
-      const albumSongIds = new Set();
-      let totalSongsInAlbums = 0;
-      
-      for (const albumId of assignedAlbums) {
-        const album = albums[albumId];
-        if (album) {
-          const albumSongsByArtist = [];
-          
-          for (const songKey of album.songs) {
-            const [songArtistId] = songKey.split("_");
-            if (songArtistId === artistId) {
-              albumSongsByArtist.push(songKey);
-              albumSongIds.add(songKey);
-            }
-          }
-          
-          let thumbUrl = "/images/placeholder.jpg";
-          if (album.thumbnail) {
-            try {
-              const thumbObj = await env.media.get(album.thumbnail);
-              if (thumbObj) {
-                const ext = album.thumbnail.split(".").pop();
-                thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-              }
-            } catch (e) {}
-          }
-          
-          const artistSongCount = albumSongsByArtist.length;
-          totalSongsInAlbums += artistSongCount;
-          
-          artistAlbums.push({
-            id: albumId,
-            title: album.title,
-            description: album.description,
-            thumbnail: thumbUrl,
-            songCount: album.songs.length,
-            artistSongCount: artistSongCount,
-            songs: albumSongsByArtist,
-            created: album.created,
-            explicitlyAssigned: true
-          });
-        }
-      }
-      
-      for (const albumId in albums) {
-        if (assignedAlbums.includes(albumId)) continue;
-        
-        const album = albums[albumId];
-        const albumSongsByArtist = [];
-        
-        for (const songKey of album.songs) {
-          const [songArtistId] = songKey.split("_");
-          if (songArtistId === artistId) {
-            albumSongsByArtist.push(songKey);
-            albumSongIds.add(songKey);
-          }
-        }
-        
-        if (albumSongsByArtist.length > 0) {
-          let thumbUrl = "/images/placeholder.jpg";
-          if (album.thumbnail) {
-            try {
-              const thumbObj = await env.media.get(album.thumbnail);
-              if (thumbObj) {
-                const ext = album.thumbnail.split(".").pop();
-                thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-              }
-            } catch (e) {}
-          }
-          
-          const artistSongCount = albumSongsByArtist.length;
-          totalSongsInAlbums += artistSongCount;
-          
-          artistAlbums.push({
-            id: albumId,
-            title: album.title,
-            description: album.description,
-            thumbnail: thumbUrl,
-            songCount: album.songs.length,
-            artistSongCount: artistSongCount,
-            songs: albumSongsByArtist,
-            created: album.created,
-            explicitlyAssigned: false
-          });
-        }
-      }
-      
-      artistAlbums.sort((a, b) => b.created - a.created);
-      
-      const singles = [];
-      for (const songKey of artist.songs) {
-        if (!albumSongIds.has(songKey)) {
-          singles.push(songKey);
-        }
-      }
-      
-      const sortedSingles = await Promise.all(singles.map(async songKey => {
-        try {
-          const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-          const uploaded = audioObj ? audioObj.uploaded : Date.now();
-          return {
-            key: songKey,
-            uploaded: uploaded
-          };
-        } catch (e) {
-          return {
-            key: songKey,
-            uploaded: Date.now()
-          };
-        }
-      }));
-      
-      sortedSingles.sort((a, b) => b.uploaded - a.uploaded);
-      const singleKeys = sortedSingles.map(s => s.key);
-      
-      const totalSingles = singleKeys.length;
-      const totalSongs = totalSingles + totalSongsInAlbums;
-      
-      return {
-        albums: artistAlbums,
-        singles: singleKeys,
-        totalSongs: totalSongs,
-        totalSongsInAlbums: totalSongsInAlbums,
-        totalSingles: totalSingles,
-        totalAlbums: artistAlbums.length,
-        assignedAlbumsCount: assignedAlbums.length
-      };
-    };
-
     // =========================
     // CREATE PLAYLIST PAGE (GET)
     // =========================
@@ -404,7 +283,7 @@ export default {
           <button type="submit">Create Playlist</button>
         </form>
         <div class="back-link">
-          <a href="/playlist">← View All Playlists</a> | 
+          <a href="/manage-playlists">← Manage Playlists</a> | 
           <a href="/">Home</a>
         </div>
       </body>
@@ -438,22 +317,218 @@ export default {
 
       await createPlaylist(playlistId, title, description, thumbnailKey);
       
+      // Update privacy status
+      await updatePlaylist(playlistId, { isPublic });
+      
       homepageCache = null;
       cacheTimestamp = 0;
 
       const html = `
         <h1>Playlist Created Successfully!</h1>
         <p>Playlist: ${title}</p>
-        <p><a href="/playlist/${playlistId}">View Playlist Page</a></p>
-        <p><a href="/playlist">← All Playlists</a></p>
+        <p><a href="/manage-playlists">← Back to Manage Playlists</a></p>
       `;
       return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
     }
 
     // =========================
-    // PLAYLIST PAGE
+    // MANAGE PLAYLISTS PAGE
     // =========================
-    if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
+    if (path === "/manage-playlists" && req.method === "GET") {
+      const playlists = await getPlaylists();
+      const allSongs = await env.media.list({ prefix: "songs/" });
+      
+      // Get song details for display
+      const songDetails = await Promise.all(
+        allSongs.objects.map(async (songObj) => {
+          const songKey = songObj.key.split("/")[1].replace(".mp3", "");
+          const [artist, ...titleParts] = songKey.split("_");
+          const title = titleParts.join(" ");
+          
+          let thumbUrl = "/images/placeholder.jpg";
+          const jpgObj = await env.media.get(`images/${songKey}.jpg`);
+          if (jpgObj) {
+            thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+          } else {
+            const pngObj = await env.media.get(`images/${songKey}.png`);
+            if (pngObj) {
+              thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+            }
+          }
+          
+          return {
+            key: songKey,
+            title: title,
+            artist: artist,
+            thumbnail: thumbUrl
+          };
+        })
+      );
+      
+      // Get playlist details
+      const playlistDetails = Object.values(playlists).map(playlist => ({
+        id: playlist.id,
+        title: playlist.title,
+        songCount: playlist.songs.length,
+        isPublic: playlist.isPublic
+      }));
+      
+      // Generate song checkboxes for each playlist
+      const playlistSections = Object.values(playlists).map(playlist => {
+        const songCheckboxes = songDetails.map(song => {
+          const isChecked = playlist.songs.includes(song.key);
+          return `
+            <div class="song-checkbox" style="display:flex; align-items:center; margin:5px 0; padding:5px; background:#f8f9fa; border-radius:4px;">
+              <input type="checkbox" 
+                     name="songs" 
+                     value="${song.key}" 
+                     ${isChecked ? 'checked' : ''}
+                     onchange="updatePlaylistSong('${playlist.id}', '${song.key}', this.checked)"
+                     style="margin-right:10px;">
+              <img src="${song.thumbnail}" alt="${song.title}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; margin-right:10px;">
+              <div>
+                <strong>${song.title}</strong><br>
+                <small style="color:#666;">${song.artist}</small>
+              </div>
+            </div>
+          `;
+        }).join('');
+        
+        return `
+          <div class="playlist-section" style="background:#fff; border:1px solid #ddd; border-radius:8px; padding:15px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+              <h3 style="margin:0;">${playlist.title}</h3>
+              <div>
+                <button onclick="deletePlaylist('${playlist.id}')" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-left:10px;">Delete</button>
+                <a href="/playlist/${playlist.id}" style="background:#3498db; color:white; padding:5px 10px; border-radius:4px; text-decoration:none; margin-left:10px;">View</a>
+              </div>
+            </div>
+            <p><strong>${playlist.songs.length} songs</strong> | Status: ${playlist.isPublic ? 'Public' : 'Private'}</p>
+            <div class="song-list" style="max-height:300px; overflow-y:auto; border:1px solid #eee; padding:10px; margin-top:10px;">
+              ${songCheckboxes}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Manage Playlists</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: Arial,sans-serif; background:#f0f0f0; padding:20px; }
+          .header { text-align:center; margin-bottom:30px; }
+          .container { max-width:1000px; margin:0 auto; }
+          .create-btn { 
+            display:inline-block; 
+            background:#2ecc71; 
+            color:white; 
+            padding:10px 20px; 
+            text-decoration:none; 
+            border-radius:5px; 
+            margin:10px; 
+            border:none;
+            cursor:pointer;
+          }
+          .controls { text-align:center; margin-bottom:20px; }
+          .empty-state { text-align:center; padding:40px; background:#fff; border-radius:8px; }
+        </style>
+        <script>
+          async function updatePlaylistSong(playlistId, songKey, add) {
+            const endpoint = add ? '/playlist/add-song' : '/playlist/remove-song';
+            
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                playlistId: playlistId, 
+                songKey: songKey 
+              })
+            });
+            
+            const result = await response.json();
+            if (!result.success) {
+              alert('Error: ' + result.error);
+              // Revert checkbox state
+              const checkbox = document.querySelector(\`input[value="\${songKey}"][onchange*="\${playlistId}"]\`);
+              if (checkbox) {
+                checkbox.checked = !add;
+              }
+            }
+          }
+          
+          async function deletePlaylist(playlistId) {
+            if (!confirm('Are you sure you want to delete this playlist? This action cannot be undone.')) {
+              return;
+            }
+            
+            const response = await fetch('/playlist/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ playlistId: playlistId })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+              alert('Playlist deleted successfully!');
+              location.reload();
+            } else {
+              alert('Error: ' + result.error);
+            }
+          }
+          
+          function createNewPlaylist() {
+            window.location.href = '/playlist/create';
+          }
+          
+          function toggleAllSongs(playlistId, checkAll) {
+            const checkboxes = document.querySelectorAll(\`.playlist-section h3:contains("\${playlistId}") + .song-list input[type="checkbox"]\`);
+            checkboxes.forEach(checkbox => {
+              checkbox.checked = checkAll;
+              updatePlaylistSong(playlistId, checkbox.value, checkAll);
+            });
+          }
+        </script>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Manage Playlists</h1>
+            <p>Add or remove songs from playlists. A song can appear in multiple playlists.</p>
+            <div class="controls">
+              <button onclick="createNewPlaylist()" class="create-btn">Create New Playlist</button>
+              <a href="/playlist" style="color:#3498db; text-decoration:none; margin-left:10px;">View All Playlists</a>
+              <a href="/" style="color:#7f8c8d; text-decoration:none; margin-left:10px;">← Home</a>
+            </div>
+          </div>
+          
+          ${playlistSections || `
+            <div class="empty-state">
+              <h3>No Playlists Yet</h3>
+              <p>Create your first playlist to get started!</p>
+              <button onclick="createNewPlaylist()" class="create-btn">Create Playlist</button>
+            </div>
+          `}
+          
+          <div style="margin-top:30px; text-align:center; color:#666; font-size:0.9em;">
+            <p><strong>Tip:</strong> Check multiple boxes to add songs to playlists. Uncheck to remove.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+      `;
+      return new Response(html, { 
+        headers: { ...CORS_HEADERS, "Content-Type": "text/html" } 
+      });
+    }
+
+    // =========================
+    // PLAYLIST PAGE (View only, no management)
+    // =========================
+    if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create") && path !== "/playlist/delete") {
       const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
       
       if (playlistId === "") {
@@ -502,12 +577,13 @@ export default {
             }
           </style>
         </head>
-      <body>
+        <body>
           <div class="header">
             <h1>All Playlists</h1>
             <p>
               <a href="/">← Back to Home</a> | 
               <a href="/playlist/create" class="create-btn">Create New Playlist</a>
+              <a href="/manage-playlists" style="color:#2ecc71; margin-left:10px;">Manage Playlists</a>
             </p>
           </div>
           <div class="playlists-grid">
@@ -524,7 +600,7 @@ export default {
         });
       }
 
-      // Single playlist page
+      // Single playlist page (View only)
       const playlist = await getPlaylistInfo(playlistId);
       
       if (!playlist) {
@@ -550,29 +626,14 @@ export default {
           }
         }
 
-        // Get all playlists this song is in
-        const allPlaylists = await getPlaylists();
-        const songPlaylists = [];
-        for (const pid in allPlaylists) {
-          if (allPlaylists[pid].songs.includes(songKey) && pid !== playlistId) {
-            songPlaylists.push(allPlaylists[pid].title);
-          }
-        }
-
         return `
-          <div class="song" style="display:flex;align-items:center;margin-bottom:10px; padding:10px; background:#fff; border-radius:8px; position:relative;">
+          <div class="song" style="display:flex;align-items:center;margin-bottom:10px; padding:10px; background:#fff; border-radius:8px;">
             <img src="${thumbUrl}" alt="${title}" style="width:60px;height:60px;object-fit:cover;margin-right:10px;border-radius:8px;">
             <div style="flex-grow:1;">
               <a href="/song/${encodeURIComponent(songKey + ".mp3")}" style="font-weight:bold;">${title}</a>
               <br>
               <small>${artist}</small>
-              ${songPlaylists.length > 0 ? 
-                `<div style="font-size:0.8em; color:#666; margin-top:2px;">
-                  Also in: ${songPlaylists.slice(0, 2).join(", ")}${songPlaylists.length > 2 ? '...' : ''}
-                </div>` : 
-                ''}
             </div>
-            <button onclick="removeSongFromPlaylist('${songKey}')" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:0.8em;">Remove</button>
           </div>
         `;
       }));
@@ -587,15 +648,6 @@ export default {
         }
       }
 
-      // Add song to playlist form
-      const allSongs = await env.media.list({ prefix: "songs/" });
-      const songOptions = allSongs.objects.map(s => {
-        const songKey = s.key.split("/")[1].replace(".mp3", "");
-        const [artist, ...titleParts] = songKey.split("_");
-        const title = titleParts.join(" ");
-        return `<option value="${songKey}">${title} - ${artist}</option>`;
-      }).join("");
-
       const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -608,56 +660,8 @@ export default {
           .playlist-header { text-align:center; margin-bottom:30px; }
           .songs-list { max-width:600px; margin:0 auto; }
           img { max-width:100%; height:auto; border-radius:8px; }
-          .add-song-form { background:#fff; padding:15px; border-radius:8px; margin-bottom:20px; }
-          select, button { padding:8px; margin:5px; }
-          .remove-btn:hover { background:#c0392b; }
+          .manage-link { display:inline-block; background:#f39c12; color:white; padding:8px 15px; border-radius:4px; text-decoration:none; margin-top:10px; }
         </style>
-        <script>
-          async function addSongToPlaylist() {
-            const songKey = document.getElementById('songSelect').value;
-            if (!songKey) {
-              alert('Please select a song');
-              return;
-            }
-            
-            const response = await fetch('/playlist/add-song', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                playlistId: '${playlistId}', 
-                songKey: songKey 
-              })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-              alert('Song added to playlist!');
-              location.reload();
-            } else {
-              alert('Error: ' + result.error);
-            }
-          }
-          
-          async function removeSongFromPlaylist(songKey) {
-            if (!confirm('Remove this song from playlist?')) return;
-            
-            const response = await fetch('/playlist/remove-song', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                playlistId: '${playlistId}', 
-                songKey: songKey 
-              })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-              location.reload();
-            } else {
-              alert('Error: ' + result.error);
-            }
-          }
-        </script>
       </head>
       <body>
         <div class="playlist-header">
@@ -667,18 +671,9 @@ export default {
           <p><small>Status: ${playlist.isPublic ? 'Public' : 'Private'} | Created: ${new Date(playlist.created).toLocaleDateString()}</small></p>
           <p>
             <a href="/playlist">← All Playlists</a> | 
-            <a href="/">Home</a> | 
-            <a href="/playlist/create">Create New Playlist</a>
+            <a href="/">Home</a> |
+            <a href="/manage-playlists" class="manage-link">Manage Playlists</a>
           </p>
-        </div>
-        
-        <div class="add-song-form">
-          <h3>Add Song to Playlist</h3>
-          <select id="songSelect" style="width:100%; padding:8px;">
-            <option value="">-- Select a Song --</option>
-            ${songOptions}
-          </select>
-          <button onclick="addSongToPlaylist()" style="background:#2ecc71; color:white; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Add Song</button>
         </div>
         
         <div class="songs-list">
@@ -698,7 +693,7 @@ export default {
     }
 
     // =========================
-    // PLAYLIST ADD/REMOVE SONG ENDPOINTS
+    // PLAYLIST MANAGEMENT ENDPOINTS
     // =========================
     if (path === "/playlist/add-song" && req.method === "POST") {
       try {
@@ -754,6 +749,47 @@ export default {
         }), { 
           headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
         });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), { 
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+        });
+      }
+    }
+
+    if (path === "/playlist/delete" && req.method === "POST") {
+      try {
+        const data = await req.json();
+        const { playlistId } = data;
+        
+        if (!playlistId) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Missing playlistId" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
+        
+        const success = await deletePlaylist(playlistId);
+        
+        if (success) {
+          return new Response(JSON.stringify({ 
+            success: true,
+            message: "Playlist deleted"
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        } else {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Playlist not found" 
+          }), { 
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" } 
+          });
+        }
       } catch (error) {
         return new Response(JSON.stringify({ 
           success: false, 
@@ -1026,6 +1062,7 @@ export default {
           <ul>
             ${songPlaylists.map(p => `<li><a href="/playlist/${p.id}">${p.title}</a></li>`).join('')}
           </ul>
+          <p><a href="/manage-playlists" style="font-size:0.9em; color:#3498db;">Manage playlists →</a></p>
         </div>
       ` : '';
 
@@ -1237,7 +1274,13 @@ export default {
             <div style="text-align:center; margin-top:15px;">
               ${playlistsHtml.join("")}
             </div>
-            ${playlistList.length >= 6 ? `<p style="text-align:center; margin-top:15px;"><a href="/playlist" style="color:#007bff; text-decoration:none;">View All Playlists →</a> | <a href="/playlist/create" style="color:#2ecc71; text-decoration:none;">Create New Playlist</a></p>` : ''}
+            ${playlistList.length >= 6 ? `
+              <p style="text-align:center; margin-top:15px;">
+                <a href="/playlist" style="color:#007bff; text-decoration:none;">View All Playlists →</a> | 
+                <a href="/playlist/create" style="color:#2ecc71; text-decoration:none;">Create New Playlist</a> |
+                <a href="/manage-playlists" style="color:#f39c12; text-decoration:none;">Manage Playlists</a>
+              </p>
+            ` : ''}
           </div>
         `;
         html = html.replace('</section>', `</section>${playlistsSection}`);
@@ -1275,15 +1318,14 @@ export default {
     }
 
     // =========================
-    // REST OF THE EXISTING CODE (keep all existing routes below)
+    // REST OF THE EXISTING CODE
     // =========================
-    // [Include all the existing code for albums, artists, create album, create artist,
-    // album pages, artist pages, download, file serving, etc. from your original code]
-    // Make sure to keep everything below this point exactly as in your original code...
+    // [Include all the existing routes for albums, artists, etc. here]
+    // This includes: /album/create, /artist/create, /album/, /artist/, 
+    // /assign-album-to-artist, /manage-album-artists, and file serving routes
 
-    // Note: The rest of your original code (create album, create artist, album pages, 
-    // artist pages, file serving, etc.) should be placed here, but I've omitted it 
-    // for brevity since you already have it in your original code.
+    // Note: Add all your existing code from the original file below this point
+    // Make sure to keep all the existing routes for albums, artists, etc.
 
     return new Response("Not found", { status: 404 });
   }
