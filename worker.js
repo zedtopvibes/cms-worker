@@ -592,65 +592,323 @@ export default {
     }
 
     // =========================
-    // ALBUMS PAGE (UPDATED ROUTE)
+    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE
     // =========================
-    if (path === "/albums" || (path.startsWith("/albums/") && !path.startsWith("/albums/create"))) {
-      // Handle /albums (list all albums)
-      if (path === "/albums") {
-        const albums = await getAlbums();
-        const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
-        
-        const albumCards = await Promise.all(albumList.map(async album => {
-          let thumbUrl = "/images/placeholder.jpg";
-          const thumbObj = await env.media.get(album.thumbnail);
-          if (thumbObj) {
-            const ext = album.thumbnail.split(".").pop();
-            thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-          }
-          
-          return `
-            <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:200px; vertical-align:top;">
-              <img src="${thumbUrl}" alt="${album.title}" style="width:100%; height:150px; object-fit:cover; border-radius:4px;">
-              <h3 style="margin:10px 0 5px 0;"><a href="/album/${album.id}">${album.title}</a></h3>
-              <p style="font-size:0.9em; color:#666; margin:0 0 10px 0;">${album.songs.length} songs</p>
-            </div>
-          `;
-        }));
-
-        const html = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <title>All Albums</title>
-          <style>
-            body { font-family: Arial,sans-serif; padding:20px; background:#f0f0f0; }
-            .header { text-align:center; margin-bottom:30px; }
-            .albums-grid { text-align:center; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>All Albums</h1>
-            <p><a href="/">← Back to Home</a> | <a href="/upload">Upload New Song</a></p>
-          </div>
-          <div class="albums-grid">
-            ${albumCards.join("")}
-          </div>
-        </body>
-        </html>
-        `;
-        return new Response(html, { 
-          headers: { 
-            "Content-Type": "text/html",
-            "Cache-Control": "public, max-age=300"
-          } 
-        });
+    if (path === "/albums") {
+      // Get the template from R2
+      const templateObj = await env.media.get("albums.html");
+      if (!templateObj) {
+        return new Response("albums.html template not found in R2", { status: 500 });
       }
+      let html = await templateObj.text();
+
+      // Get all albums and artists data
+      const albums = await getAlbums();
+      const artists = await getArtists();
       
-      // Handle /albums/:id (single album) - redirect to /album/:id for backward compatibility
-      const albumId = decodeURIComponent(path.replace("/albums/", ""));
-      return Response.redirect(`/album/${albumId}`, 301);
+      // Sort albums by creation date (newest first)
+      const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
+      
+      // Pagination
+      const ALBUMS_PER_PAGE = 12;
+      const page = parseInt(url.searchParams.get("page")) || 1;
+      const totalAlbums = albumList.length;
+      const totalPages = Math.ceil(totalAlbums / ALBUMS_PER_PAGE);
+      const startIdx = (page - 1) * ALBUMS_PER_PAGE;
+      const pageAlbums = albumList.slice(startIdx, startIdx + ALBUMS_PER_PAGE);
+
+      // Generate albums HTML
+      const albumsHtml = await Promise.all(pageAlbums.map(async album => {
+        let thumbUrl = "/images/placeholder.jpg";
+        let hasImage = false;
+        
+        if (album.thumbnail) {
+          try {
+            const thumbObj = await env.media.get(album.thumbnail);
+            if (thumbObj) {
+              const ext = album.thumbnail.split(".").pop();
+              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+              hasImage = true;
+            }
+          } catch (e) {}
+        }
+
+        // Get primary artist
+        let primaryArtist = "Various Artists";
+        if (album.artists && album.artists.length > 0) {
+          const artistObj = artists[album.artists[0]];
+          if (artistObj) primaryArtist = artistObj.name;
+        }
+
+        const trackCount = album.songs?.length || 0;
+        const date = new Date(album.created);
+        const formattedDate = date.toLocaleDateString('en-GB', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+
+        // Determine if we should use album-style or image
+        const thumbnailClass = hasImage ? '' : 'album-style';
+        
+        return `
+          <div class="album-item" onclick="window.location='/album/${album.id}'">
+            <div class="album-thumbnail ${thumbnailClass}">
+              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
+            </div>
+            <div class="album-info">
+              <span class="album-title">${primaryArtist} - ${album.title}</span>
+              <div class="album-meta">
+                <span class="album-artist">${primaryArtist}</span>
+                <span class="album-tracks">${trackCount} Tracks</span>
+                <span class="album-genre">Album</span>
+              </div>
+              <span class="album-date">${formattedDate}</span>
+            </div>
+          </div>
+        `;
+      }));
+
+      // Generate pagination HTML
+      let paginationHtml = '';
+      if (totalPages > 1) {
+        paginationHtml = `<div class="pagination-container"><div class="pagination">`;
+        
+        // Previous button
+        paginationHtml += `<a href="/albums?page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
+        
+        // Page numbers
+        for (let i = 1; i <= totalPages; i++) {
+          if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
+            paginationHtml += `<a href="/albums?page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
+          } else if (i === page-3 || i === page+3) {
+            paginationHtml += `<span class="pagination-ellipsis">...</span>`;
+          }
+        }
+        
+        // Next button
+        paginationHtml += `<a href="/albums?page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
+        paginationHtml += `</div></div>`;
+      }
+
+      // ---------- RIGHT SIDEBAR CONTENT ----------
+      
+      // 1. FEATURED ALBUMS (3 random or top albums)
+      const featuredAlbums = Object.values(albums)
+        .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
+        .slice(0, 3);
+      
+      const featuredAlbumsHtml = await Promise.all(featuredAlbums.map(async album => {
+        let thumbUrl = "/images/placeholder.jpg";
+        let hasImage = false;
+        
+        if (album.thumbnail) {
+          try {
+            const thumbObj = await env.media.get(album.thumbnail);
+            if (thumbObj) {
+              const ext = album.thumbnail.split(".").pop();
+              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+              hasImage = true;
+            }
+          } catch (e) {}
+        }
+
+        let primaryArtist = "Various";
+        if (album.artists && album.artists.length > 0) {
+          const artistObj = artists[album.artists[0]];
+          if (artistObj) primaryArtist = artistObj.name;
+        }
+
+        const thumbnailClass = hasImage ? '' : 'album-style';
+        
+        return `
+          <div class="album-item" onclick="window.location='/album/${album.id}'">
+            <div class="album-thumbnail ${thumbnailClass}">
+              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
+            </div>
+            <div class="album-info">
+              <span class="album-title">${primaryArtist} - ${album.title}</span>
+              <div class="album-meta">
+                <span class="album-artist">${primaryArtist}</span>
+                <span class="album-genre">Editor's Pick</span>
+              </div>
+              <span class="album-date">${album.songs?.length || 0} songs</span>
+            </div>
+          </div>
+        `;
+      }));
+
+      // 2. TOP ARTISTS (by song count)
+      const topArtists = Object.values(artists)
+        .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
+        .slice(0, 3);
+      
+      const topArtistsHtml = await Promise.all(topArtists.map(async artist => {
+        const albumCount = artist.albums?.length || 0;
+        const songCount = artist.songs?.length || 0;
+        
+        return `
+          <div class="album-item" onclick="window.location='/artists/${artist.id}'">
+            <div class="album-thumbnail artist-thumbnail"></div>
+            <div class="album-info">
+              <span class="album-title">${artist.name}</span>
+              <div class="album-meta">
+                <span class="album-artist">${albumCount} Albums</span>
+                <span class="album-genre">Artist</span>
+              </div>
+              <span class="album-date">${songCount} Songs</span>
+            </div>
+          </div>
+        `;
+      }));
+
+      // 3. GENRES (static for now - can be dynamic later)
+      const genresHtml = `
+        <div class="album-item">
+          <div class="album-thumbnail placeholder"></div>
+          <div class="album-info">
+            <span class="album-title">Zam Pop</span>
+            <div class="album-meta">
+              <span class="album-artist">${Object.values(albums).filter(a => a.title?.toLowerCase().includes('pop')).length || 8} Albums</span>
+              <span class="album-genre">Popular</span>
+            </div>
+            <span class="album-date">Most played</span>
+          </div>
+        </div>
+        <div class="album-item">
+          <div class="album-thumbnail placeholder"></div>
+          <div class="album-info">
+            <span class="album-title">Zam Hip Hop</span>
+            <div class="album-meta">
+              <span class="album-artist">${Object.values(albums).filter(a => a.title?.toLowerCase().includes('hip hop') || a.title?.toLowerCase().includes('rap')).length || 12} Albums</span>
+              <span class="album-genre">Urban</span>
+            </div>
+            <span class="album-date">Trending</span>
+          </div>
+        </div>
+        <div class="album-item">
+          <div class="album-thumbnail placeholder"></div>
+          <div class="album-info">
+            <span class="album-title">Gospel</span>
+            <div class="album-meta">
+              <span class="album-artist">${Object.values(albums).filter(a => a.title?.toLowerCase().includes('gospel')).length || 6} Albums</span>
+              <span class="album-genre">Spiritual</span>
+            </div>
+            <span class="album-date">Rising</span>
+          </div>
+        </div>
+      `;
+
+      // 4. NEW RELEASES (latest 2 albums)
+      const newReleases = Object.values(albums)
+        .sort((a, b) => b.created - a.created)
+        .slice(0, 2);
+      
+      const newReleasesHtml = await Promise.all(newReleases.map(async album => {
+        let thumbUrl = "/images/placeholder.jpg";
+        let hasImage = false;
+        
+        if (album.thumbnail) {
+          try {
+            const thumbObj = await env.media.get(album.thumbnail);
+            if (thumbObj) {
+              const ext = album.thumbnail.split(".").pop();
+              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+              hasImage = true;
+            }
+          } catch (e) {}
+        }
+
+        let primaryArtist = "Various";
+        if (album.artists && album.artists.length > 0) {
+          const artistObj = artists[album.artists[0]];
+          if (artistObj) primaryArtist = artistObj.name;
+        }
+
+        const date = new Date(album.created);
+        const now = new Date();
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const timeAgo = diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+
+        const thumbnailClass = hasImage ? '' : 'album-style';
+        
+        return `
+          <div class="album-item" onclick="window.location='/album/${album.id}'">
+            <div class="album-thumbnail ${thumbnailClass}">
+              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
+            </div>
+            <div class="album-info">
+              <span class="album-title">${primaryArtist} - ${album.title}</span>
+              <div class="album-meta">
+                <span class="album-artist">${primaryArtist}</span>
+                <span class="album-genre">Album</span>
+              </div>
+              <span class="album-date">${timeAgo}</span>
+            </div>
+          </div>
+        `;
+      }));
+
+      // Replace all placeholders
+      html = html.replace(
+        /<!-- ALBUM 1 - Artist - Album Title format -->[\s\S]*?<!-- ALBUM 12 -->/g,
+        albumsHtml.join('')
+      );
+      
+      html = html.replace(
+        /<div class="pagination-container">[\s\S]*?<\/div>/,
+        paginationHtml
+      );
+      
+      html = html.replace(
+        /<!-- FEATURED ALBUMS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
+        `<!-- FEATURED ALBUMS -->\n${featuredAlbumsHtml.join('')}\n            </section>`
+      );
+      
+      html = html.replace(
+        /<!-- TOP ARTISTS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
+        `<!-- TOP ARTISTS -->\n${topArtistsHtml.join('')}\n            </section>`
+      );
+      
+      html = html.replace(
+        /<!-- GENRES -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
+        `<!-- GENRES -->\n${genresHtml}\n            </section>`
+      );
+      
+      html = html.replace(
+        /<!-- NEW RELEASES -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
+        `<!-- NEW RELEASES -->\n${newReleasesHtml.join('')}\n            </section>`
+      );
+
+      // Update breadcrumb link
+      html = html.replace(
+        /<a href="index\.html" class="breadcrumb-link">/g,
+        '<a href="/" class="breadcrumb-link">'
+      );
+
+      // Update mobile nav active state and links
+      html = html.replace(
+        /<a href="#" class="nav-item active">Albums<\/a>/,
+        '<a href="/albums" class="nav-item active">Albums</a>'
+      );
+      
+      html = html.replace(
+        /<a href="#" class="nav-item">Home<\/a>/,
+        '<a href="/" class="nav-item">Home</a>'
+      );
+      
+      html = html.replace(
+        /<a href="#" class="nav-item">Artists<\/a>/,
+        '<a href="/artists" class="nav-item">Artists</a>'
+      );
+
+      return new Response(html, { 
+        headers: { 
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=300"
+        } 
+      });
     }
 
     // =========================
@@ -870,76 +1128,85 @@ export default {
     }
 
     // =========================
-    // ARTISTS PAGE (UPDATED ROUTE)
+    // ARTISTS PAGE
     // =========================
-    if (path === "/artists" || (path.startsWith("/artists/") && !path.startsWith("/artists/create"))) {
-      // Handle /artists (list all artists)
-      if (path === "/artists") {
-        const artists = await getArtists();
-        const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
-        
-        const artistCards = await Promise.all(artistList.map(async artist => {
-          let thumbUrl = "/images/placeholder.jpg";
-          if (artist.thumbnail) {
-            const thumbObj = await env.media.get(artist.thumbnail);
-            if (thumbObj) {
-              const ext = artist.thumbnail.split(".").pop();
-              thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            }
-          }
-          
-          const albumCount = artist.albums ? artist.albums.length : 0;
-          
-          return `
-            <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:200px; vertical-align:top; text-align:center;">
-              <img src="${thumbUrl}" alt="${artist.name}" style="width:150px; height:150px; object-fit:cover; border-radius:50%; margin-bottom:10px;">
-              <h3 style="margin:10px 0 5px 0;"><a href="/artists/${artist.id}">${artist.name}</a></h3>
-              <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">
-                ${artist.songs.length} songs<br>
-                ${albumCount} albums
-              </p>
-            </div>
-          `;
-        }));
-
-        const html = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <title>All Artists</title>
-          <style>
-            body { font-family: Arial,sans-serif; padding:20px; background:#f0f0f0; }
-            .header { text-align:center; margin-bottom:30px; }
-            .artists-grid { text-align:center; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>All Artists</h1>
-            <p><a href="/">← Back to Home</a> | <a href="/upload">Upload New Song</a> | <a href="/artist/create">Create New Artist</a></p>
-          </div>
-          <div class="artists-grid">
-            ${artistCards.join("")}
-          </div>
-        </body>
-        </html>
-        `;
-        return new Response(html, { 
-          headers: { 
-            "Content-Type": "text/html",
-            "Cache-Control": "public, max-age=300"
-          } 
-        });
-      }
+    if (path === "/artists") {
+      const artists = await getArtists();
+      const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
       
-      // Handle /artists/:id (single artist) - redirect to /artist/:id for backward compatibility
+      const artistCards = await Promise.all(artistList.map(async artist => {
+        let thumbUrl = "/images/placeholder.jpg";
+        if (artist.thumbnail) {
+          const thumbObj = await env.media.get(artist.thumbnail);
+          if (thumbObj) {
+            const ext = artist.thumbnail.split(".").pop();
+            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+          }
+        }
+        
+        const albumCount = artist.albums ? artist.albums.length : 0;
+        
+        return `
+          <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:200px; vertical-align:top; text-align:center;">
+            <img src="${thumbUrl}" alt="${artist.name}" style="width:150px; height:150px; object-fit:cover; border-radius:50%; margin-bottom:10px;">
+            <h3 style="margin:10px 0 5px 0;"><a href="/artists/${artist.id}">${artist.name}</a></h3>
+            <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">
+              ${artist.songs.length} songs<br>
+              ${albumCount} albums
+            </p>
+          </div>
+        `;
+      }));
+
+      const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>All Artists</title>
+        <style>
+          body { font-family: Arial,sans-serif; padding:20px; background:#f0f0f0; }
+          .header { text-align:center; margin-bottom:30px; }
+          .artists-grid { text-align:center; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>All Artists</h1>
+          <p><a href="/">← Back to Home</a> | <a href="/upload">Upload New Song</a> | <a href="/artist/create">Create New Artist</a></p>
+        </div>
+        <div class="artists-grid">
+          ${artistCards.join("")}
+        </div>
+      </body>
+      </html>
+      `;
+      return new Response(html, { 
+        headers: { 
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=300"
+        } 
+      });
+    }
+
+    // =========================
+    // ARTIST PAGE (SINGLE)
+    // =========================
+    if (path.startsWith("/artists/") && !path.startsWith("/artists/create")) {
       const artistId = decodeURIComponent(path.replace("/artists/", ""));
+      
+      const artists = await getArtists();
+      const artist = artists[artistId];
+      
+      if (!artist) {
+        return new Response("Artist not found", { status: 404 });
+      }
+
       return Response.redirect(`/artist/${artistId}`, 301);
     }
 
     // =========================
-    // ARTIST PAGE (SINGLE) - Keep for backward compatibility
+    // ARTIST PAGE (SINGLE) - LEGACY ROUTE
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -1114,7 +1381,7 @@ export default {
     }
 
     // =========================
-    // HOMEPAGE - NEW DESIGN WITH LATEST SONGS
+    // HOMEPAGE - DYNAMIC WITH LATEST SONGS
     // =========================
     if (path === "/") {
       const now = Date.now();
@@ -1209,7 +1476,7 @@ export default {
         paginationHtml += `</div></div>`;
       }
 
-      // ---------- LATEST SONGS (NEW SECTION) ----------
+      // ---------- LATEST SONGS ----------
       const songsList = await env.media.list({ prefix: "songs/", limit: 50 });
       const songFiles = songsList.objects || [];
       songFiles.sort((a, b) => b.uploaded - a.uploaded);
@@ -1697,7 +1964,6 @@ export default {
           button:hover { background:#2980b9; }
           .back-link { margin-top:20px; }
           .current-assignments { margin-top:30px; padding:15px; background:#f8f9fa; border-radius:8px; }
-          .assignment-item { padding:5px 0; border-bottom:1px solid #eee; }
         </style>
         <script>
           async function assignAlbumToArtist() {
@@ -1724,10 +1990,6 @@ export default {
               alert('Error: ' + result.error);
             }
           }
-          
-          async function loadCurrentAssignments() {}
-          
-          document.addEventListener('DOMContentLoaded', loadCurrentAssignments);
         </script>
       </head>
       <body>
@@ -1761,11 +2023,6 @@ export default {
           <div class="current-assignments">
             <h3>Current Album-Artist Assignments</h3>
             <p><em>Note: Albums are automatically assigned when songs are uploaded to albums.</em></p>
-            <p>To manually assign albums:</p>
-            <ol>
-              <li>Upload a song and select an album</li>
-              <li>Or use the form above</li>
-            </ol>
           </div>
         </div>
       </body>
