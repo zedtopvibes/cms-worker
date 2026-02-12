@@ -491,7 +491,7 @@ export default {
       if (albumId && albumId !== "" && albumId !== "__create_new__") {
         await addSongToAlbum(albumId, baseName);
         await addAlbumToArtist(artistId, albumId);
-        await addArtistToAlbum(artistId, albumId); // NEW: bidirectional linking
+        await addArtistToAlbum(artistId, albumId);
       }
       
       await addSongToArtist(artistId, baseName);
@@ -592,12 +592,11 @@ export default {
     }
 
     // =========================
-    // ALBUM PAGE
+    // ALBUMS PAGE (UPDATED ROUTE)
     // =========================
-    if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
-      const albumId = decodeURIComponent(path.replace("/album/", ""));
-      
-      if (albumId === "") {
+    if (path === "/albums" || (path.startsWith("/albums/") && !path.startsWith("/albums/create"))) {
+      // Handle /albums (list all albums)
+      if (path === "/albums") {
         const albums = await getAlbums();
         const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
         
@@ -648,7 +647,18 @@ export default {
           } 
         });
       }
+      
+      // Handle /albums/:id (single album) - redirect to /album/:id for backward compatibility
+      const albumId = decodeURIComponent(path.replace("/albums/", ""));
+      return Response.redirect(`/album/${albumId}`, 301);
+    }
 
+    // =========================
+    // ALBUM PAGE (SINGLE)
+    // =========================
+    if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
+      const albumId = decodeURIComponent(path.replace("/album/", ""));
+      
       const albums = await getAlbums();
       const album = albums[albumId];
       
@@ -698,7 +708,7 @@ export default {
       const artistLinks = albumArtists.map(artistId => {
         const artist = artists[artistId];
         if (artist) {
-          return `<a href="/artist/${artistId}" style="display:inline-block; margin:5px; padding:5px 10px; background:#3498db; color:white; border-radius:15px; text-decoration:none;">${artist.name}</a>`;
+          return `<a href="/artists/${artistId}" style="display:inline-block; margin:5px; padding:5px 10px; background:#3498db; color:white; border-radius:15px; text-decoration:none;">${artist.name}</a>`;
         }
         return '';
       }).filter(link => link).join('');
@@ -732,7 +742,7 @@ export default {
           ` : ''}
           
           <p>
-            <a href="/album">← All Albums</a> | 
+            <a href="/albums">← All Albums</a> | 
             <a href="/">Home</a> | 
             <a href="/upload">Upload</a>
           </p>
@@ -853,19 +863,18 @@ export default {
       const html = `
         <h1>Artist Created Successfully!</h1>
         <p>Artist: ${name}</p>
-        <p><a href="/artist/${artistId}">View Artist Page</a></p>
+        <p><a href="/artists/${artistId}">View Artist Page</a></p>
         <p><a href="/upload">← Back to Upload</a></p>
       `;
       return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
     }
 
     // =========================
-    // ARTISTS PAGE
+    // ARTISTS PAGE (UPDATED ROUTE)
     // =========================
-    if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-      const artistId = decodeURIComponent(path.replace("/artist/", ""));
-      
-      if (artistId === "") {
+    if (path === "/artists" || (path.startsWith("/artists/") && !path.startsWith("/artists/create"))) {
+      // Handle /artists (list all artists)
+      if (path === "/artists") {
         const artists = await getArtists();
         const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
         
@@ -884,7 +893,7 @@ export default {
           return `
             <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:200px; vertical-align:top; text-align:center;">
               <img src="${thumbUrl}" alt="${artist.name}" style="width:150px; height:150px; object-fit:cover; border-radius:50%; margin-bottom:10px;">
-              <h3 style="margin:10px 0 5px 0;"><a href="/artist/${artist.id}">${artist.name}</a></h3>
+              <h3 style="margin:10px 0 5px 0;"><a href="/artists/${artist.id}">${artist.name}</a></h3>
               <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">
                 ${artist.songs.length} songs<br>
                 ${albumCount} albums
@@ -923,7 +932,18 @@ export default {
           } 
         });
       }
+      
+      // Handle /artists/:id (single artist) - redirect to /artist/:id for backward compatibility
+      const artistId = decodeURIComponent(path.replace("/artists/", ""));
+      return Response.redirect(`/artist/${artistId}`, 301);
+    }
 
+    // =========================
+    // ARTIST PAGE (SINGLE) - Keep for backward compatibility
+    // =========================
+    if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
+      const artistId = decodeURIComponent(path.replace("/artist/", ""));
+      
       const artists = await getArtists();
       const artist = artists[artistId];
       
@@ -1071,7 +1091,7 @@ export default {
             </div>
           </div>
           <p>
-            <a href="/artist">← All Artists</a> | 
+            <a href="/artists">← All Artists</a> | 
             <a href="/">Home</a> | 
             <a href="/upload">Upload</a>
           </p>
@@ -1094,7 +1114,7 @@ export default {
     }
 
     // =========================
-    // NEW DESIGN HOMEPAGE - COMPLETE DYNAMIC VERSION
+    // HOMEPAGE - NEW DESIGN WITH LATEST SONGS
     // =========================
     if (path === "/") {
       const now = Date.now();
@@ -1189,6 +1209,61 @@ export default {
         paginationHtml += `</div></div>`;
       }
 
+      // ---------- LATEST SONGS (NEW SECTION) ----------
+      const songsList = await env.media.list({ prefix: "songs/", limit: 50 });
+      const songFiles = songsList.objects || [];
+      songFiles.sort((a, b) => b.uploaded - a.uploaded);
+      const latestSongs = songFiles.slice(0, 3);
+      
+      const latestSongsHtml = await Promise.all(latestSongs.map(async f => {
+        const fileName = f.key.split("/")[1];
+        const baseName = fileName.replace(".mp3", "");
+        const [artistId, ...titleParts] = baseName.split("_");
+        const title = titleParts.join(" ");
+        
+        let artistName = artistId;
+        const artist = artists[artistId];
+        if (artist) artistName = artist.name;
+        
+        let thumbUrl = "/images/placeholder.jpg";
+        try {
+          const jpgObj = await env.media.get(`images/${baseName}.jpg`);
+          if (jpgObj) {
+            thumbUrl = `/images/${encodeURIComponent(baseName)}.jpg`;
+          } else {
+            const pngObj = await env.media.get(`images/${baseName}.png`);
+            if (pngObj) {
+              thumbUrl = `/images/${encodeURIComponent(baseName)}.png`;
+            }
+          }
+        } catch (e) {}
+        
+        const date = new Date(f.uploaded);
+        const formattedDate = date.toLocaleDateString('en-GB', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+        
+        const hasImage = thumbUrl !== '/images/placeholder.jpg';
+        
+        return `
+          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(fileName)}'">
+            <div class="album-thumbnail song-thumbnail" ${hasImage ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"` : ''}>
+              ${hasImage ? '' : ''}
+            </div>
+            <div class="album-info">
+              <span class="album-title">${title}</span>
+              <div class="album-meta">
+                <span class="album-artist">${artistName}</span>
+                <span class="song-stats">Single</span>
+              </div>
+              <span class="album-date">${formattedDate}</span>
+            </div>
+          </div>
+        `;
+      }));
+
       // ---------- FEATURED ARTISTS (top 4 by song count) ----------
       const featuredArtists = artistList.slice(0, 4);
       const featuredArtistsHtml = await Promise.all(featuredArtists.map(async artist => {
@@ -1211,7 +1286,7 @@ export default {
           : '';
         
         return `
-          <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+          <div class="album-item" onclick="window.location='/artists/${artist.id}'">
             <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
             <div class="album-info">
               <span class="album-title">${artist.name}</span>
@@ -1276,7 +1351,7 @@ export default {
       const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
       
       const playlistsHtml = `
-        <div class="album-item" onclick="window.location='/album'">
+        <div class="album-item" onclick="window.location='/albums'">
           <div class="album-thumbnail playlist-thumbnail"></div>
           <div class="album-info">
             <span class="album-title">All Albums</span>
@@ -1287,7 +1362,7 @@ export default {
             <span class="album-date">Updated recently</span>
           </div>
         </div>
-        <div class="album-item" onclick="window.location='/artist'">
+        <div class="album-item" onclick="window.location='/artists'">
           <div class="album-thumbnail playlist-thumbnail"></div>
           <div class="album-info">
             <span class="album-title">All Artists</span>
@@ -1311,7 +1386,7 @@ export default {
         </div>
       `;
 
-      // ---------- TRENDING ALBUMS (also top 3 by song count) ----------
+      // ---------- TRENDING ALBUMS (top 3 by song count) ----------
       const trending = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -1367,6 +1442,11 @@ export default {
       html = html.replace(
         /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
         `<!-- PAGINATION_START -->${paginationHtml}<!-- PAGINATION_END -->`
+      );
+      
+      html = html.replace(
+        /<!-- LATEST_SONGS_START -->[\s\S]*?<!-- LATEST_SONGS_END -->/g,
+        `<!-- LATEST_SONGS_START -->${latestSongsHtml.join('')}<!-- LATEST_SONGS_END -->`
       );
       
       html = html.replace(
@@ -1561,10 +1641,10 @@ export default {
         
         if (assign) {
           await addAlbumToArtist(artistId, albumId);
-          await addArtistToAlbum(artistId, albumId); // NEW: bidirectional
+          await addArtistToAlbum(artistId, albumId);
         } else {
           await removeAlbumFromArtist(artistId, albumId);
-          await removeArtistFromAlbum(artistId, albumId); // NEW: bidirectional
+          await removeArtistFromAlbum(artistId, albumId);
         }
         
         return new Response(JSON.stringify({ 
@@ -1674,8 +1754,8 @@ export default {
           
           <div class="back-link">
             <a href="/">← Back to Home</a> | 
-            <a href="/album">View Albums</a> | 
-            <a href="/artist">View Artists</a>
+            <a href="/albums">View Albums</a> | 
+            <a href="/artists">View Artists</a>
           </div>
           
           <div class="current-assignments">
@@ -1695,6 +1775,17 @@ export default {
       return new Response(html, { 
         headers: { ...CORS_HEADERS, "Content-Type": "text/html" } 
       });
+    }
+
+    // =========================
+    // REDIRECT OLD ROUTES TO NEW ONES
+    // =========================
+    if (path === "/album") {
+      return Response.redirect("/albums", 301);
+    }
+    
+    if (path === "/artist") {
+      return Response.redirect("/artists", 301);
     }
 
     // =========================
