@@ -912,7 +912,7 @@ export default {
     }
 
     // =========================
-    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE
+    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (FIXED)
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
       const albumId = decodeURIComponent(path.replace("/album/", ""));
@@ -951,12 +951,15 @@ export default {
 
       // Calculate total duration (mock for now - would need actual song durations)
       const trackCount = album.songs?.length || 0;
-      const totalDuration = `${trackCount * 4} min`; // Approximate
+      const totalMinutes = trackCount * 4; // Approximate
+      const totalHours = Math.floor(totalMinutes / 60);
+      const totalMins = totalMinutes % 60;
+      const totalDuration = totalHours > 0 ? `${totalHours} hr ${totalMins} min` : `${totalMins} min`;
 
       // Get album thumbnail
-      let albumCoverHtml = '';
       let hasImage = false;
       let thumbUrl = "/images/placeholder.jpg";
+      let albumCoverHtml = `<i class="fas fa-compact-disc"></i>`;
       
       if (album.thumbnail) {
         try {
@@ -965,7 +968,7 @@ export default {
             const ext = album.thumbnail.split(".").pop();
             thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
             hasImage = true;
-            albumCoverHtml = `<img src="${thumbUrl}" alt="${album.title}" style="width:100%; height:100%; object-fit:cover;">`;
+            albumCoverHtml = `<img src="${thumbUrl}" alt="${album.title}">`;
           }
         } catch (e) {}
       }
@@ -1001,10 +1004,15 @@ export default {
         
         const trackNumber = (index + 1).toString().padStart(2, '0');
         
+        const thumbnailClass = hasImage ? '' : 'track-placeholder';
+        const thumbnailContent = hasImage 
+          ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` 
+          : '';
+        
         return `
           <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}'">
-            <div class="album-thumbnail ${hasImage ? '' : 'track-placeholder'}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : ''}
+            <div class="album-thumbnail ${thumbnailClass}">
+              ${thumbnailContent}
             </div>
             <div class="album-info">
               <span class="album-title">${title}</span>
@@ -1017,17 +1025,18 @@ export default {
             </div>
           </div>
         `;
-      }));
+      })).then(results => results.join(''));
 
       // Generate pagination if needed (more than 12 tracks)
       let paginationHtml = '';
       if (trackCount > 12) {
+        const totalPages = Math.ceil(trackCount / 12);
         paginationHtml = `<div class="pagination-container"><div class="pagination">
           <a href="#" class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</a>
           <a href="#" class="pagination-item active">1</a>
           <a href="#" class="pagination-item">2</a>
           <span class="pagination-ellipsis">...</span>
-          <a href="#" class="pagination-item">${Math.ceil(trackCount / 12)}</a>
+          <a href="#" class="pagination-item">${totalPages}</a>
           <a href="#" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>
         </div></div>`;
       }
@@ -1036,6 +1045,8 @@ export default {
       
       // 1. MORE BY THIS ARTIST
       let moreByArtistHtml = '';
+      let moreByArtistTitle = `More by ${primaryArtist}`;
+      
       if (primaryArtistId) {
         const artistAlbums = Object.values(albums)
           .filter(a => a.artists?.includes(primaryArtistId) && a.id !== albumId)
@@ -1065,11 +1076,14 @@ export default {
           });
           
           const thumbnailClass = hasImage ? '' : 'album-style';
+          const thumbnailContent = hasImage 
+            ? `<img src="${thumbUrl}" alt="${a.title}" loading="lazy">` 
+            : '';
           
           return `
             <div class="album-item" onclick="window.location='/album/${a.id}'">
               <div class="album-thumbnail ${thumbnailClass}">
-                ${hasImage ? `<img src="${thumbUrl}" alt="${a.title}" loading="lazy">` : ''}
+                ${thumbnailContent}
               </div>
               <div class="album-info">
                 <span class="album-title">${primaryArtist} - ${a.title}</span>
@@ -1090,7 +1104,7 @@ export default {
         moreByArtistHtml = `<div style="padding: 20px; text-align: center; color: #666;">No other albums available</div>`;
       }
 
-      // 2. SIMILAR ALBUMS (by other artists in same genre - mock)
+      // 2. SIMILAR ALBUMS (by other artists)
       const similarAlbums = Object.values(albums)
         .filter(a => a.id !== albumId && a.artists && a.artists.length > 0)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
@@ -1125,11 +1139,14 @@ export default {
         });
 
         const thumbnailClass = hasImage ? '' : 'album-style';
+        const thumbnailContent = hasImage 
+          ? `<img src="${thumbUrl}" alt="${a.title}" loading="lazy">` 
+          : '';
         
         return `
           <div class="album-item" onclick="window.location='/album/${a.id}'">
             <div class="album-thumbnail ${thumbnailClass}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${a.title}" loading="lazy">` : ''}
+              ${thumbnailContent}
             </div>
             <div class="album-info">
               <span class="album-title">${artistName} - ${a.title}</span>
@@ -1163,131 +1180,179 @@ export default {
       // 4. FEATURED ARTISTS (other artists on this album)
       let featuredArtistsHtml = '';
       if (album.artists && album.artists.length > 1) {
-        const featuredArtistsList = album.artists.slice(1).map(artistId => {
+        const featuredArtistsList = await Promise.all(album.artists.slice(1).map(async artistId => {
           const artist = artists[artistId];
           if (artist) {
+            // Count tracks by this artist on the album
+            const trackCountOnAlbum = album.songs.filter(song => song.startsWith(artistId)).length;
+            
+            let thumbUrl = "/images/placeholder.jpg";
+            let hasImage = false;
+            
+            if (artist.thumbnail) {
+              try {
+                const thumbObj = await env.media.get(artist.thumbnail);
+                if (thumbObj) {
+                  const ext = artist.thumbnail.split(".").pop();
+                  thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+                  hasImage = true;
+                }
+              } catch (e) {}
+            }
+            
+            const bgStyle = hasImage 
+              ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
+              : '';
+            
             return `
               <div class="album-item" onclick="window.location='/artists/${artistId}'">
-                <div class="album-thumbnail artist-thumbnail"></div>
+                <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
                 <div class="album-info">
                   <span class="album-title">${artist.name}</span>
                   <div class="album-meta">
                     <span class="album-artist">Featured Artist</span>
-                    <span class="album-genre">Artist</span>
+                    <span class="album-genre">${trackCountOnAlbum} track${trackCountOnAlbum !== 1 ? 's' : ''}</span>
                   </div>
-                  <span class="album-date">${artist.songs?.length || 0} songs</span>
+                  <span class="album-date">${trackCountOnAlbum} tracks</span>
                 </div>
               </div>
             `;
           }
           return '';
-        }).join('');
+        }));
         
-        featuredArtistsHtml = featuredArtistsList || `<div style="padding: 20px; text-align: center; color: #666;">No featured artists</div>`;
+        featuredArtistsHtml = featuredArtistsList.join('') || `<div style="padding: 20px; text-align: center; color: #666;">No featured artists</div>`;
       } else {
         featuredArtistsHtml = `<div style="padding: 20px; text-align: center; color: #666;">No featured artists</div>`;
       }
 
-      // Replace all placeholders
+      // ========== REPLACE ALL PLACEHOLDERS ==========
+      
+      // Title
       html = html.replace(
         /<title>.*?<\/title>/,
         `<title>${primaryArtist} - ${album.title} - ZEDALBUMS.TOP</title>`
       );
       
-      // Breadcrumbs
+      // Breadcrumbs - Home
       html = html.replace(
         /<a href="index\.html" class="breadcrumb-link">/g,
         '<a href="/" class="breadcrumb-link">'
       );
       
+      // Breadcrumbs - Albums
       html = html.replace(
         /<a href="albums\.html" class="breadcrumb-link">/g,
         '<a href="/albums" class="breadcrumb-link">'
       );
       
+      // Breadcrumbs - Artist
       html = html.replace(
-        /<a href="artist-yo-maps\.html" class="breadcrumb-link">/g,
-        primaryArtistId ? `<a href="/artists/${primaryArtistId}" class="breadcrumb-link">` : '<a href="/artists" class="breadcrumb-link">'
+        /<!-- ARTIST_BREADCRUMB_START -->[\s\S]*?<!-- ARTIST_BREADCRUMB_END -->/g,
+        primaryArtistId 
+          ? `<!-- ARTIST_BREADCRUMB_START --><a href="/artists/${primaryArtistId}" class="breadcrumb-link"><i class="fas fa-user"></i>${primaryArtist}</a><!-- ARTIST_BREADCRUMB_END -->`
+          : `<!-- ARTIST_BREADCRUMB_START --><a href="/artists" class="breadcrumb-link"><i class="fas fa-user"></i>Artists</a><!-- ARTIST_BREADCRUMB_END -->`
       );
       
+      // Breadcrumbs - Current Album
       html = html.replace(
-        /<span class="breadcrumb-current">.*?<\/span>/,
-        `<span class="breadcrumb-current"><i class="fas fa-compact-disc"></i>${album.title}</span>`
+        /<!-- ALBUM_BREADCRUMB_START -->[\s\S]*?<!-- ALBUM_BREADCRUMB_END -->/g,
+        `<!-- ALBUM_BREADCRUMB_START --><span class="breadcrumb-current"><i class="fas fa-compact-disc"></i>${album.title}</span><!-- ALBUM_BREADCRUMB_END -->`
       );
       
-      // Album header
+      // Album Cover
       html = html.replace(
-        /<div class="album-cover-large">[\s\S]*?<\/div>/,
-        `<div class="album-cover-large">${hasImage ? albumCoverHtml : '<i class="fas fa-compact-disc"></i>'}</div>`
+        /<!-- ALBUM_COVER_START -->[\s\S]*?<!-- ALBUM_COVER_END -->/g,
+        `<!-- ALBUM_COVER_START --><div class="album-cover-large">${albumCoverHtml}</div><!-- ALBUM_COVER_END -->`
       );
       
+      // Album Title
       html = html.replace(
-        /<h1 class="album-title-detail">.*?<\/h1>/,
-        `<h1 class="album-title-detail">${primaryArtist} - ${album.title}</h1>`
+        /<!-- ALBUM_TITLE_START -->[\s\S]*?<!-- ALBUM_TITLE_END -->/g,
+        `<!-- ALBUM_TITLE_START --><h1 class="album-title-detail">${primaryArtist} - ${album.title}</h1><!-- ALBUM_TITLE_END -->`
       );
       
+      // Artist Name
       html = html.replace(
-        /<div class="album-artist-detail">.*?<\/div>/,
-        `<div class="album-artist-detail">${primaryArtist}</div>`
+        /<!-- ARTIST_NAME_START -->[\s\S]*?<!-- ARTIST_NAME_END -->/g,
+        `<!-- ARTIST_NAME_START --><div class="album-artist-detail">${primaryArtist}</div><!-- ARTIST_NAME_END -->`
       );
       
+      // Track Count
       html = html.replace(
-        /<div class="album-stats">\s*<i class="fas fa-music"><\/i>\s*\d+ Songs\s*<\/div>/,
-        `<div class="album-stats"><i class="fas fa-music"></i>${trackCount} Songs</div>`
+        /<!-- TRACK_COUNT_START -->[\s\S]*?<!-- TRACK_COUNT_END -->/g,
+        `<!-- TRACK_COUNT_START --><div class="album-stats"><i class="fas fa-music"></i>${trackCount} Songs</div><!-- TRACK_COUNT_END -->`
       );
       
+      // Duration
       html = html.replace(
-        /<div class="album-stats">\s*<i class="fas fa-clock"><\/i>\s*[^<]+<\/div>/,
-        `<div class="album-stats"><i class="fas fa-clock"></i>${totalDuration}</div>`
+        /<!-- DURATION_START -->[\s\S]*?<!-- DURATION_END -->/g,
+        `<!-- DURATION_START --><div class="album-stats"><i class="fas fa-clock"></i>${totalDuration}</div><!-- DURATION_END -->`
       );
       
+      // Release Date
       html = html.replace(
-        /<div class="album-stats">\s*<i class="fas fa-calendar"><\/i>\s*Released: [^<]+<\/div>/,
-        `<div class="album-stats"><i class="fas fa-calendar"></i>Released: ${formattedDate}</div>`
+        /<!-- RELEASE_DATE_START -->[\s\S]*?<!-- RELEASE_DATE_END -->/g,
+        `<!-- RELEASE_DATE_START --><div class="album-stats"><i class="fas fa-calendar"></i>Released: ${formattedDate}</div><!-- RELEASE_DATE_END -->`
       );
       
+      // Album Description
       html = html.replace(
-        /<p class="album-description">[\s\S]*?<\/p>/,
-        `<p class="album-description">${album.description || 'No description available.'}</p>`
+        /<!-- ALBUM_DESCRIPTION_START -->[\s\S]*?<!-- ALBUM_DESCRIPTION_END -->/g,
+        `<!-- ALBUM_DESCRIPTION_START --><p class="album-description">${album.description || 'No description available.'}</p><!-- ALBUM_DESCRIPTION_END -->`
       );
       
-      // Tracklist
+      // Tracks
       html = html.replace(
-        /<!-- TRACK 1 -->[\s\S]*?<!-- TRACK 12 -->/g,
-        tracksHtml.join('')
+        /<!-- TRACKS_START -->[\s\S]*?<!-- TRACKS_END -->/g,
+        `<!-- TRACKS_START -->${tracksHtml}<!-- TRACKS_END -->`
       );
       
       // Pagination
       html = html.replace(
-        /<div class="pagination-container">[\s\S]*?<\/div>/,
-        paginationHtml
+        /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
+        `<!-- PAGINATION_START -->${paginationHtml}<!-- PAGINATION_END -->`
       );
       
-      // More by this artist
+      // More By Artist Title
       html = html.replace(
-        /<!-- MORE BY YO MAPS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- MORE BY ${primaryArtist} -->\n${moreByArtistHtml}\n            </section>`
+        /<!-- MORE_BY_ARTIST_TITLE_START -->[\s\S]*?<!-- MORE_BY_ARTIST_TITLE_END -->/g,
+        `<!-- MORE_BY_ARTIST_TITLE_START --><h2 class="section-title">More by ${primaryArtist}</h2><!-- MORE_BY_ARTIST_TITLE_END -->`
       );
       
-      // Similar albums
+      // More By Artist Content
       html = html.replace(
-        /<!-- SIMILAR ALBUMS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- SIMILAR ALBUMS -->\n${similarAlbumsHtml}\n            </section>`
+        /<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g,
+        `<!-- MORE_BY_ARTIST_START -->${moreByArtistHtml}<!-- MORE_BY_ARTIST_END -->`
       );
       
-      // Album info
+      // Similar Albums
       html = html.replace(
-        /<!-- ALBUM INFO -->[\s\S]*?<div style="padding: 15px;[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- ALBUM INFO -->\n${albumInfoHtml}\n            </section>`
+        /<!-- SIMILAR_ALBUMS_START -->[\s\S]*?<!-- SIMILAR_ALBUMS_END -->/g,
+        `<!-- SIMILAR_ALBUMS_START -->${similarAlbumsHtml}<!-- SIMILAR_ALBUMS_END -->`
       );
       
-      // Featured artists
+      // Album Info
       html = html.replace(
-        /<!-- FEATURED ARTISTS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- FEATURED ARTISTS -->\n${featuredArtistsHtml}\n            </section>`
+        /<!-- ALBUM_INFO_START -->[\s\S]*?<!-- ALBUM_INFO_END -->/g,
+        `<!-- ALBUM_INFO_START -->${albumInfoHtml}<!-- ALBUM_INFO_END -->`
       );
       
-      // Mobile nav links
+      // Featured Artists
+      html = html.replace(
+        /<!-- FEATURED_ARTISTS_START -->[\s\S]*?<!-- FEATURED_ARTISTS_END -->/g,
+        `<!-- FEATURED_ARTISTS_START -->${featuredArtistsHtml}<!-- FEATURED_ARTISTS_END -->`
+      );
+      
+      // More by artist View All link
+      if (primaryArtistId) {
+        html = html.replace(
+          /<a href="\/artists\/yo-maps" class="view-all">View All ➔<\/a>/,
+          `<a href="/artists/${primaryArtistId}" class="view-all">View All ➔</a>`
+        );
+      }
+      
+      // Mobile nav active state
       html = html.replace(
         /<a href="#" class="nav-item active">Albums<\/a>/,
         '<a href="/albums" class="nav-item active">Albums</a>'
@@ -1479,7 +1544,7 @@ export default {
     }
 
     // =========================
-    // ARTIST PAGE (SINGLE)
+    // ARTIST PAGE (SINGLE) - REDIRECT
     // =========================
     if (path.startsWith("/artists/") && !path.startsWith("/artists/create")) {
       const artistId = decodeURIComponent(path.replace("/artists/", ""));
