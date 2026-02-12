@@ -592,7 +592,7 @@ export default {
     }
 
     // =========================
-    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE (FIXED)
+    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path === "/albums") {
       const templateObj = await env.media.get("albums.html");
@@ -1373,7 +1373,7 @@ export default {
     }
 
     // =========================
-    // HOMEPAGE - DYNAMIC WITH LATEST SONGS
+    // HOMEPAGE - DYNAMIC WITH LATEST SONGS AND TRACK COUNTS
     // =========================
     if (path === "/") {
       const now = Date.now();
@@ -1398,7 +1398,7 @@ export default {
       const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
       const artistList = Object.values(artists).sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0));
 
-      // ---------- LATEST ALBUMS with Pagination ----------
+      // ---------- LATEST ALBUMS with Pagination and TRACK COUNTS ----------
       const ALBUMS_PER_PAGE = 6;
       const page = parseInt(url.searchParams.get("page")) || 1;
       const totalAlbums = albumList.length;
@@ -1431,6 +1431,7 @@ export default {
           year: 'numeric' 
         });
 
+        const trackCount = album.songs?.length || 0;
         const hasImage = thumbUrl !== '/images/placeholder.jpg';
         const thumbnailClass = hasImage ? '' : ' placeholder';
         
@@ -1443,6 +1444,7 @@ export default {
               <span class="album-title">${album.title}</span>
               <div class="album-meta">
                 <span class="album-artist">${primaryArtist}</span>
+                <span class="album-tracks">${trackCount} Tracks</span>
                 <span class="album-genre">Album</span>
               </div>
               <span class="album-date">${formattedDate}</span>
@@ -1586,6 +1588,7 @@ export default {
           year: 'numeric' 
         });
 
+        const trackCount = album.songs?.length || 0;
         const hasImage = thumbUrl !== '/images/placeholder.jpg';
         const thumbnailClass = hasImage ? '' : ' placeholder';
         
@@ -1598,7 +1601,7 @@ export default {
               <span class="album-title">${album.title}</span>
               <div class="album-meta">
                 <span class="album-artist">${primaryArtist}</span>
-                <span class="album-genre">${album.songs?.length || 0} songs</span>
+                <span class="album-tracks">${trackCount} Tracks</span>
               </div>
               <span class="album-date">${date}</span>
             </div>
@@ -1672,6 +1675,7 @@ export default {
           year: 'numeric' 
         });
 
+        const trackCount = album.songs?.length || 0;
         const hasImage = thumbUrl !== '/images/placeholder.jpg';
         const thumbnailClass = hasImage ? '' : ' placeholder';
         
@@ -1684,7 +1688,7 @@ export default {
               <span class="album-title">${album.title}</span>
               <div class="album-meta">
                 <span class="album-artist">${primaryArtist}</span>
-                <span class="album-genre">${album.songs?.length || 0} songs</span>
+                <span class="album-tracks">${trackCount} Tracks</span>
               </div>
               <span class="album-date">${date}</span>
             </div>
@@ -1692,7 +1696,7 @@ export default {
         `;
       }));
 
-      // Replace all placeholders
+      // ---------- REPLACE ALL PLACEHOLDERS ----------
       html = html.replace(
         /<!-- LATEST_ALBUMS_START -->[\s\S]*?<!-- LATEST_ALBUMS_END -->/g,
         `<!-- LATEST_ALBUMS_START -->${latestAlbumsHtml.join('')}<!-- LATEST_ALBUMS_END -->`
