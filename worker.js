@@ -912,7 +912,7 @@ export default {
     }
 
     // =========================
-    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (FIXED)
+    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
       const albumId = decodeURIComponent(path.replace("/album/", ""));
@@ -1366,6 +1366,470 @@ export default {
       html = html.replace(
         /<a href="#" class="nav-item">Artists<\/a>/,
         '<a href="/artists" class="nav-item">Artists</a>'
+      );
+
+      return new Response(html, { 
+        headers: { 
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=300"
+        } 
+      });
+    }
+
+    // =========================
+    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (NEW)
+    // =========================
+    if (path.startsWith("/song/")) {
+      const fileName = decodeURIComponent(path.replace("/song/", ""));
+      const baseName = fileName.replace(".mp3", "");
+      
+      // Get the audio file to verify it exists
+      const audioObj = await env.media.get(`songs/${fileName}`);
+      if (!audioObj) {
+        return new Response("Song not found", { status: 404 });
+      }
+
+      // Get template from R2
+      const templateObj = await env.media.get("song.html");
+      if (!templateObj) {
+        return new Response("song.html template not found in R2", { status: 500 });
+      }
+      let html = await templateObj.text();
+
+      // Parse song info from filename
+      const [artistId, ...titleParts] = baseName.split("_");
+      const songTitle = titleParts.join(" ");
+      
+      // Get artist info
+      const artists = await getArtists();
+      const albums = await getAlbums();
+      
+      let artistName = artistId;
+      let artistObj = artists[artistId];
+      if (artistObj) {
+        artistName = artistObj.name;
+      }
+
+      // Get song description
+      let description = "";
+      const descObj = await env.media.get(`descriptions/${baseName}.txt`);
+      if (descObj) {
+        description = await descObj.text();
+      }
+
+      // Get song thumbnail
+      let hasImage = false;
+      let thumbUrl = "/images/placeholder.jpg";
+      let songCoverHtml = `<i class="fas fa-music"></i>`;
+      
+      try {
+        const jpgObj = await env.media.get(`images/${baseName}.jpg`);
+        if (jpgObj) {
+          thumbUrl = `/images/${encodeURIComponent(baseName)}.jpg`;
+          hasImage = true;
+          songCoverHtml = `<img src="${thumbUrl}" alt="${songTitle}">`;
+        } else {
+          const pngObj = await env.media.get(`images/${baseName}.png`);
+          if (pngObj) {
+            thumbUrl = `/images/${encodeURIComponent(baseName)}.png`;
+            hasImage = true;
+            songCoverHtml = `<img src="${thumbUrl}" alt="${songTitle}">`;
+          }
+        }
+      } catch (e) {}
+
+      // Get upload date
+      const uploaded = audioObj.uploaded ? new Date(audioObj.uploaded) : new Date();
+      const formattedDate = uploaded.toLocaleDateString('en-GB', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric' 
+      });
+
+      // Mock duration (would need actual duration from file metadata)
+      const duration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+      const durationSeconds = parseInt(duration.split(':')[0]) * 60 + parseInt(duration.split(':')[1]);
+
+      // Find which album this song belongs to
+      let albumInfo = null;
+      let albumId = null;
+      let trackNumber = null;
+      
+      for (const [id, album] of Object.entries(albums)) {
+        const songIndex = album.songs.indexOf(baseName);
+        if (songIndex !== -1) {
+          albumId = id;
+          albumInfo = album;
+          trackNumber = (songIndex + 1).toString().padStart(2, '0');
+          break;
+        }
+      }
+
+      // ---------- LEFT SIDEBAR: MORE FROM THIS ALBUM (PLAYLIST) ----------
+      let playlistHtml = '';
+      if (albumInfo && albumId) {
+        const albumSongs = await Promise.all(albumInfo.songs.map(async (songKey, index) => {
+          const [sid, ...stitleParts] = songKey.split("_");
+          const stitle = stitleParts.join(" ");
+          
+          let sartistName = sid;
+          const sartist = artists[sid];
+          if (sartist) sartistName = sartist.name;
+          
+          let sthumbUrl = "/images/placeholder.jpg";
+          let shasImage = false;
+          
+          try {
+            const sjpgObj = await env.media.get(`images/${songKey}.jpg`);
+            if (sjpgObj) {
+              sthumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+              shasImage = true;
+            } else {
+              const spngObj = await env.media.get(`images/${songKey}.png`);
+              if (spngObj) {
+                sthumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+                shasImage = true;
+              }
+            }
+          } catch (e) {}
+          
+          const sduration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+          const trackNum = (index + 1).toString().padStart(2, '0');
+          
+          const isCurrentSong = songKey === baseName;
+          const activeClass = isCurrentSong ? ' style="background: rgba(255, 85, 0, 0.05); border-left: 4px solid #ff5500;"' : '';
+          
+          return `
+            <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}'"${activeClass}>
+              <div class="album-thumbnail ${shasImage ? '' : 'placeholder'}">
+                ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
+              </div>
+              <div class="album-info">
+                <span class="album-title">${sartistName} - ${stitle}</span>
+                <div class="album-meta">
+                  <span class="album-artist">${sartistName}</span>
+                  <span class="song-duration">${sduration}</span>
+                </div>
+                <span class="album-date">Track ${trackNum}</span>
+              </div>
+            </div>
+          `;
+        }));
+        
+        playlistHtml = albumSongs.join('');
+      }
+
+      // ---------- RIGHT SIDEBAR: MORE BY THIS ARTIST ----------
+      let moreByArtistHtml = '';
+      if (artistId) {
+        // Get albums by this artist
+        const artistAlbums = Object.values(albums)
+          .filter(a => a.artists?.includes(artistId))
+          .sort((a, b) => b.created - a.created)
+          .slice(0, 2);
+        
+        moreByArtistHtml = await Promise.all(artistAlbums.map(async album => {
+          let thumbUrl = "/images/placeholder.jpg";
+          let hasImage = false;
+          
+          if (album.thumbnail) {
+            try {
+              const thumbObj = await env.media.get(album.thumbnail);
+              if (thumbObj) {
+                const ext = album.thumbnail.split(".").pop();
+                thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+                hasImage = true;
+              }
+            } catch (e) {}
+          }
+          
+          const date = new Date(album.created);
+          const formattedDate = date.toLocaleDateString('en-GB', { 
+            day: '2-digit', 
+            month: 'short', 
+            year: 'numeric' 
+          });
+          
+          return `
+            <div class="album-item" onclick="window.location='/album/${album.id}'">
+              <div class="album-thumbnail ${hasImage ? '' : 'placeholder'}">
+                ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
+              </div>
+              <div class="album-info">
+                <span class="album-title">${artistName} - ${album.title}</span>
+                <div class="album-meta">
+                  <span class="album-artist">${artistName}</span>
+                  <span class="album-genre">Album</span>
+                </div>
+                <span class="album-date">${formattedDate}</span>
+              </div>
+            </div>
+          `;
+        })).then(results => results.join(''));
+        
+        if (artistAlbums.length === 0) {
+          moreByArtistHtml = `<div style="padding: 15px; text-align: center; color: #666;">No albums by this artist</div>`;
+        }
+      }
+
+      // ---------- RIGHT SIDEBAR: SIMILAR SONGS ----------
+      const allSongs = await env.media.list({ prefix: "songs/", limit: 20 });
+      const songFiles = allSongs.objects || [];
+      const similarSongs = songFiles
+        .filter(f => !f.key.includes(fileName))
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 2);
+      
+      const similarSongsHtml = await Promise.all(similarSongs.map(async f => {
+        const fName = f.key.split("/")[1];
+        const fBaseName = fName.replace(".mp3", "");
+        const [fArtistId, ...fTitleParts] = fBaseName.split("_");
+        const fTitle = fTitleParts.join(" ");
+        
+        let fArtistName = fArtistId;
+        const fArtist = artists[fArtistId];
+        if (fArtist) fArtistName = fArtist.name;
+        
+        let fThumbUrl = "/images/placeholder.jpg";
+        let fHasImage = false;
+        
+        try {
+          const fJpgObj = await env.media.get(`images/${fBaseName}.jpg`);
+          if (fJpgObj) {
+            fThumbUrl = `/images/${encodeURIComponent(fBaseName)}.jpg`;
+            fHasImage = true;
+          } else {
+            const fPngObj = await env.media.get(`images/${fBaseName}.png`);
+            if (fPngObj) {
+              fThumbUrl = `/images/${encodeURIComponent(fBaseName)}.png`;
+              fHasImage = true;
+            }
+          }
+        } catch (e) {}
+        
+        const fDate = new Date(f.uploaded);
+        const fFormattedDate = fDate.toLocaleDateString('en-GB', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+        
+        const fDuration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+        
+        return `
+          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(fName)}'">
+            <div class="album-thumbnail ${fHasImage ? '' : 'placeholder'}">
+              ${fHasImage ? `<img src="${fThumbUrl}" alt="${fTitle}" loading="lazy">` : ''}
+            </div>
+            <div class="album-info">
+              <span class="album-title">${fArtistName} - ${fTitle}</span>
+              <div class="album-meta">
+                <span class="album-artist">${fArtistName}</span>
+                <span class="song-duration">${fDuration}</span>
+              </div>
+              <span class="album-date">${fFormattedDate}</span>
+            </div>
+          </div>
+        `;
+      })).then(results => results.join(''));
+
+      // ---------- RIGHT SIDEBAR: QUICK INFO ----------
+      const quickInfoHtml = `
+        <div class="quick-info-section">
+          <p><strong>Format:</strong> MP3</p>
+          <p><strong>Bitrate:</strong> 320 kbps</p>
+          <p><strong>Quality:</strong> High Quality</p>
+          <p><strong>Release Date:</strong> ${formattedDate}</p>
+          <p><strong>Genre:</strong> ${albumInfo?.genre || 'Zam Pop'}</p>
+          <p><strong>Duration:</strong> ${duration}</p>
+          <div class="info-note">
+            <i class="fas fa-info-circle" style="color: #ff5500;"></i>
+            <span>No registration required for download</span>
+          </div>
+        </div>
+      `;
+
+      // ========== REPLACE ALL PLACEHOLDERS ==========
+      
+      // Title
+      html = html.replace(
+        /<title>.*?<\/title>/,
+        `<title>${artistName} - ${songTitle} - ZEDALBUMS.TOP</title>`
+      );
+      
+      // Breadcrumbs - Home
+      html = html.replace(
+        /<a href="index\.html" class="breadcrumb-link">/g,
+        '<a href="/" class="breadcrumb-link">'
+      );
+      
+      // Breadcrumbs - Songs
+      html = html.replace(
+        /<a href="songs\.html" class="breadcrumb-link">/g,
+        '<a href="/" class="breadcrumb-link">'
+      );
+      
+      // Breadcrumbs - Artists
+      html = html.replace(
+        /<a href="artists\.html" class="breadcrumb-link">/g,
+        '<a href="/artists" class="breadcrumb-link">'
+      );
+      
+      // Breadcrumbs - Artist
+      html = html.replace(
+        /<a href="artist-yo-maps\.html" class="breadcrumb-link">/g,
+        `<a href="/artists/${artistId}" class="breadcrumb-link">${artistName}</a>`
+      );
+      
+      // Breadcrumbs - Current Song
+      html = html.replace(
+        /<span class="breadcrumb-current">.*?<\/span>/,
+        `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`
+      );
+      
+      // Song Cover
+      html = html.replace(
+        /<div class="song-cover">[\s\S]*?<\/div>/,
+        `<div class="song-cover">${songCoverHtml}</div>`
+      );
+      
+      // Song Title
+      html = html.replace(
+        /<h1 class="song-title">.*?<\/h1>/,
+        `<h1 class="song-title">${songTitle}</h1>`
+      );
+      
+      // Artist Name
+      html = html.replace(
+        /<div class="song-artist">.*?<\/div>/,
+        `<div class="song-artist">${artistName}</div>`
+      );
+      
+      // Duration
+      html = html.replace(
+        /<div class="song-stats"><i class="fas fa-clock"><\/i> Duration: [^<]+<\/div>/,
+        `<div class="song-stats"><i class="fas fa-clock"></i> Duration: ${duration}</div>`
+      );
+      
+      // Release Date
+      html = html.replace(
+        /<div class="song-stats"><i class="fas fa-calendar"><\/i> Released: [^<]+<\/div>/,
+        `<div class="song-stats"><i class="fas fa-calendar"></i> Released: ${formattedDate}</div>`
+      );
+      
+      // Description
+      html = html.replace(
+        /<p class="playlist-description">[\s\S]*?<\/p>/,
+        `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistName}.`}</p>`
+      );
+      
+      // Total Time
+      html = html.replace(
+        /<span id="compactTotalTime">[^<]+<\/span>/,
+        `<span id="compactTotalTime">${duration}</span>`
+      );
+      
+      // Download button link
+      html = html.replace(
+        /<button class="download-mini-btn" id="compactDownloadBtn">/,
+        `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn" id="compactDownloadBtn" style="text-decoration: none;">`
+      );
+      
+      html = html.replace(
+        /<\/button>/,
+        `</a>`
+      );
+      
+      // Audio source for player
+      html = html.replace(
+        /\/songs\/[^"]*\.mp3/g,
+        `/songs/${encodeURIComponent(fileName)}`
+      );
+      
+      // Playlist section title
+      if (albumInfo) {
+        html = html.replace(
+          /<h2 class="section-title">More from "[^"]*" Playlist<\/h2>/,
+          `<h2 class="section-title">More from "${albumInfo.title}" Album</h2>`
+        );
+        
+        // View All link
+        html = html.replace(
+          /<a href="playlist-detail\.html" class="view-all">View All<\/a>/,
+          `<a href="/album/${albumId}" class="view-all">View Album</a>`
+        );
+      } else {
+        html = html.replace(
+          /<h2 class="section-title">More from "[^"]*" Playlist<\/h2>/,
+          `<h2 class="section-title">More Songs</h2>`
+        );
+        
+        html = html.replace(
+          /<a href="playlist-detail\.html" class="view-all">View All<\/a>/,
+          `<a href="/" class="view-all">View All</a>`
+        );
+      }
+      
+      // Playlist items
+      html = html.replace(
+        /<div class="latest-albums-list">[\s\S]*?<\/div>\s*<\/div>\s*<\/aside>/,
+        `<div class="latest-albums-list">${playlistHtml || '<div style="padding: 20px; text-align: center; color: #666;">No other songs in this album</div>'}</div>
+            </div>
+          </aside>`
+      );
+      
+      // More by this artist
+      html = html.replace(
+        /<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
+        `${moreByArtistHtml || '<div style="padding: 15px; text-align: center; color: #666;">No other albums by this artist</div>'}
+            </section>`
+      );
+      
+      // Similar Songs
+      html = html.replace(
+        /<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
+        `${similarSongsHtml || '<div style="padding: 15px; text-align: center; color: #666;">No similar songs found</div>'}
+            </section>`
+      );
+      
+      // Quick Info
+      html = html.replace(
+        /<div class="quick-info-section">[\s\S]*?<\/div>\s*<\/section>/,
+        `${quickInfoHtml}
+            </section>`
+      );
+      
+      // Mobile nav active state
+      html = html.replace(
+        /<a href="#" class="nav-item active">Playlists<\/a>/,
+        '<a href="/" class="nav-item">Home</a>'
+      );
+      
+      html = html.replace(
+        /<a href="#" class="nav-item">Home<\/a>/,
+        '<a href="/" class="nav-item">Home</a>'
+      );
+      
+      html = html.replace(
+        /<a href="#" class="nav-item">Albums<\/a>/,
+        '<a href="/albums" class="nav-item">Albums</a>'
+      );
+      
+      html = html.replace(
+        /<a href="#" class="nav-item">Artists<\/a>/,
+        '<a href="/artists" class="nav-item">Artists</a>'
+      );
+      
+      // Fix search alert to redirect
+      html = html.replace(
+        /alert\(`Searching for songs: "\${searchInput.value}"`\);/g,
+        `window.location.href = '/?search=' + encodeURIComponent(searchInput.value);`
+      );
+      
+      // Fix download alert
+      html = html.replace(
+        /alert\('Download started: [^']*'\);/g,
+        `// Download handled by link`
       );
 
       return new Response(html, { 
@@ -2098,74 +2562,22 @@ export default {
     }
 
     // =========================
-    // SONG PAGE
-    // =========================
-    if (path.startsWith("/song/")) {
-      const fileName = decodeURIComponent(path.replace("/song/",""));
-      const baseName = fileName.replace(".mp3","");
-      
-      const audioObj = await env.media.get(`songs/${fileName}`);
-      if (!audioObj) return new Response("Song not found", { status: 404 });
-
-      const [artist, ...titleParts] = baseName.split("_");
-      const title = titleParts.join(" ");
-
-      let description = "";
-      const descObj = await env.media.get(`descriptions/${baseName}.txt`);
-      if (descObj) description = await descObj.text();
-
-      let imgTag = "";
-      const jpgObj = await env.media.get(`images/${baseName}.jpg`);
-      if (jpgObj) {
-        imgTag = `<img src="/images/${encodeURIComponent(baseName)}.jpg" alt="${title}" style="max-width:300px;margin:10px 0;">`;
-      } else {
-        const pngObj = await env.media.get(`images/${baseName}.png`);
-        if (pngObj) {
-          imgTag = `<img src="/images/${encodeURIComponent(baseName)}.png" alt="${title}" style="max-width:300px;margin:10px 0;">`;
-        }
-      }
-
-      const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>${title} - ${artist}</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { font-family: Arial,sans-serif; background:#f0f0f0; text-align:center; padding:20px; }
-          img { max-width:100%; height:auto; border-radius:8px; margin:10px 0; }
-          audio { width:100%; max-width:400px; margin-top:10px; }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <h2>by ${artist}</h2>
-        ${imgTag}
-        <p>${description}</p>
-        <audio controls src="/songs/${encodeURIComponent(fileName)}"></audio>
-        <p><a href="/download/${encodeURIComponent(fileName)}">Download</a></p>
-        <p><a href="/">Back to Home</a></p>
-      </body>
-      </html>
-      `;
-      return new Response(html, { 
-        headers: { 
-          "Content-Type": "text/html",
-          "Cache-Control": "public, max-age=300"
-        } 
-      });
-    }
-
-    // =========================
     // DOWNLOAD PAGE
     // =========================
     if (path.startsWith("/download/")) {
       const fileName = decodeURIComponent(path.replace("/download/",""));
       const html = `
-        <h1>Download ${fileName}</h1>
-        <a href="/songs/${encodeURIComponent(fileName)}" download>Click to Download</a>
-        <p><a href="/">Back to Home</a></p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Downloading...</title>
+          <meta http-equiv="refresh" content="0;url=/songs/${encodeURIComponent(fileName)}">
+        </head>
+        <body>
+          <p>Download started. <a href="/songs/${encodeURIComponent(fileName)}">Click here</a> if download doesn't start automatically.</p>
+          <p><a href="/">Back to Home</a></p>
+        </body>
+        </html>
       `;
       return new Response(html, { 
         headers: { 
@@ -2185,10 +2597,12 @@ export default {
 
       let contentType = "application/octet-stream";
       let cacheControl = "public, max-age=300";
+      let contentDisposition = "inline";
       
       if (fileName.endsWith(".mp3")) {
         contentType = "audio/mpeg";
         cacheControl = "public, max-age=604800";
+        contentDisposition = "inline";
       } else if (fileName.endsWith(".jpg")) {
         contentType = "image/jpeg";
         cacheControl = "public, max-age=604800";
@@ -2197,12 +2611,20 @@ export default {
         cacheControl = "public, max-age=604800";
       }
 
-      return new Response(obj.body, { 
-        headers: { 
-          "Content-Type": contentType,
-          "Cache-Control": cacheControl
-        } 
-      });
+      const headers = {
+        "Content-Type": contentType,
+        "Cache-Control": cacheControl,
+        "Accept-Ranges": "bytes",
+      };
+
+      // Add download disposition for download route
+      if (path.startsWith("/download/")) {
+        contentDisposition = `attachment; filename="${fileName.split('/').pop()}"`;
+      }
+
+      headers["Content-Disposition"] = contentDisposition;
+
+      return new Response(obj.body, { headers });
     }
 
     if (path.startsWith("/albums/thumbnails/")) {
