@@ -74,7 +74,7 @@ export default {
       return albums[albumId] ? albums[albumId].songs || [] : [];
     };
 
-    // === NEW: Add artist to album's artists array ===
+    // === Add artist to album's artists array ===
     const addArtistToAlbum = async (artistId, albumId) => {
       const albums = await getAlbums();
       const album = albums[albumId];
@@ -87,7 +87,7 @@ export default {
       }
     };
 
-    // === NEW: Remove artist from album ===
+    // === Remove artist from album ===
     const removeArtistFromAlbum = async (artistId, albumId) => {
       const albums = await getAlbums();
       const album = albums[albumId];
@@ -176,7 +176,7 @@ export default {
       return artists[artistId] ? artists[artistId].albums || [] : [];
     };
 
-    // === FIXED: getArtistAlbumsAndSingles with CORRECT stats ===
+    // === getArtistAlbumsAndSingles with CORRECT stats ===
     const getArtistAlbumsAndSingles = async (artistId) => {
       const artists = await getArtists();
       const albums = await getAlbums();
@@ -436,7 +436,7 @@ export default {
     }
 
     // =========================
-    // UPLOAD HANDLER (POST) - UPDATED with bidirectional linking
+    // UPLOAD HANDLER (POST)
     // =========================
     if (path === "/upload" && req.method === "POST") {
       const formData = await req.formData();
@@ -592,21 +592,18 @@ export default {
     }
 
     // =========================
-    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE
+    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE (FIXED)
     // =========================
     if (path === "/albums") {
-      // Get the template from R2
       const templateObj = await env.media.get("albums.html");
       if (!templateObj) {
         return new Response("albums.html template not found in R2", { status: 500 });
       }
       let html = await templateObj.text();
 
-      // Get all albums and artists data
       const albums = await getAlbums();
       const artists = await getArtists();
       
-      // Sort albums by creation date (newest first)
       const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
       
       // Pagination
@@ -633,7 +630,6 @@ export default {
           } catch (e) {}
         }
 
-        // Get primary artist
         let primaryArtist = "Various Artists";
         if (album.artists && album.artists.length > 0) {
           const artistObj = artists[album.artists[0]];
@@ -648,7 +644,6 @@ export default {
           year: 'numeric' 
         });
 
-        // Determine if we should use album-style or image
         const thumbnailClass = hasImage ? '' : 'album-style';
         
         return `
@@ -674,10 +669,8 @@ export default {
       if (totalPages > 1) {
         paginationHtml = `<div class="pagination-container"><div class="pagination">`;
         
-        // Previous button
         paginationHtml += `<a href="/albums?page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
         
-        // Page numbers
         for (let i = 1; i <= totalPages; i++) {
           if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
             paginationHtml += `<a href="/albums?page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
@@ -686,14 +679,13 @@ export default {
           }
         }
         
-        // Next button
         paginationHtml += `<a href="/albums?page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
         paginationHtml += `</div></div>`;
       }
 
       // ---------- RIGHT SIDEBAR CONTENT ----------
       
-      // 1. FEATURED ALBUMS (3 random or top albums)
+      // 1. FEATURED ALBUMS
       const featuredAlbums = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -738,7 +730,7 @@ export default {
         `;
       }));
 
-      // 2. TOP ARTISTS (by song count)
+      // 2. TOP ARTISTS
       const topArtists = Object.values(artists)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -747,9 +739,27 @@ export default {
         const albumCount = artist.albums?.length || 0;
         const songCount = artist.songs?.length || 0;
         
+        let thumbUrl = "/images/placeholder.jpg";
+        let hasImage = false;
+        
+        if (artist.thumbnail) {
+          try {
+            const thumbObj = await env.media.get(artist.thumbnail);
+            if (thumbObj) {
+              const ext = artist.thumbnail.split(".").pop();
+              thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+              hasImage = true;
+            }
+          } catch (e) {}
+        }
+        
+        const bgStyle = hasImage 
+          ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
+          : '';
+        
         return `
           <div class="album-item" onclick="window.location='/artists/${artist.id}'">
-            <div class="album-thumbnail artist-thumbnail"></div>
+            <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
             <div class="album-info">
               <span class="album-title">${artist.name}</span>
               <div class="album-meta">
@@ -762,44 +772,56 @@ export default {
         `;
       }));
 
-      // 3. GENRES (static for now - can be dynamic later)
-      const genresHtml = `
-        <div class="album-item">
-          <div class="album-thumbnail placeholder"></div>
-          <div class="album-info">
-            <span class="album-title">Zam Pop</span>
-            <div class="album-meta">
-              <span class="album-artist">${Object.values(albums).filter(a => a.title?.toLowerCase().includes('pop')).length || 8} Albums</span>
-              <span class="album-genre">Popular</span>
+      // 3. GENRES
+      const genreCounts = {};
+      Object.values(albums).forEach(album => {
+        const title = album.title.toLowerCase();
+        let genre = "Other";
+        if (title.includes('pop')) genre = "Zam Pop";
+        else if (title.includes('hip hop') || title.includes('rap')) genre = "Zam Hip Hop";
+        else if (title.includes('gospel')) genre = "Gospel";
+        else if (title.includes('r&b') || title.includes('rnb')) genre = "Zam R&B";
+        else if (title.includes('traditional') || title.includes('kalimba')) genre = "Traditional";
+        else genre = "Zam Music";
+        
+        genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+      });
+      
+      const topGenres = Object.entries(genreCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+      
+      const genresHtml = topGenres.map(([genre, count], index) => {
+        let badge = "Popular";
+        let dateText = "Most played";
+        
+        if (index === 0) {
+          badge = "Popular";
+          dateText = "Most played";
+        } else if (index === 1) {
+          badge = "Urban";
+          dateText = "Trending";
+        } else {
+          badge = "Spiritual";
+          dateText = "Rising";
+        }
+        
+        return `
+          <div class="album-item">
+            <div class="album-thumbnail placeholder"></div>
+            <div class="album-info">
+              <span class="album-title">${genre}</span>
+              <div class="album-meta">
+                <span class="album-artist">${count} Albums</span>
+                <span class="album-genre">${badge}</span>
+              </div>
+              <span class="album-date">${dateText}</span>
             </div>
-            <span class="album-date">Most played</span>
           </div>
-        </div>
-        <div class="album-item">
-          <div class="album-thumbnail placeholder"></div>
-          <div class="album-info">
-            <span class="album-title">Zam Hip Hop</span>
-            <div class="album-meta">
-              <span class="album-artist">${Object.values(albums).filter(a => a.title?.toLowerCase().includes('hip hop') || a.title?.toLowerCase().includes('rap')).length || 12} Albums</span>
-              <span class="album-genre">Urban</span>
-            </div>
-            <span class="album-date">Trending</span>
-          </div>
-        </div>
-        <div class="album-item">
-          <div class="album-thumbnail placeholder"></div>
-          <div class="album-info">
-            <span class="album-title">Gospel</span>
-            <div class="album-meta">
-              <span class="album-artist">${Object.values(albums).filter(a => a.title?.toLowerCase().includes('gospel')).length || 6} Albums</span>
-              <span class="album-genre">Spiritual</span>
-            </div>
-            <span class="album-date">Rising</span>
-          </div>
-        </div>
-      `;
+        `;
+      }).join('');
 
-      // 4. NEW RELEASES (latest 2 albums)
+      // 4. NEW RELEASES
       const newReleases = Object.values(albums)
         .sort((a, b) => b.created - a.created)
         .slice(0, 2);
@@ -829,7 +851,7 @@ export default {
         const now = new Date();
         const diffTime = Math.abs(now - date);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        const timeAgo = diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+        const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
 
         const thumbnailClass = hasImage ? '' : 'album-style';
         
@@ -852,55 +874,33 @@ export default {
 
       // Replace all placeholders
       html = html.replace(
-        /<!-- ALBUM 1 - Artist - Album Title format -->[\s\S]*?<!-- ALBUM 12 -->/g,
-        albumsHtml.join('')
+        /<!-- ALBUMS_START -->[\s\S]*?<!-- ALBUMS_END -->/g,
+        `<!-- ALBUMS_START -->${albumsHtml.join('')}<!-- ALBUMS_END -->`
       );
       
       html = html.replace(
-        /<div class="pagination-container">[\s\S]*?<\/div>/,
-        paginationHtml
+        /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
+        `<!-- PAGINATION_START -->${paginationHtml}<!-- PAGINATION_END -->`
       );
       
       html = html.replace(
-        /<!-- FEATURED ALBUMS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- FEATURED ALBUMS -->\n${featuredAlbumsHtml.join('')}\n            </section>`
+        /<!-- FEATURED_ALBUMS_START -->[\s\S]*?<!-- FEATURED_ALBUMS_END -->/g,
+        `<!-- FEATURED_ALBUMS_START -->${featuredAlbumsHtml.join('')}<!-- FEATURED_ALBUMS_END -->`
       );
       
       html = html.replace(
-        /<!-- TOP ARTISTS -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- TOP ARTISTS -->\n${topArtistsHtml.join('')}\n            </section>`
+        /<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/g,
+        `<!-- TOP_ARTISTS_START -->${topArtistsHtml.join('')}<!-- TOP_ARTISTS_END -->`
       );
       
       html = html.replace(
-        /<!-- GENRES -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- GENRES -->\n${genresHtml}\n            </section>`
+        /<!-- GENRES_START -->[\s\S]*?<!-- GENRES_END -->/g,
+        `<!-- GENRES_START -->${genresHtml}<!-- GENRES_END -->`
       );
       
       html = html.replace(
-        /<!-- NEW RELEASES -->[\s\S]*?<div class="album-item">[\s\S]*?<\/div>\s*<\/section>/,
-        `<!-- NEW RELEASES -->\n${newReleasesHtml.join('')}\n            </section>`
-      );
-
-      // Update breadcrumb link
-      html = html.replace(
-        /<a href="index\.html" class="breadcrumb-link">/g,
-        '<a href="/" class="breadcrumb-link">'
-      );
-
-      // Update mobile nav active state and links
-      html = html.replace(
-        /<a href="#" class="nav-item active">Albums<\/a>/,
-        '<a href="/albums" class="nav-item active">Albums</a>'
-      );
-      
-      html = html.replace(
-        /<a href="#" class="nav-item">Home<\/a>/,
-        '<a href="/" class="nav-item">Home</a>'
-      );
-      
-      html = html.replace(
-        /<a href="#" class="nav-item">Artists<\/a>/,
-        '<a href="/artists" class="nav-item">Artists</a>'
+        /<!-- NEW_RELEASES_START -->[\s\S]*?<!-- NEW_RELEASES_END -->/g,
+        `<!-- NEW_RELEASES_START -->${newReleasesHtml.join('')}<!-- NEW_RELEASES_END -->`
       );
 
       return new Response(html, { 
@@ -1194,14 +1194,6 @@ export default {
     // =========================
     if (path.startsWith("/artists/") && !path.startsWith("/artists/create")) {
       const artistId = decodeURIComponent(path.replace("/artists/", ""));
-      
-      const artists = await getArtists();
-      const artist = artists[artistId];
-      
-      if (!artist) {
-        return new Response("Artist not found", { status: 404 });
-      }
-
       return Response.redirect(`/artist/${artistId}`, 301);
     }
 
@@ -1531,7 +1523,7 @@ export default {
         `;
       }));
 
-      // ---------- FEATURED ARTISTS (top 4 by song count) ----------
+      // ---------- FEATURED ARTISTS ----------
       const featuredArtists = artistList.slice(0, 4);
       const featuredArtistsHtml = await Promise.all(featuredArtists.map(async artist => {
         let thumbUrl = "/images/placeholder.jpg";
@@ -1567,7 +1559,7 @@ export default {
         `;
       }));
 
-      // ---------- TOP RATED (top 3 albums by song count) ----------
+      // ---------- TOP RATED ----------
       const topRated = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -1614,7 +1606,7 @@ export default {
         `;
       }));
 
-      // ---------- PLAYLISTS (virtual collections) ----------
+      // ---------- PLAYLISTS ----------
       const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
       
       const playlistsHtml = `
@@ -1653,7 +1645,7 @@ export default {
         </div>
       `;
 
-      // ---------- TRENDING ALBUMS (top 3 by song count) ----------
+      // ---------- TRENDING ALBUMS ----------
       const trending = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -1700,7 +1692,7 @@ export default {
         `;
       }));
 
-      // ---------- REPLACE ALL PLACEHOLDERS ----------
+      // Replace all placeholders
       html = html.replace(
         /<!-- LATEST_ALBUMS_START -->[\s\S]*?<!-- LATEST_ALBUMS_END -->/g,
         `<!-- LATEST_ALBUMS_START -->${latestAlbumsHtml.join('')}<!-- LATEST_ALBUMS_END -->`
@@ -2046,7 +2038,7 @@ export default {
     }
 
     // =========================
-    // NEW DESIGN ROUTE (keeping for backward compatibility)
+    // NEW DESIGN ROUTE
     // =========================
     if (path === "/new-design") {
       return Response.redirect("/", 301);
