@@ -1607,7 +1607,7 @@ export default {
           : '';
 
         return `
-          <div class="album-item" onclick="window.location='/artists/${artist.id}'">
+          <div class="album-item" onclick="window.location='/artist/${artist.id}'">
             <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
             <div class="album-info">
               <span class="album-title">${artist.name}</span>
@@ -1659,7 +1659,7 @@ export default {
           ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
           : '';
         return `
-          <div class="album-item" onclick="window.location='/artists/${artist.id}'">
+          <div class="album-item" onclick="window.location='/artist/${artist.id}'">
             <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
             <div class="album-info">
               <span class="album-title">${artist.name}</span>
@@ -1697,7 +1697,7 @@ export default {
           ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
           : '';
         return `
-          <div class="album-item" onclick="window.location='/artists/${artist.id}'">
+          <div class="album-item" onclick="window.location='/artist/${artist.id}'">
             <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
             <div class="album-info">
               <span class="album-title">${artist.name}</span>
@@ -1807,185 +1807,326 @@ export default {
     }
 
     // =========================
-    // ARTIST PAGE (SINGLE) - REDIRECT
-    // =========================
-    if (path.startsWith("/artists/") && !path.startsWith("/artists/create")) {
-      const artistId = decodeURIComponent(path.replace("/artists/", ""));
-      return Response.redirect(`/artist/${artistId}`, 301);
-    }
-
-    // =========================
-    // ARTIST PAGE (SINGLE) - LEGACY ROUTE
+    // ARTIST PAGE (SINGLE) - DYNAMIC FROM TEMPLATE (NEW)
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
-      
       const artists = await getArtists();
       const artist = artists[artistId];
-      
-      if (!artist) {
-        return new Response("Artist not found", { status: 404 });
+      if (!artist) return new Response("Artist not found", { status: 404 });
+
+      const albums = await getAlbums();
+      const { albums: artistAlbums, singles, totalSongs, totalSingles } =
+        await getArtistAlbumsAndSingles(artistId);
+
+      // --- load template ---
+      const templateObj = await env.media.get("artist.html");
+      if (!templateObj) {
+        return new Response("artist.html template not found in R2", { status: 500 });
+      }
+      let html = await templateObj.text();
+
+      // --- helper: format date ---
+      const formatDate = (ts) =>
+        new Date(ts).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
+
+      // --- 1. Artist Header & Breadcrumbs ---
+      const artistName = artist.name || artistId;
+      const sinceYear = artist.created ? new Date(artist.created).getFullYear() : "N/A";
+      const description = artist.description || `All songs by ${artistName}.`;
+      const genre = artist.genre || "Zam Pop / R&B";
+      const songCount = totalSongs || artist.songs?.length || 0;
+      const plays = (songCount * 5200).toLocaleString();
+      const downloads = (songCount * 3800).toLocaleString();
+
+      // Breadcrumb (last item)
+      const breadcrumbHtml = `<span class="breadcrumb-current"><i class="fas fa-microphone"></i>${artistName}</span>`;
+
+      // Artist cover (thumbnail or icon)
+      let artistCoverHtml = `<i class="fas fa-microphone"></i>`;
+      if (artist.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(artist.thumbnail);
+          if (thumbObj) {
+            const ext = artist.thumbnail.split(".").pop();
+            const thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+            artistCoverHtml = `<img src="${thumbUrl}" alt="${artistName}">`;
+          }
+        } catch (e) {}
       }
 
-      const { albums: artistAlbums, singles, totalSongs, totalSongsInAlbums, totalSingles, totalAlbums, assignedAlbumsCount } = await getArtistAlbumsAndSingles(artistId);
+      // --- 2. SONGS (combined from albums & singles, newest first) ---
+      const allSongs = [];
 
-      let artistThumb = "";
-      if (artist.thumbnail) {
-        const thumbObj = await env.media.get(artist.thumbnail);
-        if (thumbObj) {
-          const ext = artist.thumbnail.split(".").pop();
-          artistThumb = `<img src="/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}" alt="${artist.name}" style="width:200px; height:200px; object-fit:cover; border-radius:50%; margin:10px 0;">`;
+      // songs from albums (with album context)
+      for (const alb of artistAlbums) {
+        for (const songKey of alb.songs) {
+          const [sid, ...titleParts] = songKey.split("_");
+          if (sid !== artistId) continue;
+          allSongs.push({
+            key: songKey,
+            title: titleParts.join(" "),
+            artistName,
+            artists: [artistName],
+            albumId: alb.id,
+            albumTitle: alb.title,
+            uploaded: alb.created,
+            isSingle: false,
+          });
         }
       }
 
-      let albumsSection = '';
-      if (artistAlbums.length > 0) {
-        const albumCards = artistAlbums.map(album => {
-          const assignmentBadge = album.explicitlyAssigned ? 
-            '<span style="background:#2ecc71; color:white; padding:2px 8px; border-radius:12px; font-size:0.7em; margin-left:5px;">Assigned</span>' : 
-            '<span style="background:#95a5a6; color:white; padding:2px 8px; border-radius:12px; font-size:0.7em; margin-left:5px;">Inferred</span>';
-          
-          const songCountText = album.artistSongCount === album.songCount ? 
-            `${album.songCount} songs` :
-            `${album.songCount} songs (${album.artistSongCount} by ${artist.name})`;
-          
-          return `
-            <div style="border:1px solid #ddd; border-radius:8px; padding:15px; margin:10px; background:#fff; display:inline-block; width:180px; vertical-align:top;">
-              <a href="/album/${album.id}">
-                <img src="${album.thumbnail}" alt="${album.title}" style="width:100%; height:150px; object-fit:cover; border-radius:4px;">
-              </a>
-              <h3 style="margin:10px 0 5px 0; font-size:1rem;">
-                <a href="/album/${album.id}" style="text-decoration:none; color:#333;">${album.title}</a>
-                ${assignmentBadge}
-              </h3>
-              <p style="font-size:0.9em; color:#666; margin:0 0 5px 0;">${songCountText}</p>
-            </div>
-          `;
-        }).join('');
-        
-        albumsSection = `
-          <div style="margin-top:30px;">
-            <h2>Albums (${totalAlbums}) 
-              <small style="font-size:0.7em; color:#666;">
-                (${assignedAlbumsCount || 0} explicitly assigned)
-              </small>
-            </h2>
-            <div style="margin-top:15px; display:flex; flex-wrap:wrap; gap:15px; justify-content:center;">
-              ${albumCards}
-            </div>
-            <p style="font-size:0.9em; color:#666; text-align:center; margin-top:10px;">
-              <span style="background:#2ecc71; color:white; padding:2px 8px; border-radius:12px; font-size:0.8em;">Assigned</span> = Directly assigned to artist
-              <span style="margin-left:15px; background:#95a5a6; color:white; padding:2px 8px; border-radius:12px; font-size:0.8em;">Inferred</span> = Contains artist's songs
-            </p>
-          </div>
-        `;
+      // singles (not in any album)
+      for (const songKey of singles) {
+        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+        const uploaded = audioObj?.uploaded || Date.now();
+        const [sid, ...titleParts] = songKey.split("_");
+        allSongs.push({
+          key: songKey,
+          title: titleParts.join(" "),
+          artistName,
+          artists: [artistName],
+          albumId: null,
+          albumTitle: null,
+          uploaded,
+          isSingle: true,
+        });
       }
 
-      let singlesSection = '';
-      if (singles.length > 0) {
-        const singleList = await Promise.all(singles.map(async songKey => {
-          const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-          if (!audioObj) return null;
+      allSongs.sort((a, b) => b.uploaded - a.uploaded);
 
-          const [songArtist, ...titleParts] = songKey.split("_");
-          const title = titleParts.join(" ");
-
+      const songsHtml = await Promise.all(
+        allSongs.slice(0, 10).map(async (song, idx) => {
           let thumbUrl = "/images/placeholder.jpg";
-          const jpgObj = await env.media.get(`images/${songKey}.jpg`);
-          if (jpgObj) {
-            thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
-          } else {
-            const pngObj = await env.media.get(`images/${songKey}.png`);
-            if (pngObj) {
-              thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+          let hasImage = false;
+          try {
+            const jpg = await env.media.get(`images/${song.key}.jpg`);
+            if (jpg) {
+              thumbUrl = `/images/${encodeURIComponent(song.key)}.jpg`;
+              hasImage = true;
+            } else {
+              const png = await env.media.get(`images/${song.key}.png`);
+              if (png) {
+                thumbUrl = `/images/${encodeURIComponent(song.key)}.png`;
+                hasImage = true;
+              }
+            }
+          } catch (e) {}
+
+          const date = formatDate(song.uploaded);
+          const duration = `${3 + Math.floor(Math.random() * 2)}:${Math.floor(
+            Math.random() * 60
+          )
+            .toString()
+            .padStart(2, "0")}`;
+          const artistDisplay = song.artists.join(", ");
+
+          return `
+            <div class="album-item" onclick="window.location='/song/${encodeURIComponent(
+              song.key + ".mp3"
+            )}'">
+              <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
+                ${hasImage ? `<img src="${thumbUrl}" alt="${song.title}" loading="lazy">` : ""}
+              </div>
+              <div class="album-info">
+                <span class="album-title">${song.title}</span>
+                <div class="album-meta">
+                  <span class="album-artist">${artistDisplay}</span>
+                  <span class="song-duration">${duration}</span>
+                  <span class="album-genre">${song.isSingle ? "Single" : "Album"}</span>
+                </div>
+                <span class="album-date">${date}</span>
+              </div>
+            </div>
+          `;
+        })
+      );
+
+      // --- 3. ALBUMS by this artist ---
+      const albumsHtml = await Promise.all(
+        artistAlbums.slice(0, 3).map(async (alb) => {
+          let thumbUrl = "/images/placeholder.jpg";
+          let hasImage = false;
+          if (alb.thumbnail && alb.thumbnail !== "/images/placeholder.jpg") {
+            try {
+              const ext = alb.thumbnail.split(".").pop();
+              thumbUrl = `/albums/thumbnails/${encodeURIComponent(alb.id)}.${ext}`;
+              hasImage = true;
+            } catch (e) {}
+          }
+          const date = formatDate(alb.created);
+          return `
+            <div class="album-item" onclick="window.location='/album/${alb.id}'">
+              <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
+                ${hasImage ? `<img src="${thumbUrl}" alt="${alb.title}" loading="lazy">` : ""}
+              </div>
+              <div class="album-info">
+                <span class="album-title">${artistName} - ${alb.title}</span>
+                <div class="album-meta">
+                  <span class="album-artist">${artistName}</span>
+                  <span class="album-genre">Album</span>
+                </div>
+                <span class="album-date">${date}</span>
+              </div>
+            </div>
+          `;
+        })
+      );
+
+      // --- 4. COLLABORATIONS (artists this artist has worked with) ---
+      const collabMap = new Map();
+      for (const alb of artistAlbums) {
+        if (alb.artists) {
+          for (const aid of alb.artists) {
+            if (aid !== artistId && artists[aid]) {
+              const count = collabMap.get(aid) || 0;
+              collabMap.set(aid, count + 1);
             }
           }
+        }
+      }
+      const collabArtists = Array.from(collabMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
 
-          return `
-            <div class="song" style="display:flex;align-items:center;margin-bottom:10px; padding:10px; background:#fff; border-radius:8px;">
-              <img src="${thumbUrl}" alt="${title}" style="width:60px;height:60px;object-fit:cover;margin-right:10px;border-radius:8px;">
-              <div style="flex-grow:1;">
-                <a href="/song/${encodeURIComponent(songKey + ".mp3")}" style="font-weight:bold;">${title}</a>
-                <br>
-                <small>${songArtist}</small>
-              </div>
-              <span style="background:#ff6b6b; color:white; padding:3px 8px; border-radius:12px; font-size:0.8em;">Single</span>
-            </div>
-          `;
-        }));
+      const collabHtml =
+        collabArtists.length > 0
+          ? await Promise.all(
+              collabArtists.map(async ([aid, count]) => {
+                const a = artists[aid];
+                let thumbUrl = "/images/placeholder.jpg";
+                let hasImage = false;
+                if (a.thumbnail) {
+                  try {
+                    const ext = a.thumbnail.split(".").pop();
+                    thumbUrl = `/artists/thumbnails/${encodeURIComponent(a.id)}.${ext}`;
+                    hasImage = true;
+                  } catch (e) {}
+                }
+                const bgStyle = hasImage
+                  ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
+                  : "";
+                return `
+                  <div class="album-item" onclick="window.location='/artist/${a.id}'">
+                    <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
+                    <div class="album-info">
+                      <span class="album-title">${a.name}</span>
+                      <div class="album-meta">
+                        <span class="album-artist">${count} Songs</span>
+                        <span class="album-genre">${a.genre || "Artist"}</span>
+                      </div>
+                      <span class="album-date">${count} collaboration${count > 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                `;
+              })
+            ).then((r) => r.join(""))
+          : `<div style="padding: 20px; text-align: center; color: #666;">No collaborations yet</div>`;
 
-        singlesSection = `
-          <div style="margin-top:30px;">
-            <h2>Singles (${totalSingles})</h2>
-            <div style="max-width:600px; margin:15px auto 0 auto;">
-              ${singleList.filter(s => s).join("")}
-            </div>
-          </div>
-        `;
+      // --- 5. SIMILAR ARTISTS (based on genre or random) ---
+      const otherArtists = Object.values(artists).filter((a) => a.id !== artistId);
+      let similar = [];
+      if (artist.genre) {
+        similar = otherArtists
+          .filter((a) => a.genre === artist.genre)
+          .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
+          .slice(0, 3);
+      }
+      if (similar.length < 3) {
+        const needed = 3 - similar.length;
+        const randomOthers = otherArtists
+          .filter((a) => !similar.includes(a))
+          .sort(() => 0.5 - Math.random())
+          .slice(0, needed);
+        similar = [...similar, ...randomOthers];
       }
 
-      const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>${artist.name}</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { font-family: Arial,sans-serif; background:#f0f0f0; padding:20px; }
-          .artist-header { text-align:center; margin-bottom:30px; }
-          .stats { display:flex; justify-content:center; gap:20px; margin:15px 0 25px 0; flex-wrap:wrap; }
-          .stat-card { background:#fff; padding:15px 20px; border-radius:8px; text-align:center; min-width:120px; box-shadow:0 2px 5px rgba(0,0,0,0.05); }
-          .stat-number { font-size:1.5rem; font-weight:bold; color:#3498db; margin-bottom:5px; }
-          .stat-label { font-size:0.9rem; color:#7f8c8d; }
-          .stat-subtext { font-size:0.7rem; color:#666; margin-top:3px; }
-          img { max-width:100%; height:auto; border-radius:8px; }
-        </style>
-      </head>
-      <body>
-        <div class="artist-header">
-          <h1>${artist.name}</h1>
-          ${artistThumb}
-          <p>${artist.description}</p>
-          <div class="stats">
-            <div class="stat-card">
-              <div class="stat-number">${totalSongs}</div>
-              <div class="stat-label">Total Songs</div>
-              <div class="stat-subtext">${totalSongsInAlbums} in albums<br>${totalSingles} singles</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-number">${totalAlbums}</div>
-              <div class="stat-label">Albums</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-number">${totalSingles}</div>
-              <div class="stat-label">Singles</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-number">${assignedAlbumsCount || 0}</div>
-              <div class="stat-label">Assigned Albums</div>
-            </div>
-          </div>
-          <p>
-            <a href="/artists">← All Artists</a> | 
-            <a href="/">Home</a> | 
-            <a href="/upload">Upload</a>
-          </p>
+      const similarHtml =
+        similar.length > 0
+          ? await Promise.all(
+              similar.slice(0, 3).map(async (a) => {
+                let thumbUrl = "/images/placeholder.jpg";
+                let hasImage = false;
+                if (a.thumbnail) {
+                  try {
+                    const ext = a.thumbnail.split(".").pop();
+                    thumbUrl = `/artists/thumbnails/${encodeURIComponent(a.id)}.${ext}`;
+                    hasImage = true;
+                  } catch (e) {}
+                }
+                const bgStyle = hasImage
+                  ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
+                  : "";
+                const songCount = a.songs?.length || 0;
+                const since = a.created ? new Date(a.created).getFullYear() : "N/A";
+                return `
+                  <div class="album-item" onclick="window.location='/artist/${a.id}'">
+                    <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
+                    <div class="album-info">
+                      <span class="album-title">${a.name}</span>
+                      <div class="album-meta">
+                        <span class="album-artist">${songCount} Songs</span>
+                        <span class="album-genre">${a.genre || "Artist"}</span>
+                      </div>
+                      <span class="album-date">Since ${since}</span>
+                    </div>
+                  </div>
+                `;
+              })
+            ).then((r) => r.join(""))
+          : `<div style="padding: 20px; text-align: center; color: #666;">No similar artists</div>`;
+
+      // --- 6. ARTIST INFO ---
+      const infoHtml = `
+        <p><strong>Genre:</strong> ${genre}</p>
+        <p><strong>Active Since:</strong> ${sinceYear}</p>
+        <p><strong>Label:</strong> ${artist.label || "Independent"}</p>
+        <p><strong>Origin:</strong> ${artist.origin || "Zambia"}</p>
+        <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 3px;">
+          <i class="fas fa-info-circle" style="color: #ff6b6b;"></i>
+          <span style="margin-left: 5px;">All songs available for download</span>
         </div>
-        
-        ${albumsSection}
-        ${singlesSection}
-        
-        ${artistAlbums.length === 0 && singles.length === 0 ? 
-          '<div style="text-align:center; padding:40px; background:#fff; border-radius:8px; max-width:600px; margin:0 auto;"><p>No songs by this artist yet.</p></div>' : ''}
-      </body>
-      </html>
       `;
-      return new Response(html, { 
-        headers: { 
+
+      // --- REPLACE ALL PLACEHOLDERS ---
+      html = html
+        .replace(/<title>.*?<\/title>/, `<title>${artistName} - ZEDALBUMS.TOP</title>`)
+        .replace(/<!-- ARTIST_BREADCRUMB -->/, breadcrumbHtml)
+        .replace(/<h1 class="artist-title">.*?<\/h1>/, `<h1 class="artist-title">${artistName}</h1>`)
+        .replace(/<div class="artist-genre">.*?<\/div>/, `<div class="artist-genre">${genre}</div>`)
+        .replace(/<!-- ARTIST_DESCRIPTION -->/, description)
+        .replace(/<!-- ARTIST_COVER -->/, artistCoverHtml)
+        .replace(/<!-- ARTIST_SONGS_COUNT -->/, songCount.toString())
+        .replace(/<!-- ARTIST_SINCE -->/, sinceYear.toString())
+        .replace(/<!-- ARTIST_PLAYS -->/, plays)
+        .replace(/<!-- ARTIST_DOWNLOADS -->/, downloads)
+        .replace(/<!-- SONGS_LIST -->/, songsHtml.join(""))
+        .replace(/<!-- ALBUMS_BY_ARTIST -->/, albumsHtml.join(""))
+        .replace(/<!-- COLLABORATIONS_LIST -->/, collabHtml)
+        .replace(/<!-- SIMILAR_ARTISTS_LIST -->/, similarHtml)
+        .replace(/<!-- ARTIST_INFO_CONTENT -->/, infoHtml)
+        .replace(
+          /<a href="#" class="view-all">View All ➔<\/a>/g,
+          `<a href="/artist/${artistId}?view=albums" class="view-all">View All ➔</a>`
+        )
+        .replace(
+          /<a href="#" class="breadcrumb-link"><i class="fas fa-user"><\/i>Artists<\/a>/,
+          '<a href="/artists" class="breadcrumb-link"><i class="fas fa-user"></i>Artists</a>'
+        )
+        .replace(
+          /<a href="\/" class="breadcrumb-link"><i class="fas fa-home"><\/i>Home<\/a>/,
+          '<a href="/" class="breadcrumb-link"><i class="fas fa-home"></i>Home</a>'
+        );
+
+      return new Response(html, {
+        headers: {
           "Content-Type": "text/html",
-          "Cache-Control": "public, max-age=300"
-        } 
+          "Cache-Control": "public, max-age=300",
+        },
       });
     }
 
@@ -2164,7 +2305,7 @@ export default {
           : '';
         
         return `
-          <div class="album-item" onclick="window.location='/artists/${artist.id}'">
+          <div class="album-item" onclick="window.location='/artist/${artist.id}'">
             <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
             <div class="album-info">
               <span class="album-title">${artist.name}</span>
