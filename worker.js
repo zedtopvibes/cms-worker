@@ -20,10 +20,10 @@ export default {
     
     let albumsCache = null;
     let artistsCache = null;
-    let playlistsCache = null;
+    let playlistsCache = null;          // 🆕 Playlist cache
     let dataCacheTimestamp = 0;
     const DATA_CACHE_DURATION = 60000;
-    const PLAYLISTS_CACHE_DURATION = 60000; // same as other data caches
+    const PLAYLISTS_CACHE_DURATION = 60000; // 🆕 same as other caches
 
     // -----------------------------
     // Helper to sanitize filenames
@@ -53,13 +53,11 @@ export default {
         return {};
       }
     };
-
     const saveAlbums = async (albums) => {
       await env.media.put("albums/index.json", JSON.stringify(albums));
       albumsCache = albums;
       dataCacheTimestamp = Date.now();
     };
-
     const addSongToAlbum = async (albumId, songKey) => {
       const albums = await getAlbums();
       if (albums[albumId]) {
@@ -69,12 +67,10 @@ export default {
         }
       }
     };
-
     const getAlbumSongs = async (albumId) => {
       const albums = await getAlbums();
       return albums[albumId] ? albums[albumId].songs || [] : [];
     };
-
     const addArtistToAlbum = async (artistId, albumId) => {
       const albums = await getAlbums();
       const album = albums[albumId];
@@ -86,7 +82,6 @@ export default {
         }
       }
     };
-
     const removeArtistFromAlbum = async (artistId, albumId) => {
       const albums = await getAlbums();
       const album = albums[albumId];
@@ -122,13 +117,11 @@ export default {
         return {};
       }
     };
-
     const saveArtists = async (artists) => {
       await env.media.put("artists/index.json", JSON.stringify(artists));
       artistsCache = artists;
       dataCacheTimestamp = Date.now();
     };
-
     const addSongToArtist = async (artistId, songKey) => {
       const artists = await getArtists();
       if (artists[artistId]) {
@@ -138,12 +131,10 @@ export default {
         }
       }
     };
-
     const getArtistSongs = async (artistId) => {
       const artists = await getArtists();
       return artists[artistId] ? artists[artistId].songs || [] : [];
     };
-
     const addAlbumToArtist = async (artistId, albumId) => {
       const artists = await getArtists();
       if (artists[artistId]) {
@@ -154,7 +145,6 @@ export default {
         }
       }
     };
-
     const removeAlbumFromArtist = async (artistId, albumId) => {
       const artists = await getArtists();
       if (artists[artistId] && artists[artistId].albums) {
@@ -165,7 +155,6 @@ export default {
         }
       }
     };
-
     const getArtistAlbumsAndSingles = async (artistId) => {
       const artists = await getArtists();
       const albums = await getAlbums();
@@ -281,7 +270,7 @@ export default {
       };
     };
 
-    // === PLAYLISTS FUNCTIONS (NEW) ===
+    // ================== 🆕 PLAYLISTS FUNCTIONS ==================
     const getPlaylists = async () => {
       const now = Date.now();
       if (playlistsCache && (now - dataCacheTimestamp < PLAYLISTS_CACHE_DURATION)) {
@@ -336,67 +325,32 @@ export default {
     // UPLOAD PAGE (GET)
     // =========================
     if (path === "/upload" && req.method === "GET") {
-      const albums = await getAlbums();
-      const albumOptions = Object.keys(albums).map(id => {
-        const album = albums[id];
-        return `<option value="${id}">${album.title}</option>`;
-      }).join("");
-      const albumSection = `
-        <label>Album (Optional)</label>
-        <select name="album" style="padding:8px; margin-top:5px;">
-          <option value="">-- Select Album --</option>
-          ${albumOptions}
-          <option value="__create_new__">[Create New Album]</option>
-        </select>
-        <p style="margin-top:5px; font-size:0.9em;">
-          Or <a href="/album/create" style="color:#007bff; text-decoration:none;">create a new album</a>
-        </p>
-      `;
-      const artists = await getArtists();
-      const artistOptions = Object.keys(artists).map(id => {
-        const artist = artists[id];
-        return `<option value="${id}">${artist.name}</option>`;
-      }).join("");
-      const artistSection = `
-        <label>Artist</label>
-        <select name="artist" id="artistSelect" required style="padding:8px; margin-top:5px;">
-          <option value="">-- Select Artist --</option>
-          ${artistOptions}
-          <option value="__create_new__">[Create New Artist]</option>
-        </select>
-        <p style="margin-top:5px; font-size:0.9em;">
-          <a href="/artist/create" id="createArtistLink" style="color:#007bff; text-decoration:none; display:none;">Create New Artist</a>
-          <span id="existingArtistNote" style="display:none;">Or select existing artist above</span>
-        </p>
-        <input type="text" name="artist_name" id="artistNameInput" placeholder="Enter new artist name" style="padding:8px; margin-top:5px; display:none;">
-      `;
-      const html = `...`; // keep your original upload page HTML (unchanged)
-      return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
     // UPLOAD HANDLER (POST)
     // =========================
     if (path === "/upload" && req.method === "POST") {
-      // ... keep your original upload POST handler exactly as is ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
     // CREATE ALBUM PAGE (GET)
     // =========================
     if (path === "/album/create" && req.method === "GET") {
-      // ... keep your original album creation GET handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
     // CREATE ALBUM HANDLER (POST)
     // =========================
     if (path === "/album/create" && req.method === "POST") {
-      // ... keep your original album creation POST handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // CREATE PLAYLIST PAGE (GET) - NEW
+    // 🆕 CREATE PLAYLIST PAGE (GET)
     // =========================
     if (path === "/playlist/create" && req.method === "GET") {
       const html = `
@@ -432,7 +386,7 @@ export default {
     }
 
     // =========================
-    // CREATE PLAYLIST HANDLER (POST) - NEW
+    // 🆕 CREATE PLAYLIST HANDLER (POST)
     // =========================
     if (path === "/playlist/create" && req.method === "POST") {
       const formData = await req.formData();
@@ -476,35 +430,35 @@ export default {
     }
 
     // =========================
-    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE (KEEP YOUR EXISTING CODE)
+    // ALBUMS PAGE (unchanged)
     // =========================
     if (path === "/albums") {
-      // ... your complete /albums handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // ALBUM DETAIL PAGE (KEEP YOUR EXISTING CODE)
+    // ALBUM DETAIL PAGE (unchanged)
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
-      // ... your complete album detail handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // ARTISTS PAGE (KEEP YOUR EXISTING CODE)
+    // ARTISTS PAGE (unchanged)
     // =========================
     if (path === "/artists") {
-      // ... your complete /artists handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // ARTIST DETAIL PAGE (KEEP YOUR EXISTING CODE)
+    // ARTIST DETAIL PAGE (unchanged)
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-      // ... your complete artist detail handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // PLAYLISTS PAGE (LISTING) - NEW
+    // 🆕 PLAYLISTS PAGE (LISTING)
     // =========================
     if (path === "/playlists") {
       const templateObj = await env.media.get("playlists.html");
@@ -746,7 +700,7 @@ export default {
     }
 
     // =========================
-    // PLAYLIST DETAIL PAGE - NEW
+    // 🆕 PLAYLIST DETAIL PAGE
     // =========================
     if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
       const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
@@ -999,30 +953,36 @@ export default {
     }
 
     // =========================
-    // SONG DETAIL PAGE (KEEP YOUR EXISTING CODE)
+    // SONG DETAIL PAGE (unchanged)
     // =========================
     if (path.startsWith("/song/")) {
-      // ... your complete song detail handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // HOMEPAGE - DYNAMIC WITH LATEST SONGS, QUICK ACCESS & RECENT PLAYLISTS
+    // 🆕 HOMEPAGE - with Quick Access & Recent Playlists
     // =========================
     if (path === "/") {
       const now = Date.now();
+      
       if (homepageCache && (now - cacheTimestamp < CACHE_DURATION)) {
-        return new Response(homepageCache, {
-          headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=30" }
+        return new Response(homepageCache, { 
+          headers: { 
+            "Content-Type": "text/html",
+            "Cache-Control": "public, max-age=30"
+          } 
         });
       }
 
       const templateObj = await env.media.get("index.html");
-      if (!templateObj) return new Response("Template index.html not found in R2", { status: 500 });
+      if (!templateObj) {
+        return new Response("Template index.html not found in R2", { status: 500 });
+      }
       let html = await templateObj.text();
 
       const albums = await getAlbums();
       const artists = await getArtists();
-      const playlists = await getPlaylists(); // NEW
+      const playlists = await getPlaylists(); // 🆕
       const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
       const artistList = Object.values(artists).sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0));
 
@@ -1035,24 +995,25 @@ export default {
       const pageAlbums = albumList.slice(startIdx, startIdx + ALBUMS_PER_PAGE);
 
       const latestAlbumsHtml = await Promise.all(pageAlbums.map(async album => {
-        // ... keep your existing latest albums HTML generation ...
+        // ... (your existing code, unchanged) ...
       }));
 
-      let paginationHtml = ''; // ... keep your existing homepage pagination generation ...
+      let paginationHtml = ''; // ... (your existing pagination code, unchanged) ...
 
       // ---------- LATEST SONGS ----------
       const songsList = await env.media.list({ prefix: "songs/", limit: 50 });
       const songFiles = songsList.objects || [];
       songFiles.sort((a, b) => b.uploaded - a.uploaded);
       const latestSongs = songFiles.slice(0, 3);
+      
       const latestSongsHtml = await Promise.all(latestSongs.map(async f => {
-        // ... keep your existing latest songs HTML generation ...
+        // ... (your existing code, unchanged) ...
       }));
 
       // ---------- FEATURED ARTISTS ----------
       const featuredArtists = artistList.slice(0, 4);
       const featuredArtistsHtml = await Promise.all(featuredArtists.map(async artist => {
-        // ... keep your existing featured artists HTML generation ...
+        // ... (your existing code, unchanged) ...
       }));
 
       // ---------- TOP RATED ----------
@@ -1060,11 +1021,11 @@ export default {
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
       const topRatedHtml = await Promise.all(topRated.map(async album => {
-        // ... keep your existing top rated HTML generation ...
+        // ... (your existing code, unchanged) ...
       }));
 
-      // ---------- QUICK ACCESS (was PLAYLISTS, now renamed) ----------
-      const totalSongsCount = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
+      // ---------- 🆕 QUICK ACCESS (was PLAYLISTS) ----------
+      const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
       const quickAccessHtml = `
         <div class="album-item" onclick="window.location='/albums'">
           <div class="album-thumbnail playlist-thumbnail"></div>
@@ -1093,7 +1054,7 @@ export default {
           <div class="album-info">
             <span class="album-title">All Songs</span>
             <div class="album-meta">
-              <span class="playlist-songs">${totalSongsCount} Songs</span>
+              <span class="playlist-songs">${totalSongs} Songs</span>
               <span class="album-genre">Master Playlist</span>
             </div>
             <span class="album-date">Updated recently</span>
@@ -1101,7 +1062,7 @@ export default {
         </div>
       `;
 
-      // ---------- RECENT PLAYLISTS (NEW) ----------
+      // ---------- 🆕 RECENT PLAYLISTS ----------
       const recentPlaylists = Object.values(playlists)
         .sort((a, b) => b.created - a.created)
         .slice(0, 3);
@@ -1141,7 +1102,7 @@ export default {
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
       const trendingHtml = await Promise.all(trending.map(async album => {
-        // ... keep your existing trending albums HTML generation ...
+        // ... (your existing code, unchanged) ...
       }));
 
       // ---------- REPLACE ALL PLACEHOLDERS ----------
@@ -1165,12 +1126,12 @@ export default {
         /<!-- TOP_RATED_START -->[\s\S]*?<!-- TOP_RATED_END -->/g,
         `<!-- TOP_RATED_START -->${topRatedHtml.join('')}<!-- TOP_RATED_END -->`
       );
-      // Replace the old PLAYLISTS placeholder with QUICK_ACCESS
+      // Replace the old PLAYLISTS_START with Quick Access
       html = html.replace(
         /<!-- PLAYLISTS_START -->[\s\S]*?<!-- PLAYLISTS_END -->/g,
         `<!-- PLAYLISTS_START -->${quickAccessHtml}<!-- PLAYLISTS_END -->`
       );
-      // Add new RECENT_PLAYLISTS placeholder (you must add this to your index.html)
+      // 🆕 Inject recent playlists (you must add this placeholder to index.html)
       html = html.replace(
         /<!-- RECENT_PLAYLISTS_START -->[\s\S]*?<!-- RECENT_PLAYLISTS_END -->/g,
         `<!-- RECENT_PLAYLISTS_START -->${recentPlaylistsHtml.join('')}<!-- RECENT_PLAYLISTS_END -->`
@@ -1183,55 +1144,63 @@ export default {
       homepageCache = html;
       cacheTimestamp = now;
 
-      return new Response(html, {
-        headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=30" }
+      return new Response(html, { 
+        headers: { 
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=30"
+        } 
       });
     }
 
     // =========================
-    // DOWNLOAD PAGE (KEEP YOUR EXISTING CODE)
+    // DOWNLOAD PAGE (unchanged)
     // =========================
     if (path.startsWith("/download/")) {
-      // ... your complete download handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
     // FILE SERVING
     // =========================
     if (path.startsWith("/songs/") || path.startsWith("/images/")) {
-      // ... your complete file serving handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     if (path.startsWith("/albums/thumbnails/")) {
-      // ... your complete album thumbnail serving handler ...
+      // ... (your existing code, unchanged) ...
     }
 
     if (path.startsWith("/artists/thumbnails/")) {
-      // ... your complete artist thumbnail serving handler ...
+      // ... (your existing code, unchanged) ...
     }
 
-    // NEW: Playlist thumbnails serving
+    // 🆕 Serve playlist thumbnails
     if (path.startsWith("/playlists/thumbnails/")) {
       const fileName = decodeURIComponent(path.slice(1));
       const obj = await env.media.get(fileName);
       if (!obj) return new Response("Playlist thumbnail not found", { status: 404 });
+
       let contentType = "application/octet-stream";
       if (fileName.endsWith(".jpg")) contentType = "image/jpeg";
       else if (fileName.endsWith(".png")) contentType = "image/png";
-      return new Response(obj.body, {
-        headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=604800" }
+
+      return new Response(obj.body, { 
+        headers: { 
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=604800"
+        } 
       });
     }
 
     // =========================
-    // ALBUM-ARTIST ASSIGNMENT ENDPOINT (KEEP YOUR EXISTING CODE)
+    // ALBUM-ARTIST ASSIGNMENT ENDPOINT (unchanged)
     // =========================
     if (path === "/assign-album-to-artist" && req.method === "POST") {
-      // ... your complete assignment endpoint ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
-    // ADD/REMOVE SONG TO/FROM PLAYLIST (JSON) - NEW
+    // 🆕 ADD/REMOVE SONG TO/FROM PLAYLIST (JSON)
     // =========================
     if (path === "/playlist/add-song" && req.method === "POST") {
       try {
@@ -1264,10 +1233,10 @@ export default {
     }
 
     // =========================
-    // SIMPLE ALBUM MANAGEMENT PAGE (KEEP YOUR EXISTING CODE)
+    // SIMPLE ALBUM MANAGEMENT PAGE (unchanged)
     // =========================
     if (path === "/manage-album-artists" && req.method === "GET") {
-      // ... your complete management page ...
+      // ... (your existing code, unchanged) ...
     }
 
     // =========================
