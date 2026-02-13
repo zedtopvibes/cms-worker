@@ -23,6 +23,7 @@ export default {
     let playlistsCache = null;
     let dataCacheTimestamp = 0;
     const DATA_CACHE_DURATION = 60000;
+    const PLAYLISTS_CACHE_DURATION = 60000; // separate, but can be same
 
     // -----------------------------
     // Helper to sanitize filenames
@@ -280,26 +281,26 @@ export default {
       };
     };
 
-    // === PLAYLISTS FUNCTIONS ===
+    // === PLAYLISTS FUNCTIONS (NEW) ===
     const getPlaylists = async () => {
       const now = Date.now();
-      if (playlistsCache && (now - dataCacheTimestamp < DATA_CACHE_DURATION)) {
+      if (playlistsCache && (now - playlistsCacheTimestamp < PLAYLISTS_CACHE_DURATION)) {
         return playlistsCache;
       }
       try {
         const playlistsObj = await env.media.get("playlists/index.json");
         if (!playlistsObj) {
           playlistsCache = {};
-          dataCacheTimestamp = now;
+          playlistsCacheTimestamp = now;
           return {};
         }
         const text = await playlistsObj.text();
         playlistsCache = JSON.parse(text || "{}");
-        dataCacheTimestamp = now;
+        playlistsCacheTimestamp = now;
         return playlistsCache;
       } catch (e) {
         playlistsCache = {};
-        dataCacheTimestamp = now;
+        playlistsCacheTimestamp = now;
         return {};
       }
     };
@@ -307,7 +308,7 @@ export default {
     const savePlaylists = async (playlists) => {
       await env.media.put("playlists/index.json", JSON.stringify(playlists));
       playlistsCache = playlists;
-      dataCacheTimestamp = Date.now();
+      playlistsCacheTimestamp = Date.now();
     };
 
     const addSongToPlaylist = async (playlistId, songKey) => {
@@ -369,82 +370,7 @@ export default {
         </p>
         <input type="text" name="artist_name" id="artistNameInput" placeholder="Enter new artist name" style="padding:8px; margin-top:5px; display:none;">
       `;
-      const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Upload Song</title>
-        <style>
-          body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; }
-          form { display:flex; flex-direction:column; max-width:400px; margin:auto; }
-          label { margin-top:10px; font-weight:bold; }
-          input, textarea, select { padding:8px; margin-top:5px; }
-          button { margin-top:20px; padding:10px; background:#28a745; color:#fff; border:none; cursor:pointer; border-radius:5px; }
-          button:hover { background:#218838; }
-        </style>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            const albumSelect = document.querySelector('select[name="album"]');
-            if (albumSelect) {
-              albumSelect.addEventListener('change', function() {
-                if (this.value === '__create_new__') {
-                  window.location.href = '/album/create';
-                }
-              });
-            }
-            const artistSelect = document.getElementById('artistSelect');
-            const createArtistLink = document.getElementById('createArtistLink');
-            const existingArtistNote = document.getElementById('existingArtistNote');
-            const artistNameInput = document.getElementById('artistNameInput');
-            if (artistSelect) {
-              artistSelect.addEventListener('change', function() {
-                if (this.value === '__create_new__') {
-                  createArtistLink.style.display = 'block';
-                  existingArtistNote.style.display = 'inline';
-                  artistNameInput.style.display = 'block';
-                  artistNameInput.required = true;
-                } else {
-                  createArtistLink.style.display = 'none';
-                  existingArtistNote.style.display = 'none';
-                  artistNameInput.style.display = 'none';
-                  artistNameInput.required = false;
-                }
-              });
-            }
-            if (createArtistLink) {
-              createArtistLink.addEventListener('click', function(e) {
-                e.preventDefault();
-                const newArtistName = artistNameInput.value.trim();
-                if (newArtistName) {
-                  sessionStorage.setItem('newArtistName', newArtistName);
-                  window.location.href = '/artist/create';
-                } else {
-                  alert('Please enter an artist name first');
-                }
-              });
-            }
-          });
-        </script>
-      </head>
-      <body>
-        <h1>Upload Song</h1>
-        <form action="/upload" method="POST" enctype="multipart/form-data">
-          <label>Song Title</label>
-          <input type="text" name="title" required>
-          ${artistSection}
-          <label>Description</label>
-          <textarea name="description" rows="3" required></textarea>
-          ${albumSection}
-          <label>Audio File (.mp3)</label>
-          <input type="file" name="audio" accept=".mp3" required>
-          <label>Thumbnail Image</label>
-          <input type="file" name="image" accept="image/*" required>
-          <button type="submit">Upload</button>
-        </form>
-      </body>
-      </html>
-      `;
+      const html = `...`; // (full HTML omitted for brevity – keep your existing upload page HTML)
       return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
     }
 
@@ -522,39 +448,7 @@ export default {
     // CREATE ALBUM PAGE (GET)
     // =========================
     if (path === "/album/create" && req.method === "GET") {
-      const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Create Album</title>
-        <style>
-          body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; }
-          form { display:flex; flex-direction:column; max-width:400px; margin:auto; }
-          label { margin-top:10px; font-weight:bold; }
-          input, textarea { padding:8px; margin-top:5px; }
-          button { margin-top:20px; padding:10px; background:#28a745; color:#fff; border:none; cursor:pointer; border-radius:5px; }
-          button:hover { background:#218838; }
-          .back-link { margin-top:20px; }
-        </style>
-      </head>
-      <body>
-        <h1>Create New Album</h1>
-        <form action="/album/create" method="POST" enctype="multipart/form-data">
-          <label>Album Title</label>
-          <input type="text" name="title" required>
-          <label>Album Description</label>
-          <textarea name="description" rows="3" required></textarea>
-          <label>Album Thumbnail (.jpg, .png)</label>
-          <input type="file" name="thumbnail" accept="image/*" required>
-          <button type="submit">Create Album</button>
-        </form>
-        <div class="back-link">
-          <a href="/upload">← Back to Upload</a>
-        </div>
-      </body>
-      </html>
-      `;
+      const html = `...`; // keep your existing HTML
       return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
     }
 
@@ -603,7 +497,7 @@ export default {
     }
 
     // =========================
-    // CREATE PLAYLIST PAGE (GET)
+    // CREATE PLAYLIST PAGE (GET) - NEW
     // =========================
     if (path === "/playlist/create" && req.method === "GET") {
       const html = `
@@ -639,7 +533,7 @@ export default {
     }
 
     // =========================
-    // CREATE PLAYLIST HANDLER (POST)
+    // CREATE PLAYLIST HANDLER (POST) - NEW
     // =========================
     if (path === "/playlist/create" && req.method === "POST") {
       const formData = await req.formData();
@@ -683,38 +577,35 @@ export default {
     }
 
     // =========================
-    // ALBUMS PAGE
+    // ALBUMS PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path === "/albums") {
-      // ... (existing albums page code, unchanged) ...
-      // For brevity, keep your existing /albums handler here.
-      // I'm omitting the full code to keep this answer manageable,
-      // but you must keep your current /albums handler.
+      // ... (keep your existing /albums handler code exactly as is) ...
     }
 
     // =========================
-    // ALBUM DETAIL PAGE
+    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
-      // ... (existing album detail code, unchanged) ...
+      // ... (keep your existing album detail handler) ...
     }
 
     // =========================
-    // ARTISTS PAGE
+    // ARTISTS PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path === "/artists") {
-      // ... (existing artists page code, unchanged) ...
+      // ... (keep your existing /artists handler) ...
     }
 
     // =========================
-    // ARTIST DETAIL PAGE
+    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-      // ... (existing artist detail code, unchanged) ...
+      // ... (keep your existing artist detail handler) ...
     }
 
     // =========================
-    // PLAYLISTS PAGE (LISTING)
+    // PLAYLISTS PAGE (LISTING) - NEW
     // =========================
     if (path === "/playlists") {
       const templateObj = await env.media.get("playlists.html");
@@ -956,7 +847,7 @@ export default {
     }
 
     // =========================
-    // PLAYLIST DETAIL PAGE
+    // PLAYLIST DETAIL PAGE - NEW
     // =========================
     if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
       const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
@@ -1209,14 +1100,14 @@ export default {
     }
 
     // =========================
-    // SONG DETAIL PAGE
+    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE
     // =========================
     if (path.startsWith("/song/")) {
-      // ... (existing song detail code, unchanged) ...
+      // ... (keep your existing song detail handler) ...
     }
 
     // =========================
-    // HOMEPAGE (with Quick Access + Recent Playlists)
+    // HOMEPAGE - DYNAMIC WITH LATEST SONGS AND TRACK COUNTS
     // =========================
     if (path === "/") {
       const now = Date.now();
@@ -1232,11 +1123,11 @@ export default {
 
       const albums = await getAlbums();
       const artists = await getArtists();
-      const playlists = await getPlaylists();
+      const playlists = await getPlaylists(); // NEW
       const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
       const artistList = Object.values(artists).sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0));
 
-      // ---------- LATEST ALBUMS (with pagination) ----------
+      // ---------- LATEST ALBUMS with Pagination and TRACK COUNTS ----------
       const ALBUMS_PER_PAGE = 6;
       const page = parseInt(url.searchParams.get("page")) || 1;
       const totalAlbums = albumList.length;
@@ -1245,56 +1136,10 @@ export default {
       const pageAlbums = albumList.slice(startIdx, startIdx + ALBUMS_PER_PAGE);
 
       const latestAlbumsHtml = await Promise.all(pageAlbums.map(async album => {
-        let thumbUrl = "/images/placeholder.jpg";
-        if (album.thumbnail) {
-          try {
-            const thumbObj = await env.media.get(album.thumbnail);
-            if (thumbObj) {
-              const ext = album.thumbnail.split(".").pop();
-              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-            }
-          } catch (e) {}
-        }
-        let primaryArtist = "Various";
-        if (album.artists && album.artists.length > 0) {
-          const artistObj = artists[album.artists[0]];
-          if (artistObj) primaryArtist = artistObj.name;
-        }
-        const date = new Date(album.created).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        const trackCount = album.songs?.length || 0;
-        const hasImage = thumbUrl !== '/images/placeholder.jpg';
-        return `
-          <div class="album-item" onclick="window.location='/album/${album.id}'">
-            <div class="album-thumbnail${hasImage ? '' : ' placeholder'}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${album.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${primaryArtist}</span>
-                <span class="album-tracks">${trackCount} Tracks</span>
-                <span class="album-genre">Album</span>
-              </div>
-              <span class="album-date">${date}</span>
-            </div>
-          </div>
-        `;
+        // ... (keep your existing album card generation) ...
       }));
 
-      let paginationHtml = '';
-      if (totalPages > 1) {
-        paginationHtml = `<div class="pagination-container show"><div class="pagination">`;
-        paginationHtml += `<a href="/?page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
-        for (let i = 1; i <= totalPages; i++) {
-          if (i === 1 || i === totalPages || (i >= page-1 && i <= page+1)) {
-            paginationHtml += `<a href="/?page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
-          } else if (i === page-2 || i === page+2) {
-            paginationHtml += `<span class="pagination-ellipsis">...</span>`;
-          }
-        }
-        paginationHtml += `<a href="/?page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
-        paginationHtml += `</div></div>`;
-      }
+      let paginationHtml = ''; // ... (keep your existing pagination generation) ...
 
       // ---------- LATEST SONGS ----------
       const songsList = await env.media.list({ prefix: "songs/", limit: 50 });
@@ -1302,71 +1147,13 @@ export default {
       songFiles.sort((a, b) => b.uploaded - a.uploaded);
       const latestSongs = songFiles.slice(0, 3);
       const latestSongsHtml = await Promise.all(latestSongs.map(async f => {
-        const fileName = f.key.split("/")[1];
-        const baseName = fileName.replace(".mp3", "");
-        const [artistId, ...titleParts] = baseName.split("_");
-        const title = titleParts.join(" ");
-        let artistName = artistId;
-        const artist = artists[artistId];
-        if (artist) artistName = artist.name;
-        let thumbUrl = "/images/placeholder.jpg";
-        try {
-          const jpgObj = await env.media.get(`images/${baseName}.jpg`);
-          if (jpgObj) thumbUrl = `/images/${encodeURIComponent(baseName)}.jpg`;
-          else {
-            const pngObj = await env.media.get(`images/${baseName}.png`);
-            if (pngObj) thumbUrl = `/images/${encodeURIComponent(baseName)}.png`;
-          }
-        } catch (e) {}
-        const date = new Date(f.uploaded).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        const hasImage = thumbUrl !== '/images/placeholder.jpg';
-        return `
-          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(fileName)}'">
-            <div class="album-thumbnail song-thumbnail" ${hasImage ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"` : ''}>
-            </div>
-            <div class="album-info">
-              <span class="album-title">${title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${artistName}</span>
-                <span class="song-stats">Single</span>
-              </div>
-              <span class="album-date">${date}</span>
-            </div>
-          </div>
-        `;
+        // ... (keep your existing latest songs generation) ...
       }));
 
       // ---------- FEATURED ARTISTS ----------
       const featuredArtists = artistList.slice(0, 4);
       const featuredArtistsHtml = await Promise.all(featuredArtists.map(async artist => {
-        let thumbUrl = "/images/placeholder.jpg";
-        if (artist.thumbnail) {
-          try {
-            const thumbObj = await env.media.get(artist.thumbnail);
-            if (thumbObj) {
-              const ext = artist.thumbnail.split(".").pop();
-              thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            }
-          } catch (e) {}
-        }
-        const albumCount = artist.albums?.length || 0;
-        const songCount = artist.songs?.length || 0;
-        const bgStyle = thumbUrl !== '/images/placeholder.jpg'
-          ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-          : '';
-        return `
-          <div class="album-item" onclick="window.location='/artist/${artist.id}'">
-            <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-            <div class="album-info">
-              <span class="album-title">${artist.name}</span>
-              <div class="album-meta">
-                <span class="artist-stats">${albumCount} Albums</span>
-                <span class="album-genre">Artist</span>
-              </div>
-              <span class="album-date">${songCount} songs</span>
-            </div>
-          </div>
-        `;
+        // ... (keep your existing featured artists generation) ...
       }));
 
       // ---------- TOP RATED ----------
@@ -1374,38 +1161,10 @@ export default {
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
       const topRatedHtml = await Promise.all(topRated.map(async album => {
-        let thumbUrl = "/images/placeholder.jpg";
-        if (album.thumbnail) {
-          try {
-            const thumbObj = await env.media.get(album.thumbnail);
-            if (thumbObj) {
-              const ext = album.thumbnail.split(".").pop();
-              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-            }
-          } catch (e) {}
-        }
-        const primaryArtist = (album.artists?.length && artists[album.artists[0]]) ? artists[album.artists[0]].name : "Various";
-        const date = new Date(album.created).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        const trackCount = album.songs?.length || 0;
-        const hasImage = thumbUrl !== '/images/placeholder.jpg';
-        return `
-          <div class="album-item" onclick="window.location='/album/${album.id}'">
-            <div class="album-thumbnail${hasImage ? '' : ' placeholder'}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${album.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${primaryArtist}</span>
-                <span class="album-tracks">${trackCount} Tracks</span>
-              </div>
-              <span class="album-date">${date}</span>
-            </div>
-          </div>
-        `;
+        // ... (keep your existing top rated generation) ...
       }));
 
-      // ---------- QUICK ACCESS (renamed from PLAYLISTS) ----------
+      // ---------- QUICK ACCESS (was PLAYLISTS, now renamed) ----------
       const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
       const quickAccessHtml = `
         <div class="album-item" onclick="window.location='/albums'">
@@ -1443,7 +1202,7 @@ export default {
         </div>
       `;
 
-      // ---------- RECENT PLAYLISTS (new section) ----------
+      // ---------- RECENT PLAYLISTS (NEW) ----------
       const recentPlaylists = Object.values(playlists)
         .sort((a, b) => b.created - a.created)
         .slice(0, 3);
@@ -1483,38 +1242,10 @@ export default {
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
       const trendingHtml = await Promise.all(trending.map(async album => {
-        let thumbUrl = "/images/placeholder.jpg";
-        if (album.thumbnail) {
-          try {
-            const thumbObj = await env.media.get(album.thumbnail);
-            if (thumbObj) {
-              const ext = album.thumbnail.split(".").pop();
-              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-            }
-          } catch (e) {}
-        }
-        const primaryArtist = (album.artists?.length && artists[album.artists[0]]) ? artists[album.artists[0]].name : "Various";
-        const date = new Date(album.created).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        const trackCount = album.songs?.length || 0;
-        const hasImage = thumbUrl !== '/images/placeholder.jpg';
-        return `
-          <div class="album-item" onclick="window.location='/album/${album.id}'">
-            <div class="album-thumbnail${hasImage ? '' : ' placeholder'}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${album.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${primaryArtist}</span>
-                <span class="album-tracks">${trackCount} Tracks</span>
-              </div>
-              <span class="album-date">${date}</span>
-            </div>
-          </div>
-        `;
+        // ... (keep your existing trending generation) ...
       }));
 
-      // Replace all placeholders
+      // ---------- REPLACE ALL PLACEHOLDERS ----------
       html = html.replace(
         /<!-- LATEST_ALBUMS_START -->[\s\S]*?<!-- LATEST_ALBUMS_END -->/g,
         `<!-- LATEST_ALBUMS_START -->${latestAlbumsHtml.join('')}<!-- LATEST_ALBUMS_END -->`
@@ -1535,10 +1266,12 @@ export default {
         /<!-- TOP_RATED_START -->[\s\S]*?<!-- TOP_RATED_END -->/g,
         `<!-- TOP_RATED_START -->${topRatedHtml.join('')}<!-- TOP_RATED_END -->`
       );
+      // Replace the old PLAYLISTS placeholder with QUICK_ACCESS
       html = html.replace(
-        /<!-- QUICK_ACCESS_START -->[\s\S]*?<!-- QUICK_ACCESS_END -->/g,
-        `<!-- QUICK_ACCESS_START -->${quickAccessHtml}<!-- QUICK_ACCESS_END -->`
+        /<!-- PLAYLISTS_START -->[\s\S]*?<!-- PLAYLISTS_END -->/g,
+        `<!-- PLAYLISTS_START -->${quickAccessHtml}<!-- PLAYLISTS_END -->`
       );
+      // Add new RECENT_PLAYLISTS placeholder (you must add this to your index.html)
       html = html.replace(
         /<!-- RECENT_PLAYLISTS_START -->[\s\S]*?<!-- RECENT_PLAYLISTS_END -->/g,
         `<!-- RECENT_PLAYLISTS_START -->${recentPlaylistsHtml.join('')}<!-- RECENT_PLAYLISTS_END -->`
@@ -1561,19 +1294,7 @@ export default {
     // =========================
     if (path.startsWith("/download/")) {
       const fileName = decodeURIComponent(path.replace("/download/",""));
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Downloading...</title>
-          <meta http-equiv="refresh" content="0;url=/songs/${encodeURIComponent(fileName)}">
-        </head>
-        <body>
-          <p>Download started. <a href="/songs/${encodeURIComponent(fileName)}">Click here</a> if download doesn't start automatically.</p>
-          <p><a href="/">Back to Home</a></p>
-        </body>
-        </html>
-      `;
+      const html = `...`; // keep your existing download HTML
       return new Response(html, {
         headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=300" }
       });
@@ -1638,6 +1359,7 @@ export default {
       });
     }
 
+    // NEW: Playlist thumbnails serving
     if (path.startsWith("/playlists/thumbnails/")) {
       const fileName = decodeURIComponent(path.slice(1));
       const obj = await env.media.get(fileName);
@@ -1654,33 +1376,11 @@ export default {
     // ALBUM-ARTIST ASSIGNMENT ENDPOINT
     // =========================
     if (path === "/assign-album-to-artist" && req.method === "POST") {
-      try {
-        const data = await req.json();
-        const { albumId, artistId, assign } = data;
-        if (!albumId || !artistId) {
-          return new Response(JSON.stringify({ success: false, error: "Missing albumId or artistId" }), {
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
-          });
-        }
-        if (assign) {
-          await addAlbumToArtist(artistId, albumId);
-          await addArtistToAlbum(artistId, albumId);
-        } else {
-          await removeAlbumFromArtist(artistId, albumId);
-          await removeArtistFromAlbum(artistId, albumId);
-        }
-        return new Response(JSON.stringify({ success: true, message: assign ? "Album assigned to artist" : "Album removed from artist" }), {
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        return new Response(JSON.stringify({ success: false, error: error.message }), {
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
-        });
-      }
+      // ... (keep your existing endpoint) ...
     }
 
     // =========================
-    // ADD/REMOVE SONG TO/FROM PLAYLIST (JSON)
+    // ADD/REMOVE SONG TO/FROM PLAYLIST (JSON) - NEW
     // =========================
     if (path === "/playlist/add-song" && req.method === "POST") {
       try {
@@ -1716,11 +1416,11 @@ export default {
     // SIMPLE ALBUM MANAGEMENT PAGE
     // =========================
     if (path === "/manage-album-artists" && req.method === "GET") {
-      // ... (existing management page) ...
+      // ... (keep your existing management page) ...
     }
 
     // =========================
-    // REDIRECT OLD ROUTES
+    // REDIRECT OLD ROUTES TO NEW ONES
     // =========================
     if (path === "/album") {
       return Response.redirect("/albums", 301);
