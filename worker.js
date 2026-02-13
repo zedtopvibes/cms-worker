@@ -2481,8 +2481,8 @@ export default {
       );
       
       html = html.replace(
-        /<!-- PLAYLISTS_START -->[\s\S]*?<!-- PLAYLISTS_END -->/g,
-        `<!-- PLAYLISTS_START -->${quickAccessHtml}<!-- PLAYLISTS_END -->`
+        /<!-- QUICK_ACCESS_START -->[\s\S]*?<!-- QUICK_ACCESS_END -->/g,
+        `<!-- QUICK_ACCESS_START -->${quickAccessHtml}<!-- QUICK_ACCESS_END -->`
       );
       
       html = html.replace(
