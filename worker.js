@@ -1,4 +1,3 @@
-
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -28,6 +27,11 @@ export default {
     let playlistsCache = null;
     let playlistsCacheTimestamp = 0;
     const PLAYLISTS_CACHE_DURATION = 60000;
+
+    // --- Metadata cache (for song metadata) ---
+    let metadataCache = {};
+    let metadataCacheTimestamp = 0;
+    const METADATA_CACHE_DURATION = 60000; // 1 minute
 
     // -----------------------------
     // Helper to sanitize filenames
@@ -377,6 +381,39 @@ export default {
     };
     // ========== END PLAYLIST FUNCTIONS ==========
 
+    // ========== NEW: METADATA FUNCTIONS (for song-level artist details) ==========
+    const getMetadata = async (songKey) => {
+      const now = Date.now();
+      // Check cache
+      if (metadataCache[songKey] && (now - metadataCacheTimestamp < METADATA_CACHE_DURATION)) {
+        return metadataCache[songKey];
+      }
+      try {
+        const metaObj = await env.media.get(`metadata/${songKey}.json`);
+        if (!metaObj) {
+          metadataCache[songKey] = null;
+          metadataCacheTimestamp = now;
+          return null;
+        }
+        const text = await metaObj.text();
+        const metadata = JSON.parse(text);
+        metadataCache[songKey] = metadata;
+        metadataCacheTimestamp = now;
+        return metadata;
+      } catch (e) {
+        metadataCache[songKey] = null;
+        metadataCacheTimestamp = now;
+        return null;
+      }
+    };
+
+    const saveMetadata = async (songKey, metadata) => {
+      await env.media.put(`metadata/${songKey}.json`, JSON.stringify(metadata));
+      metadataCache[songKey] = metadata;
+      metadataCacheTimestamp = Date.now();
+    };
+    // ========== END METADATA FUNCTIONS ==========
+
     // =========================
     // UPLOAD PAGE (GET)
     // =========================
@@ -425,9 +462,9 @@ export default {
       `;
       
       const artistSection = `
-        <label>Artist</label>
+        <label>Primary Artist</label>
         <select name="artist" id="artistSelect" required style="padding:8px; margin-top:5px;">
-          <option value="">-- Select Artist --</option>
+          <option value="">-- Select Primary Artist --</option>
           ${artistOptions}
           <option value="__create_new__">[Create New Artist]</option>
         </select>
@@ -436,6 +473,13 @@ export default {
           <span id="existingArtistNote" style="display:none;">Or select existing artist above</span>
         </p>
         <input type="text" name="artist_name" id="artistNameInput" placeholder="Enter new artist name" style="padding:8px; margin-top:5px; display:none;">
+
+        <label>Featured Artists (Optional, multi-select)</label>
+        <select name="featured" multiple size="4" style="padding:8px; margin-top:5px;">
+          <option value="">-- None --</option>
+          ${artistOptions}
+        </select>
+        <p style="margin-top:5px; font-size:0.9em; color:#666;">Hold Ctrl/Cmd to select multiple</p>
       `;
 
       const html = `
@@ -456,6 +500,7 @@ export default {
           .back-link a { color: #666; text-decoration: none; }
           .back-link a:hover { color: #ff5500; }
           .section-title { margin-top: 25px; margin-bottom: 10px; font-size: 1.1rem; font-weight: 600; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+          select[multiple] { height: auto; min-height: 100px; }
         </style>
         <script>
           document.addEventListener('DOMContentLoaded', function() {
@@ -564,6 +609,7 @@ export default {
       const albumId = formData.get("album");
       const playlistId = formData.get("playlist");
       const artistNameInput = formData.get("artist_name");
+      const featured = formData.getAll("featured"); // could be array of IDs
 
       if (!title || !audioFile || !imageFile) {
         return new Response("Missing fields", { status: 400 });
@@ -605,6 +651,16 @@ export default {
       await env.media.put(imageKey, imageFile.stream());
       await env.media.put(descKey, description);
 
+      // Save metadata
+      const featuredArtists = featured.filter(id => id && id !== ""); // remove empty
+      const metadata = {
+        title,
+        primaryArtist: artistId,
+        featuredArtists,
+        description
+      };
+      await saveMetadata(baseName, metadata);
+
       if (albumId && albumId !== "" && albumId !== "__create_new__") {
         await addSongToAlbum(albumId, baseName);
         await addAlbumToArtist(artistId, albumId);
@@ -616,6 +672,10 @@ export default {
       }
       
       await addSongToArtist(artistId, baseName);
+      // Add song to each featured artist
+      for (const fid of featuredArtists) {
+        await addSongToArtist(fid, baseName);
+      }
 
       homepageCache = null;
       cacheTimestamp = 0;
@@ -1449,12 +1509,24 @@ export default {
       }
 
       const tracksHtml = await Promise.all(album.songs.map(async (songKey, index) => {
-        const [artistId, ...titleParts] = songKey.split("_");
-        const title = titleParts.join(" ");
+        // Get metadata to display correct artist credit
+        const meta = await getMetadata(songKey);
+        let artistName = "";
+        let artistDisplay = "";
+        if (meta) {
+          const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+          const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+          artistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+          artistName = primary;
+        } else {
+          // Fallback to old method
+          const [artistId] = songKey.split("_");
+          const artist = artists[artistId];
+          artistName = artist ? artist.name : artistId;
+          artistDisplay = artistName;
+        }
         
-        let artistName = artistId;
-        const artist = artists[artistId];
-        if (artist) artistName = artist.name;
+        const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
         
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
@@ -1486,7 +1558,7 @@ export default {
             <div class="album-info">
               <span class="album-title">${title}</span>
               <div class="album-meta">
-                <span class="album-artist">${artistName}</span>
+                <span class="album-artist">${artistDisplay}</span>
                 <span class="track-duration">${duration}</span>
                 <span class="album-genre">Track ${trackNumber}</span>
               </div>
@@ -1766,22 +1838,43 @@ export default {
       }
       let html = await templateObj.text();
 
-      const [artistId, ...titleParts] = baseName.split("_");
-      const songTitle = titleParts.join(" ");
-      
-      const artists = await getArtists();
-      const albums = await getAlbums();
-      
-      let artistName = artistId;
-      let artistObj = artists[artistId];
-      if (artistObj) {
-        artistName = artistObj.name;
+      // Get metadata
+      const meta = await getMetadata(baseName);
+      let songTitle, primaryArtistId, featuredArtists = [], description = "";
+      if (meta) {
+        songTitle = meta.title;
+        primaryArtistId = meta.primaryArtist;
+        featuredArtists = meta.featuredArtists || [];
+        description = meta.description || "";
+      } else {
+        // Fallback to old method
+        const [artistId, ...titleParts] = baseName.split("_");
+        songTitle = titleParts.join(" ");
+        primaryArtistId = artistId;
       }
 
-      let description = "";
-      const descObj = await env.media.get(`descriptions/${baseName}.txt`);
-      if (descObj) {
-        description = await descObj.text();
+      const artists = await getArtists();
+      const albums = await getAlbums();
+
+      // Get primary artist name
+      let primaryArtistName = primaryArtistId;
+      let primaryArtistObj = artists[primaryArtistId];
+      if (primaryArtistObj) {
+        primaryArtistName = primaryArtistObj.name;
+      }
+
+      // Get featured artist names
+      const featuredNames = featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+
+      // Build full artist display string
+      const artistDisplay = featuredNames ? `${primaryArtistName} feat. ${featuredNames}` : primaryArtistName;
+
+      // If no metadata, try to get description from old file
+      if (!meta) {
+        const descObj = await env.media.get(`descriptions/${baseName}.txt`);
+        if (descObj) {
+          description = await descObj.text();
+        }
       }
 
       let hasImage = false;
@@ -1841,11 +1934,19 @@ export default {
             .filter(songKey => songKey !== baseName) // exclude current song
             .slice(0, 10) // limit to 10
             .map(async (songKey, index) => {
-              const [sid, ...stitleParts] = songKey.split("_");
-              const stitle = stitleParts.join(" ");
-              let sartistName = sid;
-              const sartist = artists[sid];
-              if (sartist) sartistName = sartist.name;
+              // Get metadata for each song to display correct artist
+              const m = await getMetadata(songKey);
+              let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
+              let sartistDisplay = "";
+              if (m) {
+                const primary = artists[m.primaryArtist]?.name || m.primaryArtist;
+                const featured = m.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+                sartistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+              } else {
+                const [sid] = songKey.split("_");
+                const sartist = artists[sid];
+                sartistDisplay = sartist ? sartist.name : sid;
+              }
               let sthumbUrl = "/images/placeholder.jpg";
               let shasImage = false;
               try {
@@ -1869,9 +1970,9 @@ export default {
                     ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
                   </div>
                   <div class="album-info">
-                    <span class="album-title">${sartistName} - ${stitle}</span>
+                    <span class="album-title">${sartistDisplay} - ${stitle}</span>
                     <div class="album-meta">
-                      <span class="album-artist">${sartistName}</span>
+                      <span class="album-artist">${sartistDisplay}</span>
                       <span class="song-duration">${sduration}</span>
                     </div>
                     <span class="album-date">Track ${trackNum}</span>
@@ -1886,11 +1987,18 @@ export default {
       } else if (albumInfo && albumId) {
         // Fallback to album context
         const albumSongs = await Promise.all(albumInfo.songs.map(async (songKey, index) => {
-          const [sid, ...stitleParts] = songKey.split("_");
-          const stitle = stitleParts.join(" ");
-          let sartistName = sid;
-          const sartist = artists[sid];
-          if (sartist) sartistName = sartist.name;
+          const m = await getMetadata(songKey);
+          let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
+          let sartistDisplay = "";
+          if (m) {
+            const primary = artists[m.primaryArtist]?.name || m.primaryArtist;
+            const featured = m.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+            sartistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+          } else {
+            const [sid] = songKey.split("_");
+            const sartist = artists[sid];
+            sartistDisplay = sartist ? sartist.name : sid;
+          }
           let sthumbUrl = "/images/placeholder.jpg";
           let shasImage = false;
           try {
@@ -1916,9 +2024,9 @@ export default {
                 ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
               </div>
               <div class="album-info">
-                <span class="album-title">${sartistName} - ${stitle}</span>
+                <span class="album-title">${sartistDisplay} - ${stitle}</span>
                 <div class="album-meta">
-                  <span class="album-artist">${sartistName}</span>
+                  <span class="album-artist">${sartistDisplay}</span>
                   <span class="song-duration">${sduration}</span>
                 </div>
                 <span class="album-date">Track ${trackNum}</span>
@@ -1937,9 +2045,9 @@ export default {
 
       // ---------- RIGHT SIDEBAR: MORE BY THIS ARTIST ----------
       let moreByArtistHtml = '';
-      if (artistId) {
+      if (primaryArtistId) {
         const artistAlbums = Object.values(albums)
-          .filter(a => a.artists?.includes(artistId))
+          .filter(a => a.artists?.includes(primaryArtistId))
           .sort((a, b) => b.created - a.created)
           .slice(0, 2);
         
@@ -1968,9 +2076,9 @@ export default {
                 ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
               </div>
               <div class="album-info">
-                <span class="album-title">${artistName} - ${album.title}</span>
+                <span class="album-title">${primaryArtistName} - ${album.title}</span>
                 <div class="album-meta">
-                  <span class="album-artist">${artistName}</span>
+                  <span class="album-artist">${primaryArtistName}</span>
                   <span class="album-genre">Album</span>
                 </div>
                 <span class="album-date">${formattedDate}</span>
@@ -1995,11 +2103,18 @@ export default {
       const similarSongsHtml = await Promise.all(similarSongs.map(async f => {
         const fName = f.key.split("/")[1];
         const fBaseName = fName.replace(".mp3", "");
-        const [fArtistId, ...fTitleParts] = fBaseName.split("_");
-        const fTitle = fTitleParts.join(" ");
-        let fArtistName = fArtistId;
-        const fArtist = artists[fArtistId];
-        if (fArtist) fArtistName = fArtist.name;
+        const m = await getMetadata(fBaseName);
+        let fTitle = m ? m.title : fBaseName.split("_").slice(1).join(" ");
+        let fArtistDisplay = "";
+        if (m) {
+          const primary = artists[m.primaryArtist]?.name || m.primaryArtist;
+          const featured = m.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+          fArtistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+        } else {
+          const [fArtistId] = fBaseName.split("_");
+          const fArtist = artists[fArtistId];
+          fArtistDisplay = fArtist ? fArtist.name : fArtistId;
+        }
         let fThumbUrl = "/images/placeholder.jpg";
         let fHasImage = false;
         try {
@@ -2028,9 +2143,9 @@ export default {
               ${fHasImage ? `<img src="${fThumbUrl}" alt="${fTitle}" loading="lazy">` : ''}
             </div>
             <div class="album-info">
-              <span class="album-title">${fArtistName} - ${fTitle}</span>
+              <span class="album-title">${fArtistDisplay} - ${fTitle}</span>
               <div class="album-meta">
-                <span class="album-artist">${fArtistName}</span>
+                <span class="album-artist">${fArtistDisplay}</span>
                 <span class="song-duration">${fDuration}</span>
               </div>
               <span class="album-date">${fFormattedDate}</span>
@@ -2081,7 +2196,7 @@ export default {
       }
 
       // ========== REPLACE ALL PLACEHOLDERS ==========
-      html = html.replace(/<title>.*?<\/title>/, `<title>${artistName} - ${songTitle} - ZEDALBUMS.TOP</title>`);
+      html = html.replace(/<title>.*?<\/title>/, `<title>${artistDisplay} - ${songTitle} - ZEDALBUMS.TOP</title>`);
       
       // Breadcrumbs (adjust for playlist context)
       if (contextPlaylist) {
@@ -2106,16 +2221,16 @@ export default {
         html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
         html = html.replace(/<a href="songs\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
         html = html.replace(/<a href="artists\.html" class="breadcrumb-link">/g, '<a href="/artists" class="breadcrumb-link">');
-        html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${artistId}" class="breadcrumb-link">${artistName}</a>`);
+        html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${primaryArtistId}" class="breadcrumb-link">${primaryArtistName}</a>`);
         html = html.replace(/<span class="breadcrumb-current">.*?<\/span>/, `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`);
       }
 
       html = html.replace(/<div class="song-cover">[\s\S]*?<\/div>/, `<div class="song-cover">${songCoverHtml}</div>`);
       html = html.replace(/<h1 class="song-title">.*?<\/h1>/, `<h1 class="song-title">${songTitle}</h1>`);
-      html = html.replace(/<div class="song-artist">.*?<\/div>/, `<div class="song-artist">${artistName}</div>`);
+      html = html.replace(/<div class="song-artist">.*?<\/div>/, `<div class="song-artist">${artistDisplay}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-clock"><\/i> Duration: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-clock"></i> Duration: ${duration}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-calendar"><\/i> Released: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-calendar"></i> Released: ${formattedDate}</div>`);
-      html = html.replace(/<p class="playlist-description">[\s\S]*?<\/p>/, `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistName}.`}</p>`);
+      html = html.replace(/<p class="playlist-description">[\s\S]*?<\/p>/, `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistDisplay}.`}</p>`);
       html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${duration}</span>`);
       html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn"`);
       html = html.replace(/\/songs\/[^"]*\.mp3/g, `/songs/${encodeURIComponent(fileName)}`);
@@ -2457,39 +2572,72 @@ export default {
         } catch (e) {}
       }
 
+      // Gather all songs with role information
       const allSongs = [];
 
+      // Songs from albums where artist is primary (via song prefix)
       for (const alb of artistAlbums) {
         for (const songKey of alb.songs) {
-          const [sid, ...titleParts] = songKey.split("_");
+          const [sid] = songKey.split("_");
           if (sid !== artistId) continue;
+          const meta = await getMetadata(songKey);
+          const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+          const uploaded = alb.created; // approximate
           allSongs.push({
             key: songKey,
-            title: titleParts.join(" "),
+            title,
             artistName,
-            artists: [artistName],
+            artists: [artistName], // will be updated from metadata
             albumId: alb.id,
             albumTitle: alb.title,
-            uploaded: alb.created,
-            isSingle: false,
+            uploaded,
+            role: 'primary'
           });
         }
       }
 
+      // Singles (where artist is primary, and song not in any album)
       for (const songKey of singles) {
         const audioObj = await env.media.get(`songs/${songKey}.mp3`);
         const uploaded = audioObj?.uploaded || Date.now();
-        const [sid, ...titleParts] = songKey.split("_");
+        const meta = await getMetadata(songKey);
+        const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
         allSongs.push({
           key: songKey,
-          title: titleParts.join(" "),
+          title,
           artistName,
           artists: [artistName],
           albumId: null,
           albumTitle: null,
           uploaded,
-          isSingle: true,
+          role: 'primary'
         });
+      }
+
+      // Also include songs where artist is featured (by checking metadata)
+      // We need to scan all songs in the system? That could be heavy. Instead, we can rely on artist.songs list
+      // which already includes featured songs because we added them via addSongToArtist.
+      // So we iterate over artist.songs and for each, get metadata to determine role.
+      const processedKeys = new Set(allSongs.map(s => s.key));
+      for (const songKey of artist.songs) {
+        if (processedKeys.has(songKey)) continue;
+        const meta = await getMetadata(songKey);
+        if (meta && meta.featuredArtists.includes(artistId)) {
+          const audioObj = await env.media.get(`songs/${songKey}.mp3`);
+          const uploaded = audioObj?.uploaded || Date.now();
+          const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+          const title = meta.title;
+          allSongs.push({
+            key: songKey,
+            title,
+            artistName: primaryArtistName,
+            artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
+            albumId: null, // we could find album, but not necessary for now
+            albumTitle: null,
+            uploaded,
+            role: 'featured'
+          });
+        }
       }
 
       allSongs.sort((a, b) => b.uploaded - a.uploaded);
@@ -2518,7 +2666,8 @@ export default {
           )
             .toString()
             .padStart(2, "0")}`;
-          const artistDisplay = song.artists.join(", ");
+          const artistDisplay = song.artists.join(', ');
+          const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
 
           return `
             <div class="album-item" onclick="window.location='/song/${encodeURIComponent(
@@ -2532,9 +2681,9 @@ export default {
                 <div class="album-meta">
                   <span class="album-artist">${artistDisplay}</span>
                   <span class="song-duration">${duration}</span>
-                  <span class="album-genre">${song.isSingle ? "Single" : "Album"}</span>
+                  <span class="album-genre">${song.role === 'featured' ? 'Featured' : 'Song'}</span>
                 </div>
-                <span class="album-date">${date}</span>
+                <span class="album-date">${date} ${roleBadge}</span>
               </div>
             </div>
           `;
@@ -2579,6 +2728,17 @@ export default {
               const count = collabMap.get(aid) || 0;
               collabMap.set(aid, count + 1);
             }
+          }
+        }
+      }
+      // Also consider featured appearances in other artists' songs
+      for (const songKey of artist.songs) {
+        const meta = await getMetadata(songKey);
+        if (meta && meta.primaryArtist !== artistId && meta.featuredArtists.includes(artistId)) {
+          const primaryId = meta.primaryArtist;
+          if (primaryId && artists[primaryId]) {
+            const count = collabMap.get(primaryId) || 0;
+            collabMap.set(primaryId, count + 1);
           }
         }
       }
@@ -2828,12 +2988,18 @@ export default {
       const latestSongsHtml = await Promise.all(latestSongs.map(async f => {
         const fileName = f.key.split("/")[1];
         const baseName = fileName.replace(".mp3", "");
-        const [artistId, ...titleParts] = baseName.split("_");
-        const title = titleParts.join(" ");
-        
-        let artistName = artistId;
-        const artist = artists[artistId];
-        if (artist) artistName = artist.name;
+        const meta = await getMetadata(baseName);
+        let title = meta ? meta.title : baseName.split("_").slice(1).join(" ");
+        let artistDisplay = "";
+        if (meta) {
+          const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+          const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+          artistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+        } else {
+          const [artistId] = baseName.split("_");
+          const artist = artists[artistId];
+          artistDisplay = artist ? artist.name : artistId;
+        }
         
         let thumbUrl = "/images/placeholder.jpg";
         try {
@@ -2865,7 +3031,7 @@ export default {
             <div class="album-info">
               <span class="album-title">${title}</span>
               <div class="album-meta">
-                <span class="album-artist">${artistName}</span>
+                <span class="album-artist">${artistDisplay}</span>
                 <span class="song-stats">Single</span>
               </div>
               <span class="album-date">${formattedDate}</span>
@@ -3421,11 +3587,18 @@ export default {
 
       // ---------- SONGS IN THIS PLAYLIST ----------
       const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
-        const [artistId, ...titleParts] = songKey.split("_");
-        const title = titleParts.join(" ");
-        let artistName = artistId;
-        const artist = artists[artistId];
-        if (artist) artistName = artist.name;
+        const meta = await getMetadata(songKey);
+        let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+        let artistDisplay = "";
+        if (meta) {
+          const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+          const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+          artistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+        } else {
+          const [artistId] = songKey.split("_");
+          const artist = artists[artistId];
+          artistDisplay = artist ? artist.name : artistId;
+        }
 
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
@@ -3452,9 +3625,9 @@ export default {
               ${hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : ''}
             </div>
             <div class="album-info">
-              <span class="album-title">${artistName} - ${title}</span>
+              <span class="album-title">${artistDisplay} - ${title}</span>
               <div class="album-meta">
-                <span class="album-artist">${artistName}</span>
+                <span class="album-artist">${artistDisplay}</span>
                 <span class="song-duration">${duration}</span>
                 <span class="album-genre">Track ${trackNumber}</span>
               </div>
@@ -3482,10 +3655,15 @@ export default {
       let mainArtistName = null;
       if (playlist.songs && playlist.songs.length > 0) {
         const firstSongKey = playlist.songs[0];
-        const [aid] = firstSongKey.split("_");
-        const artist = artists[aid];
-        if (artist) {
+        const meta = await getMetadata(firstSongKey);
+        if (meta) {
+          mainArtistId = meta.primaryArtist;
+        } else {
+          const [aid] = firstSongKey.split("_");
           mainArtistId = aid;
+        }
+        const artist = artists[mainArtistId];
+        if (artist) {
           mainArtistName = artist.name;
         }
       }
