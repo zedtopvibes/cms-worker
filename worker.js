@@ -1,3 +1,4 @@
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -404,7 +405,7 @@ export default {
         return `<option value="${id}">${artist.name}</option>`;
       }).join("");
       
-      // === NEW: Get playlists for dropdown ===
+      // === Get playlists for dropdown ===
       const playlists = await getPlaylists();
       const playlistOptions = Object.keys(playlists).map(id => {
         const playlist = playlists[id];
@@ -467,7 +468,6 @@ export default {
               });
             }
             
-            // === NEW: Playlist create redirect ===
             const playlistSelect = document.querySelector('select[name="playlist"]');
             if (playlistSelect) {
               playlistSelect.addEventListener('change', function() {
@@ -562,7 +562,7 @@ export default {
       const audioFile = formData.get("audio");
       const imageFile = formData.get("image");
       const albumId = formData.get("album");
-      const playlistId = formData.get("playlist"); // NEW: Get playlist ID
+      const playlistId = formData.get("playlist");
       const artistNameInput = formData.get("artist_name");
 
       if (!title || !audioFile || !imageFile) {
@@ -611,7 +611,6 @@ export default {
         await addArtistToAlbum(artistId, albumId);
       }
       
-      // === NEW: Add to playlist if selected ===
       if (playlistId && playlistId !== "" && playlistId !== "__create_new__") {
         await addSongToPlaylist(playlistId, baseName);
       }
@@ -1742,7 +1741,7 @@ export default {
     }
 
     // =========================
-    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE
+    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT)
     // =========================
     if (path.startsWith("/song/")) {
       const fileName = decodeURIComponent(path.replace("/song/", ""));
@@ -1751,6 +1750,14 @@ export default {
       const audioObj = await env.media.get(`songs/${fileName}`);
       if (!audioObj) {
         return new Response("Song not found", { status: 404 });
+      }
+
+      // Check for playlist context
+      const playlistId = url.searchParams.get("playlist");
+      let contextPlaylist = null;
+      if (playlistId) {
+        const playlists = await getPlaylists();
+        contextPlaylist = playlists[playlistId];
       }
 
       const templateObj = await env.media.get("song.html");
@@ -1807,6 +1814,7 @@ export default {
       const duration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
       const durationSeconds = parseInt(duration.split(':')[0]) * 60 + parseInt(duration.split(':')[1]);
 
+      // Find album containing this song (for fallback)
       let albumInfo = null;
       let albumId = null;
       let trackNumber = null;
@@ -1821,9 +1829,62 @@ export default {
         }
       }
 
-      // ---------- LEFT SIDEBAR: MORE FROM THIS ALBUM ----------
+      // ---------- LEFT SIDEBAR: CONTEXTUAL (PLAYLIST OR ALBUM) ----------
       let playlistHtml = '';
-      if (albumInfo && albumId) {
+      let sidebarTitle = '';
+      let viewAllLink = '';
+
+      if (contextPlaylist && contextPlaylist.songs) {
+        // Show songs from the same playlist
+        const playlistSongs = await Promise.all(
+          contextPlaylist.songs
+            .filter(songKey => songKey !== baseName) // exclude current song
+            .slice(0, 10) // limit to 10
+            .map(async (songKey, index) => {
+              const [sid, ...stitleParts] = songKey.split("_");
+              const stitle = stitleParts.join(" ");
+              let sartistName = sid;
+              const sartist = artists[sid];
+              if (sartist) sartistName = sartist.name;
+              let sthumbUrl = "/images/placeholder.jpg";
+              let shasImage = false;
+              try {
+                const sjpgObj = await env.media.get(`images/${songKey}.jpg`);
+                if (sjpgObj) {
+                  sthumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+                  shasImage = true;
+                } else {
+                  const spngObj = await env.media.get(`images/${songKey}.png`);
+                  if (spngObj) {
+                    sthumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+                    shasImage = true;
+                  }
+                }
+              } catch (e) {}
+              const sduration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+              const trackNum = (index + 1).toString().padStart(2, '0');
+              return `
+                <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}?playlist=${playlistId}'">
+                  <div class="album-thumbnail ${shasImage ? '' : 'placeholder'}">
+                    ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
+                  </div>
+                  <div class="album-info">
+                    <span class="album-title">${sartistName} - ${stitle}</span>
+                    <div class="album-meta">
+                      <span class="album-artist">${sartistName}</span>
+                      <span class="song-duration">${sduration}</span>
+                    </div>
+                    <span class="album-date">Track ${trackNum}</span>
+                  </div>
+                </div>
+              `;
+            })
+        );
+        playlistHtml = playlistSongs.join('');
+        sidebarTitle = `More from "${contextPlaylist.title}" Playlist`;
+        viewAllLink = contextPlaylist.songs.length > 10 ? `<a href="/playlist/${playlistId}" class="view-all">View All</a>` : '';
+      } else if (albumInfo && albumId) {
+        // Fallback to album context
         const albumSongs = await Promise.all(albumInfo.songs.map(async (songKey, index) => {
           const [sid, ...stitleParts] = songKey.split("_");
           const stitle = stitleParts.join(" ");
@@ -1866,6 +1927,12 @@ export default {
           `;
         }));
         playlistHtml = albumSongs.join('');
+        sidebarTitle = `More from "${albumInfo.title}" Album`;
+        viewAllLink = `<a href="/album/${albumId}" class="view-all">View Album</a>`;
+      } else {
+        playlistHtml = '<div style="padding: 20px; text-align: center; color: #666;">No other songs found</div>';
+        sidebarTitle = 'More Songs';
+        viewAllLink = '';
       }
 
       // ---------- RIGHT SIDEBAR: MORE BY THIS ARTIST ----------
@@ -1972,29 +2039,77 @@ export default {
         `;
       })).then(results => results.join(''));
 
-      // ---------- RIGHT SIDEBAR: QUICK INFO ----------
-      const quickInfoHtml = `
-        <div class="quick-info-section">
-          <p><strong>Format:</strong> MP3</p>
-          <p><strong>Bitrate:</strong> 320 kbps</p>
-          <p><strong>Quality:</strong> High Quality</p>
-          <p><strong>Release Date:</strong> ${formattedDate}</p>
-          <p><strong>Genre:</strong> ${albumInfo?.genre || 'Zam Pop'}</p>
-          <p><strong>Duration:</strong> ${duration}</p>
-          <div class="info-note">
-            <i class="fas fa-info-circle" style="color: #ff5500;"></i>
-            <span>No registration required for download</span>
+      // ---------- RIGHT SIDEBAR: QUICK INFO / PLAYLIST INFO ----------
+      let quickInfoHtml = '';
+      if (contextPlaylist) {
+        // Show playlist info
+        const playlistSongCount = contextPlaylist.songs?.length || 0;
+        const playlistCreated = new Date(contextPlaylist.created).toLocaleDateString('en-GB', {
+          day: '2-digit', month: 'short', year: 'numeric'
+        });
+        quickInfoHtml = `
+          <div class="quick-info-section">
+            <h3 style="margin-bottom: 10px; color: #4a90e2;">Playlist Info</h3>
+            <p><strong>${contextPlaylist.title}</strong></p>
+            <p><strong>Songs:</strong> ${playlistSongCount}</p>
+            <p><strong>Curator:</strong> ${contextPlaylist.curator || 'ZEDALBUMS.TOP'}</p>
+            <p><strong>Created:</strong> ${playlistCreated}</p>
+            ${contextPlaylist.description ? `<p><strong>Description:</strong> ${contextPlaylist.description}</p>` : ''}
+            <div class="info-note">
+              <i class="fas fa-info-circle" style="color: #4a90e2;"></i>
+              <span>Viewing in playlist context</span>
+            </div>
+            <p style="margin-top: 10px;"><a href="/playlist/${playlistId}" class="view-all" style="color: #4a90e2;">View Full Playlist →</a></p>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        // Default song info
+        quickInfoHtml = `
+          <div class="quick-info-section">
+            <p><strong>Format:</strong> MP3</p>
+            <p><strong>Bitrate:</strong> 320 kbps</p>
+            <p><strong>Quality:</strong> High Quality</p>
+            <p><strong>Release Date:</strong> ${formattedDate}</p>
+            <p><strong>Genre:</strong> ${albumInfo?.genre || 'Zam Pop'}</p>
+            <p><strong>Duration:</strong> ${duration}</p>
+            <div class="info-note">
+              <i class="fas fa-info-circle" style="color: #ff5500;"></i>
+              <span>No registration required for download</span>
+            </div>
+          </div>
+        `;
+      }
 
       // ========== REPLACE ALL PLACEHOLDERS ==========
       html = html.replace(/<title>.*?<\/title>/, `<title>${artistName} - ${songTitle} - ZEDALBUMS.TOP</title>`);
-      html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
-      html = html.replace(/<a href="songs\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
-      html = html.replace(/<a href="artists\.html" class="breadcrumb-link">/g, '<a href="/artists" class="breadcrumb-link">');
-      html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${artistId}" class="breadcrumb-link">${artistName}</a>`);
-      html = html.replace(/<span class="breadcrumb-current">.*?<\/span>/, `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`);
+      
+      // Breadcrumbs (adjust for playlist context)
+      if (contextPlaylist) {
+        html = html.replace(
+          /<a href="index\.html" class="breadcrumb-link">/g,
+          '<a href="/" class="breadcrumb-link">'
+        );
+        html = html.replace(
+          /<a href="songs\.html" class="breadcrumb-link">/g,
+          '<a href="/playlists" class="breadcrumb-link">Playlists</a>'
+        );
+        html = html.replace(
+          /<a href="artists\.html" class="breadcrumb-link">/g,
+          `<a href="/playlist/${playlistId}" class="breadcrumb-link">${contextPlaylist.title}</a>`
+        );
+        html = html.replace(
+          /<span class="breadcrumb-current">.*?<\/span>/,
+          `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`
+        );
+      } else {
+        // Default breadcrumbs
+        html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
+        html = html.replace(/<a href="songs\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
+        html = html.replace(/<a href="artists\.html" class="breadcrumb-link">/g, '<a href="/artists" class="breadcrumb-link">');
+        html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${artistId}" class="breadcrumb-link">${artistName}</a>`);
+        html = html.replace(/<span class="breadcrumb-current">.*?<\/span>/, `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`);
+      }
+
       html = html.replace(/<div class="song-cover">[\s\S]*?<\/div>/, `<div class="song-cover">${songCoverHtml}</div>`);
       html = html.replace(/<h1 class="song-title">.*?<\/h1>/, `<h1 class="song-title">${songTitle}</h1>`);
       html = html.replace(/<div class="song-artist">.*?<\/div>/, `<div class="song-artist">${artistName}</div>`);
@@ -2004,34 +2119,41 @@ export default {
       html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${duration}</span>`);
       html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn"`);
       html = html.replace(/\/songs\/[^"]*\.mp3/g, `/songs/${encodeURIComponent(fileName)}`);
-      
-      if (albumInfo) {
-        html = html.replace(/<h2 class="section-title">More from "[^"]*" Playlist<\/h2>/, `<h2 class="section-title">More from "${albumInfo.title}" Album</h2>`);
-        html = html.replace(/<a href="playlist-detail\.html" class="view-all">View All<\/a>/, `<a href="/album/${albumId}" class="view-all">View Album</a>`);
-      } else {
-        html = html.replace(/<h2 class="section-title">More from "[^"]*" Playlist<\/h2>/, `<h2 class="section-title">More Songs</h2>`);
-        html = html.replace(/<a href="playlist-detail\.html" class="view-all">View All<\/a>/, `<a href="/" class="view-all">View All</a>`);
-      }
-      
-      html = html.replace(/<div class="latest-albums-list">[\s\S]*?<\/div>\s*<\/div>\s*<\/aside>/, 
-        `<div class="latest-albums-list">${playlistHtml || '<div style="padding: 20px; text-align: center; color: #666;">No other songs in this album</div>'}</div>
-            </div>
-          </aside>`
+
+      // Replace left sidebar title and view all link
+      html = html.replace(
+        /<h2 class="section-title">.*?<\/h2>/,
+        `<h2 class="section-title">${sidebarTitle}</h2>`
       );
-      
-      html = html.replace(/<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g, 
+      html = html.replace(
+        /<a href="[^"]*" class="view-all">.*?<\/a>/,
+        viewAllLink
+      );
+
+      // Replace left sidebar content (the whole .latest-albums-list inside the left aside)
+      html = html.replace(
+        /(<div class="latest-albums-list">)([\s\S]*?)(<\/div>\s*<\/div>\s*<\/aside>)/,
+        `$1${playlistHtml}$3`
+      );
+
+      // Replace right sidebar sections
+      html = html.replace(
+        /<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g,
         `<!-- MORE_BY_ARTIST_START -->${moreByArtistHtml}<!-- MORE_BY_ARTIST_END -->`
       );
       
-      html = html.replace(/<!-- SIMILAR_SONGS_START -->[\s\S]*?<!-- SIMILAR_SONGS_END -->/g, 
+      html = html.replace(
+        /<!-- SIMILAR_SONGS_START -->[\s\S]*?<!-- SIMILAR_SONGS_END -->/g,
         `<!-- SIMILAR_SONGS_START -->${similarSongsHtml}<!-- SIMILAR_SONGS_END -->`
       );
       
-      html = html.replace(/<!-- QUICK_INFO_START -->[\s\S]*?<!-- QUICK_INFO_END -->/g, 
+      html = html.replace(
+        /<!-- QUICK_INFO_START -->[\s\S]*?<!-- QUICK_INFO_END -->/g,
         `<!-- QUICK_INFO_START -->${quickInfoHtml}<!-- QUICK_INFO_END -->`
       );
-      
-      html = html.replace(/<a href="#" class="nav-item active">Playlists<\/a>/, '<a href="/" class="nav-item">Home</a>');
+
+      // Update navigation active states
+      html = html.replace(/<a href="#" class="nav-item active">Playlists<\/a>/, '<a href="/playlists" class="nav-item">Playlists</a>');
       html = html.replace(/<a href="#" class="nav-item">Home<\/a>/, '<a href="/" class="nav-item">Home</a>');
       html = html.replace(/<a href="#" class="nav-item">Albums<\/a>/, '<a href="/albums" class="nav-item">Albums</a>');
       html = html.replace(/<a href="#" class="nav-item">Artists<\/a>/, '<a href="/artists" class="nav-item">Artists</a>');
@@ -3325,7 +3447,7 @@ export default {
         const trackNumber = (index + 1).toString().padStart(2, '0');
 
         return `
-          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}'">
+          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}?playlist=${playlistId}'">
             <div class="album-thumbnail ${hasImage ? '' : 'song-thumbnail placeholder'}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : ''}
             </div>
