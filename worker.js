@@ -1819,6 +1819,9 @@ export default {
       html = html.replace(/<!-- RELEASE_DATE_START -->[\s\S]*?<!-- RELEASE_DATE_END -->/g, 
         `<!-- RELEASE_DATE_START --><div class="album-stats"><i class="fas fa-calendar"></i>Released: ${formattedDate}</div><!-- RELEASE_DATE_END -->`
       );
+      html = html.replace('<!-- ALBUM_PLAYS -->', albumStats.plays.toLocaleString());
+html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleString());
+
       html = html.replace(/<!-- ALBUM_DESCRIPTION_START -->[\s\S]*?<!-- ALBUM_DESCRIPTION_END -->/g, 
         `<!-- ALBUM_DESCRIPTION_START --><p class="album-description">${album.description || 'No description available.'}</p><!-- ALBUM_DESCRIPTION_END -->`
       );
