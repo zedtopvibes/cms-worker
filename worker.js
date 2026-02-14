@@ -1820,7 +1820,7 @@ export default {
         `<!-- RELEASE_DATE_START --><div class="album-stats"><i class="fas fa-calendar"></i>Released: ${formattedDate}</div><!-- RELEASE_DATE_END -->`
       );
       html = html.replace('<!-- ALBUM_PLAYS -->', albumStats.plays.toLocaleString());
-html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleString());
+      html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleString());
 
       html = html.replace(/<!-- ALBUM_DESCRIPTION_START -->[\s\S]*?<!-- ALBUM_DESCRIPTION_END -->/g, 
         `<!-- ALBUM_DESCRIPTION_START --><p class="album-description">${album.description || 'No description available.'}</p><!-- ALBUM_DESCRIPTION_END -->`
@@ -2617,12 +2617,66 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
       if (!artist) return new Response("Artist not found", { status: 404 });
 
       const albums = await getAlbums();
+      const playlists = await getPlaylists();
       const { albums: artistAlbums, singles, totalSongs, totalSingles } =
         await getArtistAlbumsAndSingles(artistId);
 
       // Get aggregated play/download stats for all songs by this artist
       const allSongKeys = artist.songs || [];
       const artistStats = await getAggregatedStats(allSongKeys, env);
+
+      // Get all playlists that contain this artist's songs
+      const artistPlaylists = [];
+
+      for (const [playlistId, playlist] of Object.entries(playlists)) {
+        if (!playlist.songs) continue;
+        
+        // Check if any song in the playlist is by this artist
+        for (const songKey of playlist.songs) {
+          const meta = await getMetadata(songKey);
+          if (meta) {
+            // Check if artist is primary or featured
+            if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
+              // Count how many songs by this artist are in the playlist
+              const artistSongCount = playlist.songs.filter(s => {
+                return s.startsWith(artistId + "_");
+              }).length;
+              
+              artistPlaylists.push({
+                id: playlistId,
+                title: playlist.title,
+                thumbnail: playlist.thumbnail,
+                songCount: playlist.songs.length,
+                artistSongCount: artistSongCount,
+                curator: playlist.curator || 'ZEDALBUMS.TOP',
+                created: playlist.created
+              });
+              break; // Found at least one song, no need to check more
+            }
+          } else {
+            // Fallback to old method
+            if (songKey.startsWith(artistId + "_")) {
+              const artistSongCount = playlist.songs.filter(s => {
+                return s.startsWith(artistId + "_");
+              }).length;
+              
+              artistPlaylists.push({
+                id: playlistId,
+                title: playlist.title,
+                thumbnail: playlist.thumbnail,
+                songCount: playlist.songs.length,
+                artistSongCount: artistSongCount,
+                curator: playlist.curator || 'ZEDALBUMS.TOP',
+                created: playlist.created
+              });
+              break;
+            }
+          }
+        }
+      }
+
+      // Sort playlists by newest first
+      artistPlaylists.sort((a, b) => b.created - a.created);
 
       const templateObj = await env.media.get("artist.html");
       if (!templateObj) {
@@ -2865,6 +2919,46 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
             ).then((r) => r.join(""))
           : `<div style="padding: 20px; text-align: center; color: #666;">No collaborations yet</div>`;
 
+      // Generate playlists HTML (max 3)
+      const artistPlaylistsHtml = artistPlaylists.length > 0 
+        ? await Promise.all(artistPlaylists.slice(0, 3).map(async pl => {
+            let thumbUrl = "/images/placeholder.jpg";
+            let hasImage = false;
+            
+            if (pl.thumbnail) {
+              try {
+                const thumbObj = await env.media.get(pl.thumbnail);
+                if (thumbObj) {
+                  const ext = pl.thumbnail.split(".").pop();
+                  thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
+                  hasImage = true;
+                }
+              } catch (e) {}
+            }
+            
+            const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
+            const thumbnailContent = hasImage 
+              ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` 
+              : '';
+            
+            return `
+              <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
+                <div class="album-thumbnail ${thumbnailClass}">
+                  ${thumbnailContent}
+                </div>
+                <div class="album-info">
+                  <span class="album-title">${pl.title}</span>
+                  <div class="album-meta">
+                    <span class="album-artist playlist-songs">${pl.songCount} Songs</span>
+                    <span class="album-genre">${pl.artistSongCount} by ${artistName}</span>
+                  </div>
+                  <span class="album-date">Curated by ${pl.curator}</span>
+                </div>
+              </div>
+            `;
+          })).then(results => results.join(''))
+        : `<div style="padding: 20px; text-align: center; color: #666;">No playlists featuring ${artistName} yet</div>`;
+
       const otherArtists = Object.values(artists).filter((a) => a.id !== artistId);
       let similar = [];
       if (artist.genre) {
@@ -2942,6 +3036,19 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
         .replace(/<!-- SONGS_LIST -->/, songsHtml.join(""))
         .replace(/<!-- ALBUMS_BY_ARTIST -->/, albumsHtml.join(""))
         .replace(/<!-- COLLABORATIONS_LIST -->/, collabHtml)
+        .replace(/<!-- ARTIST_PLAYLISTS_START -->[\s\S]*?<!-- ARTIST_PLAYLISTS_END -->/g,
+          `<!-- ARTIST_PLAYLISTS_START -->
+          <section class="section-block">
+            <div class="section-header">
+              <h2 class="section-title">Playlists featuring ${artistName}</h2>
+              <a href="/playlists?artist=${artistId}" class="view-all">View All ➔</a>
+            </div>
+            <div class="playlists-list">
+              ${artistPlaylistsHtml}
+            </div>
+          </section>
+          <!-- ARTIST_PLAYLISTS_END -->`
+        )
         .replace(/<!-- SIMILAR_ARTISTS_LIST -->/, similarHtml)
         .replace(/<!-- ARTIST_INFO_CONTENT -->/, infoHtml)
         .replace(
@@ -3352,7 +3459,7 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
     }
 
     // =========================
-    // PLAYLISTS LIST PAGE - DYNAMIC FROM TEMPLATE
+    // PLAYLISTS LIST PAGE - DYNAMIC FROM TEMPLATE (WITH ARTIST FILTER)
     // =========================
     if (path === "/playlists") {
       const templateObj = await env.media.get("playlists.html");
@@ -3365,15 +3472,50 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
       const albums = await getAlbums();
       const artists = await getArtists();
 
-      const playlistList = Object.values(playlists).sort((a, b) => b.created - a.created);
+      let playlistList = Object.values(playlists).sort((a, b) => b.created - a.created);
+      
+      // Check for artist filter
+      const artistId = url.searchParams.get("artist");
+      let filterArtistName = "";
+      let filteredPlaylists = playlistList;
+      
+      if (artistId) {
+        const artist = artists[artistId];
+        if (artist) {
+          filterArtistName = artist.name;
+          
+          // Filter playlists to only those containing this artist's songs
+          filteredPlaylists = [];
+          
+          for (const playlist of playlistList) {
+            if (!playlist.songs) continue;
+            
+            for (const songKey of playlist.songs) {
+              const meta = await getMetadata(songKey);
+              if (meta) {
+                if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
+                  filteredPlaylists.push(playlist);
+                  break;
+                }
+              } else if (songKey.startsWith(artistId + "_")) {
+                filteredPlaylists.push(playlist);
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Use filteredPlaylists for display
+      const displayPlaylists = filteredPlaylists;
 
       // ---------- LEFT SIDEBAR: ALL PLAYLISTS (pagination) ----------
       const ITEMS_PER_PAGE = 10;
       const page = parseInt(url.searchParams.get("page")) || 1;
-      const totalPlaylists = playlistList.length;
+      const totalPlaylists = displayPlaylists.length;
       const totalPages = Math.ceil(totalPlaylists / ITEMS_PER_PAGE);
       const startIdx = (page - 1) * ITEMS_PER_PAGE;
-      const pagePlaylists = playlistList.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+      const pagePlaylists = displayPlaylists.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
       const playlistsHtml = await Promise.all(pagePlaylists.map(async pl => {
         let thumbUrl = "/images/placeholder.jpg";
@@ -3419,17 +3561,36 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
 
       let paginationHtmlPlaylists = '';
       if (totalPages > 1) {
+        let baseUrl = '/playlists';
+        if (artistId) {
+          baseUrl += `?artist=${artistId}&`;
+        } else {
+          baseUrl += '?';
+        }
+        
         paginationHtmlPlaylists = `<div class="pagination-container"><div class="pagination">`;
-        paginationHtmlPlaylists += `<a href="/playlists?page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
+        paginationHtmlPlaylists += `<a href="${baseUrl}page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
         for (let i = 1; i <= totalPages; i++) {
           if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
-            paginationHtmlPlaylists += `<a href="/playlists?page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
+            paginationHtmlPlaylists += `<a href="${baseUrl}page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
           } else if (i === page-3 || i === page+3) {
             paginationHtmlPlaylists += `<span class="pagination-ellipsis">...</span>`;
           }
         }
-        paginationHtmlPlaylists += `<a href="/playlists?page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
+        paginationHtmlPlaylists += `<a href="${baseUrl}page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
         paginationHtmlPlaylists += `</div></div>`;
+      }
+
+      // Add filter header if filtering by artist
+      let filterHeaderHtml = '';
+      if (artistId && filterArtistName) {
+        filterHeaderHtml = `
+          <div class="filter-header" style="padding: 15px; background: #f0f7ff; border-radius: 3px; margin-bottom: 15px; border-left: 4px solid #4a90e2;">
+            <i class="fas fa-filter" style="color: #4a90e2;"></i>
+            <strong>Showing playlists featuring ${filterArtistName}</strong>
+            <a href="/playlists" style="margin-left: 15px; color: #ff5500; text-decoration: none;">Clear filter ✕</a>
+          </div>
+        `;
       }
 
       // ---------- RIGHT SIDEBAR: FEATURED PLAYLISTS ----------
@@ -3588,29 +3749,47 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
 
       // ---------- REPLACE ALL PLACEHOLDERS ----------
       html = html.replace(
+        /<!-- FILTER_HEADER_START -->[\s\S]*?<!-- FILTER_HEADER_END -->/g,
+        `<!-- FILTER_HEADER_START -->${filterHeaderHtml}<!-- FILTER_HEADER_END -->`
+      );
+      
+      html = html.replace(
         /<!-- PLAYLISTS_START -->[\s\S]*?<!-- PLAYLISTS_END -->/g,
         `<!-- PLAYLISTS_START -->${playlistsHtml.join('')}<!-- PLAYLISTS_END -->`
       );
+      
       html = html.replace(
         /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
         `<!-- PAGINATION_START -->${paginationHtmlPlaylists}<!-- PAGINATION_END -->`
       );
+      
       html = html.replace(
         /<!-- FEATURED_PLAYLISTS_START -->[\s\S]*?<!-- FEATURED_PLAYLISTS_END -->/g,
         `<!-- FEATURED_PLAYLISTS_START -->${featuredHtml.join('')}<!-- FEATURED_PLAYLISTS_END -->`
       );
+      
       html = html.replace(
         /<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/g,
         `<!-- TOP_ARTISTS_START -->${topArtistsHtmlPlaylist.join('')}<!-- TOP_ARTISTS_END -->`
       );
+      
       html = html.replace(
         /<!-- GENRES_START -->[\s\S]*?<!-- GENRES_END -->/g,
         `<!-- GENRES_START -->${genresHtmlPlaylist}<!-- GENRES_END -->`
       );
+      
       html = html.replace(
         /<!-- RECENT_PLAYLISTS_START -->[\s\S]*?<!-- RECENT_PLAYLISTS_END -->/g,
         `<!-- RECENT_PLAYLISTS_START -->${recentHtml.join('')}<!-- RECENT_PLAYLISTS_END -->`
       );
+      
+      // Update page title if filtered
+      if (artistId && filterArtistName) {
+        html = html.replace(
+          /<title>.*?<\/title>/,
+          `<title>Playlists featuring ${filterArtistName} - ZEDALBUMS.TOP</title>`
+        );
+      }
 
       return new Response(html, {
         headers: {
@@ -3913,7 +4092,7 @@ html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleStr
         <div class="playlist-stats"><i class="fas fa-clock"></i> ${totalDuration}</div>
         <div class="playlist-stats"><i class="fas fa-calendar"></i> Created: ${formattedDate}</div>
         <div class="playlist-stats"><i class="fas fa-headphones"></i> ${playlistStats.plays.toLocaleString()} Plays</div>
-<div class="playlist-stats"><i class="fas fa-download"></i> ${playlistStats.downloads.toLocaleString()} Downloads</div>
+        <div class="playlist-stats"><i class="fas fa-download"></i> ${playlistStats.downloads.toLocaleString()} Downloads</div>
         <!-- /PLAYLIST_META -->`
       );
       html = html.replace(
