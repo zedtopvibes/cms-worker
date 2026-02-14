@@ -38,6 +38,19 @@ export default {
     // -----------------------------
     const sanitize = str => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
 
+// -----------------------------
+// Helper to format numbers (0-999 = full number, 1000+ = 1K, 1.2K, etc)
+// -----------------------------
+const formatNumber = (num) => {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    }
+    if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+};
+
     // === ALBUMS FUNCTIONS ===
     const getAlbums = async () => {
       const now = Date.now();
@@ -679,8 +692,7 @@ export default {
             <div class="album-meta">
               <span class="album-artist">${primaryArtist}</span>
               <span class="album-tracks">${album.songs?.length || 0} Tracks</span>
-              <span class="download-badge"><i class="fas fa-download"></i> ${(album.totalDownloads / 1000).toFixed(1)}k</span>
-            </div>
+              <span class="download-badge"><i class="fas fa-download"></i> ${formatNumber(album.totalDownloads)}</span>            </div>
             ${!isPreview ? `
             <div class="album-meta">
               <span class="rank-change"><i class="fas fa-${trendIcon}" style="color: ${trendColor}"></i> ${Math.abs(album.rankChange)} from last week</span>
@@ -713,8 +725,8 @@ export default {
               ${song.album ? `<span class="from-album">from "${song.album.title}"</span>` : ''}
             </div>
             <div class="album-meta">
-              <span class="play-badge"><i class="fas fa-play"></i> ${(song.plays / 1000).toFixed(1)}k</span>
-              <span class="download-badge"><i class="fas fa-download"></i> ${(song.downloads / 1000).toFixed(1)}k</span>
+              <span class="play-badge"><i class="fas fa-play"></i> ${formatNumber(song.plays)}</span>
+<span class="download-badge"><i class="fas fa-download"></i> ${formatNumber(song.downloads)}</span>
             </div>
             ${!isPreview ? `
             <div class="album-meta">
@@ -741,7 +753,7 @@ export default {
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
             <div class="artist-stats">
-              <span class="play-badge"><i class="fas fa-play"></i> ${(artist.monthlyListeners / 1000).toFixed(1)}k monthly listeners</span>
+              <span class="play-badge"><i class="fas fa-play"></i> ${formatNumber(artist.monthlyListeners)} monthly listeners</span>
               <span class="monthly-listeners">${artist.albumCount} albums</span>
               <span class="monthly-listeners">${artist.songCount} songs</span>
             </div>
@@ -775,7 +787,7 @@ export default {
             <span class="album-title">${playlist.title}</span>
             <div class="playlist-stats">
               <span class="playlist-badge"><i class="fas fa-list"></i> ${playlist.songCount} songs</span>
-              <span class="download-badge"><i class="fas fa-download"></i> ${(playlist.totalDownloads / 1000).toFixed(1)}k downloads</span>
+              <span class="download-badge"><i class="fas fa-download"></i> ${formatNumber(playlist.totalDownloads)} downloads</span>
             </div>
             <div class="album-meta">
               <span class="curator-info"><i class="fas fa-user"></i> Curated by ${playlist.curator || 'ZEDALBUMS'}</span>
