@@ -1,5 +1,5 @@
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
 
@@ -413,6 +413,49 @@ export default {
       metadataCacheTimestamp = Date.now();
     };
     // ========== END METADATA FUNCTIONS ==========
+
+    // ==================== STATS FUNCTIONS (D1) ====================
+    async function incrementPlay(songKey, env) {
+      await env.DB.prepare(
+        `INSERT INTO song_stats (song_key, plays, downloads, last_played)
+         VALUES (?, 1, 0, CURRENT_TIMESTAMP)
+         ON CONFLICT(song_key) DO UPDATE SET 
+           plays = plays + 1,
+           last_played = CURRENT_TIMESTAMP`
+      ).bind(songKey).run();
+    }
+
+    async function incrementDownload(songKey, env) {
+      await env.DB.prepare(
+        `INSERT INTO song_stats (song_key, plays, downloads, last_downloaded)
+         VALUES (?, 0, 1, CURRENT_TIMESTAMP)
+         ON CONFLICT(song_key) DO UPDATE SET 
+           downloads = downloads + 1,
+           last_downloaded = CURRENT_TIMESTAMP`
+      ).bind(songKey).run();
+    }
+
+    async function getSongStats(songKey, env) {
+      const { results } = await env.DB.prepare(
+        `SELECT plays, downloads FROM song_stats WHERE song_key = ?`
+      ).bind(songKey).all();
+      return results[0] || { plays: 0, downloads: 0 };
+    }
+
+    async function getAggregatedStats(songKeys, env) {
+      if (songKeys.length === 0) return { plays: 0, downloads: 0 };
+      const placeholders = songKeys.map(() => '?').join(',');
+      const { results } = await env.DB.prepare(
+        `SELECT SUM(plays) as total_plays, SUM(downloads) as total_downloads
+         FROM song_stats
+         WHERE song_key IN (${placeholders})`
+      ).bind(...songKeys).all();
+      return {
+        plays: results[0]?.total_plays || 0,
+        downloads: results[0]?.total_downloads || 0
+      };
+    }
+    // ==================== END STATS FUNCTIONS ====================
 
     // =========================
     // UPLOAD PAGE (GET)
@@ -1813,7 +1856,7 @@ export default {
     }
 
     // =========================
-    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT)
+    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT AND STATS)
     // =========================
     if (path.startsWith("/song/")) {
       const fileName = decodeURIComponent(path.replace("/song/", ""));
@@ -1823,6 +1866,9 @@ export default {
       if (!audioObj) {
         return new Response("Song not found", { status: 404 });
       }
+
+      // Get play and download stats
+      const stats = await getSongStats(baseName, env);
 
       // Check for playlist context
       const playlistId = url.searchParams.get("playlist");
@@ -2178,7 +2224,7 @@ export default {
           </div>
         `;
       } else {
-        // Default song info
+        // Default song info with stats
         quickInfoHtml = `
           <div class="quick-info-section">
             <p><strong>Format:</strong> MP3</p>
@@ -2187,6 +2233,8 @@ export default {
             <p><strong>Release Date:</strong> ${formattedDate}</p>
             <p><strong>Genre:</strong> ${albumInfo?.genre || 'Zam Pop'}</p>
             <p><strong>Duration:</strong> ${duration}</p>
+            <p><strong><i class="fas fa-play"></i> Plays:</strong> ${stats.plays.toLocaleString()}</p>
+            <p><strong><i class="fas fa-download"></i> Downloads:</strong> ${stats.downloads.toLocaleString()}</p>
             <div class="info-note">
               <i class="fas fa-info-circle" style="color: #ff5500;"></i>
               <span>No registration required for download</span>
@@ -2230,6 +2278,10 @@ export default {
       html = html.replace(/<div class="song-artist">.*?<\/div>/, `<div class="song-artist">${artistDisplay}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-clock"><\/i> Duration: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-clock"></i> Duration: ${duration}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-calendar"><\/i> Released: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-calendar"></i> Released: ${formattedDate}</div>`);
+      // Replace play/download stats (if placeholders exist in template)
+      html = html.replace('<!-- SONG_PLAYS -->', stats.plays.toLocaleString());
+      html = html.replace('<!-- SONG_DOWNLOADS -->', stats.downloads.toLocaleString());
+      
       html = html.replace(/<p class="playlist-description">[\s\S]*?<\/p>/, `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistDisplay}.`}</p>`);
       html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${duration}</span>`);
       html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn"`);
@@ -2272,6 +2324,29 @@ export default {
       html = html.replace(/<a href="#" class="nav-item">Home<\/a>/, '<a href="/" class="nav-item">Home</a>');
       html = html.replace(/<a href="#" class="nav-item">Albums<\/a>/, '<a href="/albums" class="nav-item">Albums</a>');
       html = html.replace(/<a href="#" class="nav-item">Artists<\/a>/, '<a href="/artists" class="nav-item">Artists</a>');
+
+      // Add play tracking script
+      const script = `
+<script>
+  (function() {
+    const audio = document.querySelector('audio');
+    const songKey = '${baseName}';
+    if (audio) {
+      let played = false;
+      audio.addEventListener('play', function() {
+        if (!played) {
+          played = true;
+          fetch('/api/play/' + encodeURIComponent(songKey), { 
+            method: 'POST',
+            keepalive: true 
+          }).catch(err => console.error('Failed to record play:', err));
+        }
+      });
+    }
+  })();
+</script>
+`;
+      html = html.replace('</body>', script + '</body>');
 
       return new Response(html, { 
         headers: { 
@@ -2525,7 +2600,7 @@ export default {
     }
 
     // =========================
-    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE
+    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH REAL STATS)
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -2536,6 +2611,10 @@ export default {
       const albums = await getAlbums();
       const { albums: artistAlbums, singles, totalSongs, totalSingles } =
         await getArtistAlbumsAndSingles(artistId);
+
+      // Get aggregated play/download stats for all songs by this artist
+      const allSongKeys = artist.songs || [];
+      const artistStats = await getAggregatedStats(allSongKeys, env);
 
       const templateObj = await env.media.get("artist.html");
       if (!templateObj) {
@@ -2555,8 +2634,9 @@ export default {
       const description = artist.description || `All songs by ${artistName}.`;
       const genre = artist.genre || "Zam Pop / R&B";
       const songCount = totalSongs || artist.songs?.length || 0;
-      const plays = (songCount * 5200).toLocaleString();
-      const downloads = (songCount * 3800).toLocaleString();
+      // Use real stats instead of dummy numbers
+      const plays = artistStats.plays.toLocaleString();
+      const downloads = artistStats.downloads.toLocaleString();
 
       const breadcrumbHtml = `<span class="breadcrumb-current"><i class="fas fa-microphone"></i>${artistName}</span>`;
 
@@ -2615,9 +2695,6 @@ export default {
       }
 
       // Also include songs where artist is featured (by checking metadata)
-      // We need to scan all songs in the system? That could be heavy. Instead, we can rely on artist.songs list
-      // which already includes featured songs because we added them via addSongToArtist.
-      // So we iterate over artist.songs and for each, get metadata to determine role.
       const processedKeys = new Set(allSongs.map(s => s.key));
       for (const songKey of artist.songs) {
         if (processedKeys.has(songKey)) continue;
@@ -2632,7 +2709,7 @@ export default {
             title,
             artistName: primaryArtistName,
             artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
-            albumId: null, // we could find album, but not necessary for now
+            albumId: null,
             albumTitle: null,
             uploaded,
             role: 'featured'
@@ -3866,10 +3943,15 @@ export default {
     }
 
     // =========================
-    // DOWNLOAD PAGE
+    // DOWNLOAD PAGE (updated with counter)
     // =========================
     if (path.startsWith("/download/")) {
       const fileName = decodeURIComponent(path.replace("/download/",""));
+      const songKey = fileName.replace(".mp3", "");
+      
+      // Increment download counter in the background
+      ctx.waitUntil(incrementDownload(songKey, env));
+
       const html = `
         <!DOCTYPE html>
         <html>
@@ -3889,6 +3971,15 @@ export default {
           "Cache-Control": "public, max-age=300"
         } 
       });
+    }
+
+    // =========================
+    // API: INCREMENT PLAY COUNT
+    // =========================
+    if (path.startsWith("/api/play/") && req.method === "POST") {
+      const songKey = decodeURIComponent(path.replace("/api/play/", ""));
+      ctx.waitUntil(incrementPlay(songKey, env));
+      return new Response("OK", { status: 200, headers: CORS_HEADERS });
     }
 
     // =========================
@@ -3921,6 +4012,7 @@ export default {
         "Accept-Ranges": "bytes",
       };
 
+      // Note: This download path is already handled above; the condition here is for non-download requests
       if (path.startsWith("/download/")) {
         contentDisposition = `attachment; filename="${fileName.split('/').pop()}"`;
       }
