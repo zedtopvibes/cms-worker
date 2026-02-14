@@ -3909,6 +3909,8 @@ export default {
         <div class="playlist-stats"><i class="fas fa-music"></i> ${songCount} Songs</div>
         <div class="playlist-stats"><i class="fas fa-clock"></i> ${totalDuration}</div>
         <div class="playlist-stats"><i class="fas fa-calendar"></i> Created: ${formattedDate}</div>
+        <div class="playlist-stats"><i class="fas fa-headphones"></i> ${playlistStats.plays.toLocaleString()} Plays</div>
+<div class="playlist-stats"><i class="fas fa-download"></i> ${playlistStats.downloads.toLocaleString()} Downloads</div>
         <!-- /PLAYLIST_META -->`
       );
       html = html.replace(
