@@ -1495,7 +1495,7 @@ export default {
     }
 
     // =========================
-    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE
+    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS)
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
       const albumId = decodeURIComponent(path.replace("/album/", ""));
@@ -1507,6 +1507,9 @@ export default {
       if (!album) {
         return new Response("Album not found", { status: 404 });
       }
+
+      // Get aggregated stats for the album
+      const albumStats = await getAggregatedStats(album.songs || [], env);
 
       const templateObj = await env.media.get("album.html");
       if (!templateObj) {
@@ -1732,6 +1735,8 @@ export default {
           <p><strong>Producer:</strong> ${album.producer || primaryArtist}</p>
           <p><strong>Format:</strong> Digital, Streaming</p>
           <p><strong>Total Tracks:</strong> ${trackCount}</p>
+          <p><strong>Total Plays:</strong> ${albumStats.plays.toLocaleString()}</p>
+          <p><strong>Total Downloads:</strong> ${albumStats.downloads.toLocaleString()}</p>
           <p><strong>℗ ${new Date(album.created).getFullYear()}</strong> ${album.copyright || 'ZEDALBUMS.TOP'}</p>
           ${album.awards ? `
             <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 3px; font-size: 0.8rem;">
@@ -3613,7 +3618,7 @@ export default {
     }
 
     // =========================
-    // PLAYLIST DETAIL PAGE - DYNAMIC FROM TEMPLATE
+    // PLAYLIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS)
     // =========================
     if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
       const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
@@ -3621,6 +3626,9 @@ export default {
       const playlists = await getPlaylists();
       const playlist = playlists[playlistId];
       if (!playlist) return new Response("Playlist not found", { status: 404 });
+
+      // Get aggregated stats for the playlist
+      const playlistStats = await getAggregatedStats(playlist.songs || [], env);
 
       const templateObj = await env.media.get("playlist.html");
       if (!templateObj) {
@@ -3874,6 +3882,8 @@ export default {
           <p><strong>Created:</strong> ${formattedDate}</p>
           <p><strong>Songs:</strong> ${songCount}</p>
           <p><strong>Total duration:</strong> ${totalDuration}</p>
+          <p><strong>Total Plays:</strong> ${playlistStats.plays.toLocaleString()}</p>
+          <p><strong>Total Downloads:</strong> ${playlistStats.downloads.toLocaleString()}</p>
           <p><strong>Curator:</strong> ${playlist.curator || 'ZEDALBUMS.TOP'}</p>
           ${playlist.description ? `<p><strong>Description:</strong> ${playlist.description}</p>` : ''}
           <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 3px;">
