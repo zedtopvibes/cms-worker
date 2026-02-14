@@ -457,6 +457,497 @@ export default {
     }
     // ==================== END STATS FUNCTIONS ====================
 
+    // ==================== CHART DATA FUNCTIONS ====================
+    async function getTopAlbums(env, limit = 50, timeFilter = 'all') {
+      const albums = await getAlbums();
+      const albumList = Object.values(albums);
+      
+      const albumsWithStats = await Promise.all(albumList.map(async (album) => {
+        const stats = await getAggregatedStats(album.songs || [], env);
+        return {
+          ...album,
+          totalPlays: stats.plays,
+          totalDownloads: stats.downloads
+        };
+      }));
+      
+      const sorted = albumsWithStats.sort((a, b) => b.totalPlays - a.totalPlays);
+      
+      return sorted.slice(0, limit).map((album, index) => ({
+        ...album,
+        rank: index + 1,
+        rankChange: Math.floor(Math.random() * 5) - 2,
+        peakRank: Math.max(1, Math.floor(Math.random() * 5))
+      }));
+    }
+
+    async function getTopSongs(env, limit = 100, timeFilter = 'all') {
+      const songList = await env.media.list({ prefix: "songs/" });
+      const songFiles = songList.objects || [];
+
+      const songsWithStats = await Promise.all(songFiles.map(async (file) => {
+        const fileName = file.key.split("/")[1];
+        const baseName = fileName.replace(".mp3", "");
+        const stats = await getSongStats(baseName, env);
+        const meta = await getMetadata(baseName);
+        
+        let albumInfo = null;
+        const albums = await getAlbums();
+        for (const [id, album] of Object.entries(albums)) {
+          if (album.songs.includes(baseName)) {
+            albumInfo = { id, title: album.title };
+            break;
+          }
+        }
+
+        return {
+          key: baseName,
+          fileName: fileName,
+          title: meta?.title || baseName.split("_").slice(1).join(" "),
+          primaryArtist: meta?.primaryArtist || baseName.split("_")[0],
+          featuredArtists: meta?.featuredArtists || [],
+          plays: stats.plays,
+          downloads: stats.downloads,
+          uploaded: file.uploaded,
+          album: albumInfo
+        };
+      }));
+
+      const sorted = songsWithStats
+        .map(song => ({ ...song, score: song.plays + (song.downloads * 2) }))
+        .sort((a, b) => b.score - a.score);
+
+      return sorted.slice(0, limit).map((song, index) => ({
+        ...song,
+        rank: index + 1,
+        rankChange: Math.floor(Math.random() * 5) - 2,
+        peakRank: Math.max(1, Math.floor(Math.random() * 10))
+      }));
+    }
+
+    async function getTopArtists(env, limit = 50) {
+      const artists = await getArtists();
+      const artistList = Object.values(artists);
+
+      const artistsWithStats = await Promise.all(artistList.map(async (artist) => {
+        const stats = await getAggregatedStats(artist.songs || [], env);
+        const monthlyListeners = Math.floor(stats.plays * 0.3);
+
+        return {
+          ...artist,
+          totalPlays: stats.plays,
+          totalDownloads: stats.downloads,
+          monthlyListeners: monthlyListeners,
+          songCount: artist.songs?.length || 0,
+          albumCount: artist.albums?.length || 0
+        };
+      }));
+
+      const sorted = artistsWithStats.sort((a, b) => b.totalPlays - a.totalPlays);
+      
+      return sorted.slice(0, limit).map((artist, index) => ({
+        ...artist,
+        rank: index + 1,
+        rankChange: Math.floor(Math.random() * 5) - 2,
+        peakRank: Math.max(1, Math.floor(Math.random() * 5))
+      }));
+    }
+
+    async function getTopPlaylists(env, limit = 50) {
+      const playlists = await getPlaylists();
+      const playlistList = Object.values(playlists);
+
+      const playlistsWithStats = await Promise.all(playlistList.map(async (playlist) => {
+        const stats = await getAggregatedStats(playlist.songs || [], env);
+        return {
+          ...playlist,
+          totalPlays: stats.plays,
+          totalDownloads: stats.downloads,
+          songCount: playlist.songs?.length || 0
+        };
+      }));
+
+      const sorted = playlistsWithStats.sort((a, b) => b.totalDownloads - a.totalDownloads);
+      
+      return sorted.slice(0, limit).map((playlist, index) => ({
+        ...playlist,
+        rank: index + 1,
+        rankChange: Math.floor(Math.random() * 5) - 2,
+        peakRank: Math.max(1, Math.floor(Math.random() * 5))
+      }));
+    }
+
+    async function getNewReleases(env, limit = 50) {
+      const albums = await getAlbums();
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+      
+      const recentAlbums = Object.values(albums)
+        .filter(album => album.created > thirtyDaysAgo)
+        .map(album => ({ ...album, type: 'album' }));
+
+      const songList = await env.media.list({ prefix: "songs/" });
+      const recentSongs = await Promise.all(
+        (songList.objects || [])
+          .filter(file => file.uploaded > thirtyDaysAgo)
+          .slice(0, limit - recentAlbums.length)
+          .map(async (file) => {
+            const fileName = file.key.split("/")[1];
+            const baseName = fileName.replace(".mp3", "");
+            const meta = await getMetadata(baseName);
+            return {
+              id: baseName,
+              title: meta?.title || baseName.split("_").slice(1).join(" "),
+              type: 'single',
+              artistId: meta?.primaryArtist || baseName.split("_")[0],
+              created: file.uploaded,
+              thumbnail: null
+            };
+          })
+      );
+
+      return [...recentAlbums, ...recentSongs]
+        .sort((a, b) => b.created - a.created)
+        .slice(0, limit);
+    }
+
+    async function getAlbumThumbnailUrl(album, env) {
+      if (album.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(album.thumbnail);
+          if (thumbObj) {
+            const ext = album.thumbnail.split(".").pop();
+            return `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
+          }
+        } catch (e) {}
+      }
+      return "/images/placeholder.jpg";
+    }
+
+    async function getSongThumbnailUrl(baseName, env) {
+      try {
+        const jpgObj = await env.media.get(`images/${baseName}.jpg`);
+        if (jpgObj) return `/images/${encodeURIComponent(baseName)}.jpg`;
+        const pngObj = await env.media.get(`images/${baseName}.png`);
+        if (pngObj) return `/images/${encodeURIComponent(baseName)}.png`;
+      } catch (e) {}
+      return "/images/placeholder.jpg";
+    }
+
+    async function getArtistThumbnailUrl(artist, env) {
+      if (artist.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(artist.thumbnail);
+          if (thumbObj) {
+            const ext = artist.thumbnail.split(".").pop();
+            return `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+          }
+        } catch (e) {}
+      }
+      return "/images/placeholder.jpg";
+    }
+
+    async function getPlaylistThumbnailUrl(playlist, env) {
+      if (playlist.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(playlist.thumbnail);
+          if (thumbObj) {
+            const ext = playlist.thumbnail.split(".").pop();
+            return `/playlists/thumbnails/${encodeURIComponent(playlist.id)}.${ext}`;
+          }
+        } catch (e) {}
+      }
+      return "/images/placeholder.jpg";
+    }
+
+    function generateAlbumChartItem(album, thumbUrl, artists, isPreview = false) {
+      const primaryArtist = (album.artists?.length && artists[album.artists[0]]) 
+        ? artists[album.artists[0]].name 
+        : "Various";
+      
+      const rankClass = album.rank === 1 ? 'top1' : (album.rank === 2 ? 'silver' : (album.rank === 3 ? 'bronze' : ''));
+      const trendIcon = album.rankChange > 0 ? 'arrow-up' : (album.rankChange < 0 ? 'arrow-down' : 'minus');
+      const trendColor = album.rankChange > 0 ? '#27ae60' : (album.rankChange < 0 ? '#e74c3c' : '#999');
+      
+      return `
+        <div class="album-item" onclick="window.location='/album/${album.id}'">
+          <div class="album-thumbnail">
+            <div class="rank-overlay ${rankClass}">${album.rank}</div>
+            <img src="${thumbUrl}" alt="${album.title}" loading="lazy">
+          </div>
+          <div class="album-info">
+            <span class="album-title">${album.title}</span>
+            <div class="album-meta">
+              <span class="album-artist">${primaryArtist}</span>
+              <span class="album-tracks">${album.songs?.length || 0} Tracks</span>
+              <span class="download-badge"><i class="fas fa-download"></i> ${(album.totalDownloads / 1000).toFixed(1)}k</span>
+            </div>
+            ${!isPreview ? `
+            <div class="album-meta">
+              <span class="rank-change"><i class="fas fa-${trendIcon}" style="color: ${trendColor}"></i> ${Math.abs(album.rankChange)} from last week</span>
+              <span class="peak-rank">Peak: #${album.peakRank}</span>
+            </div>
+            ` : ''}
+            <span class="album-date">Released: ${new Date(album.created).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function generateSongChartItem(song, thumbUrl, artists, isPreview = false) {
+      const primaryArtistName = artists[song.primaryArtist]?.name || song.primaryArtist;
+      const rankClass = song.rank === 1 ? 'top1' : (song.rank === 2 ? 'silver' : (song.rank === 3 ? 'bronze' : ''));
+      const trendIcon = song.rankChange > 0 ? 'arrow-up' : (song.rankChange < 0 ? 'arrow-down' : 'minus');
+      const trendColor = song.rankChange > 0 ? '#27ae60' : (song.rankChange < 0 ? '#e74c3c' : '#999');
+      
+      return `
+        <div class="album-item" onclick="window.location='/song/${encodeURIComponent(song.fileName)}'">
+          <div class="album-thumbnail">
+            <div class="rank-overlay ${rankClass}">${song.rank}</div>
+            <img src="${thumbUrl}" alt="${song.title}" loading="lazy">
+            <div class="play-btn-mini"><i class="fas fa-play"></i></div>
+          </div>
+          <div class="album-info">
+            <span class="album-title">${song.title}</span>
+            <div class="album-meta">
+              <span class="album-artist">${primaryArtistName}</span>
+              ${song.album ? `<span class="from-album">from "${song.album.title}"</span>` : ''}
+            </div>
+            <div class="album-meta">
+              <span class="play-badge"><i class="fas fa-play"></i> ${(song.plays / 1000).toFixed(1)}k</span>
+              <span class="download-badge"><i class="fas fa-download"></i> ${(song.downloads / 1000).toFixed(1)}k</span>
+            </div>
+            ${!isPreview ? `
+            <div class="album-meta">
+              <span class="rank-change"><i class="fas fa-${trendIcon}" style="color: ${trendColor}"></i> ${Math.abs(song.rankChange)} from last week</span>
+              <span class="peak-rank">Peak: #${song.peakRank}</span>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function generateArtistChartItem(artist, thumbUrl, isPreview = false) {
+      const rankClass = artist.rank === 1 ? 'top1' : (artist.rank === 2 ? 'silver' : (artist.rank === 3 ? 'bronze' : ''));
+      const trendIcon = artist.rankChange > 0 ? 'arrow-up' : (artist.rankChange < 0 ? 'arrow-down' : 'minus');
+      const trendColor = artist.rankChange > 0 ? '#27ae60' : (artist.rankChange < 0 ? '#e74c3c' : '#999');
+      
+      return `
+        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+          <div class="album-thumbnail artist-thumbnail">
+            <div class="rank-overlay ${rankClass}">${artist.rank}</div>
+            ${thumbUrl !== "/images/placeholder.jpg" ? `<img src="${thumbUrl}" alt="${artist.name}" loading="lazy">` : ''}
+          </div>
+          <div class="album-info">
+            <span class="album-title">${artist.name}</span>
+            <div class="artist-stats">
+              <span class="play-badge"><i class="fas fa-play"></i> ${(artist.monthlyListeners / 1000).toFixed(1)}k monthly listeners</span>
+              <span class="monthly-listeners">${artist.albumCount} albums</span>
+              <span class="monthly-listeners">${artist.songCount} songs</span>
+            </div>
+            ${!isPreview ? `
+            <div class="album-meta">
+              <span class="rank-change"><i class="fas fa-${trendIcon}" style="color: ${trendColor}"></i> ${Math.abs(artist.rankChange)} from last week</span>
+              <span class="peak-rank">Peak: #${artist.peakRank}</span>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function generatePlaylistChartItem(playlist, thumbUrl, isPreview = false) {
+      const rankClass = playlist.rank === 1 ? 'top1' : (playlist.rank === 2 ? 'silver' : (playlist.rank === 3 ? 'bronze' : ''));
+      const trendIcon = playlist.rankChange > 0 ? 'arrow-up' : (playlist.rankChange < 0 ? 'arrow-down' : 'minus');
+      const trendColor = playlist.rankChange > 0 ? '#27ae60' : (playlist.rankChange < 0 ? '#e74c3c' : '#999');
+      const date = new Date(playlist.updated || playlist.created);
+      const now = new Date();
+      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+      const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+      
+      return `
+        <div class="album-item" onclick="window.location='/playlist/${playlist.id}'">
+          <div class="album-thumbnail playlist-thumbnail">
+            <div class="rank-overlay ${rankClass}">${playlist.rank}</div>
+            ${thumbUrl !== "/images/placeholder.jpg" ? `<img src="${thumbUrl}" alt="${playlist.title}" loading="lazy">` : ''}
+          </div>
+          <div class="album-info">
+            <span class="album-title">${playlist.title}</span>
+            <div class="playlist-stats">
+              <span class="playlist-badge"><i class="fas fa-list"></i> ${playlist.songCount} songs</span>
+              <span class="download-badge"><i class="fas fa-download"></i> ${(playlist.totalDownloads / 1000).toFixed(1)}k downloads</span>
+            </div>
+            <div class="album-meta">
+              <span class="curator-info"><i class="fas fa-user"></i> Curated by ${playlist.curator || 'ZEDALBUMS'}</span>
+              <span class="album-date">Updated: ${timeAgo}</span>
+            </div>
+            ${!isPreview ? `
+            <div class="album-meta">
+              <span class="rank-change"><i class="fas fa-${trendIcon}" style="color: ${trendColor}"></i> ${Math.abs(playlist.rankChange)} from last week</span>
+              <span class="peak-rank">Peak: #${playlist.peakRank}</span>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function generateNewReleaseAlbumItem(album, thumbUrl, artists) {
+      const primaryArtist = (album.artists?.length && artists[album.artists[0]]) 
+        ? artists[album.artists[0]].name 
+        : "Various";
+      const date = new Date(album.created);
+      const now = new Date();
+      const diffHours = Math.floor((now - date) / (1000 * 60 * 60));
+      const timeAgo = diffHours < 24 
+        ? `${diffHours} hours ago` 
+        : `${Math.floor(diffHours / 24)} days ago`;
+      
+      return `
+        <div class="album-item" onclick="window.location='/album/${album.id}'">
+          <div class="album-thumbnail">
+            <img src="${thumbUrl}" alt="${album.title}" loading="lazy">
+          </div>
+          <div class="album-info">
+            <span class="album-title">${album.title} <span class="new-badge">NEW</span></span>
+            <div class="album-meta">
+              <span class="album-artist">${primaryArtist}</span>
+              <span class="album-tracks">${album.songs?.length || 0} Tracks</span>
+              <span class="album-genre">Album</span>
+            </div>
+            <span class="album-date">Released: ${timeAgo}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function generateNewReleaseSongItem(song, thumbUrl, artists) {
+      const primaryArtistName = artists[song.artistId]?.name || song.artistId;
+      const date = new Date(song.created);
+      const now = new Date();
+      const diffHours = Math.floor((now - date) / (1000 * 60 * 60));
+      const timeAgo = diffHours < 24 
+        ? `${diffHours} hours ago` 
+        : `${Math.floor(diffHours / 24)} days ago`;
+      
+      return `
+        <div class="album-item" onclick="window.location='/song/${encodeURIComponent(song.id + ".mp3")}'">
+          <div class="album-thumbnail">
+            <img src="${thumbUrl}" alt="${song.title}" loading="lazy">
+            <div class="play-btn-mini"><i class="fas fa-play"></i></div>
+          </div>
+          <div class="album-info">
+            <span class="album-title">${song.title} <span class="new-badge">SINGLE</span></span>
+            <div class="album-meta">
+              <span class="album-artist">${primaryArtistName}</span>
+              <span class="album-genre">Single</span>
+            </div>
+            <span class="album-date">Released: ${timeAgo}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    async function renderChartsOverview(html, data, env) {
+      const artists = await getArtists();
+      
+      const albumsHtml = await Promise.all(data.topAlbums.map(async (item) => {
+        let thumbUrl = await getAlbumThumbnailUrl(item, env);
+        return generateAlbumChartItem(item, thumbUrl, artists, true);
+      }));
+      html = html.replace(/<!-- TOP_ALBUMS_START -->[\s\S]*?<!-- TOP_ALBUMS_END -->/, 
+        `<!-- TOP_ALBUMS_START -->${albumsHtml.join('')}<!-- TOP_ALBUMS_END -->`);
+
+      const songsHtml = await Promise.all(data.topSongs.map(async (item) => {
+        let thumbUrl = await getSongThumbnailUrl(item.key, env);
+        return generateSongChartItem(item, thumbUrl, artists, true);
+      }));
+      html = html.replace(/<!-- TOP_SONGS_START -->[\s\S]*?<!-- TOP_SONGS_END -->/, 
+        `<!-- TOP_SONGS_START -->${songsHtml.join('')}<!-- TOP_SONGS_END -->`);
+
+      const artistsHtml = await Promise.all(data.topArtists.map(async (item) => {
+        let thumbUrl = await getArtistThumbnailUrl(item, env);
+        return generateArtistChartItem(item, thumbUrl, true);
+      }));
+      html = html.replace(/<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/, 
+        `<!-- TOP_ARTISTS_START -->${artistsHtml.join('')}<!-- TOP_ARTISTS_END -->`);
+
+      const playlistsHtml = await Promise.all(data.topPlaylists.map(async (item) => {
+        let thumbUrl = await getPlaylistThumbnailUrl(item, env);
+        return generatePlaylistChartItem(item, thumbUrl, true);
+      }));
+      html = html.replace(/<!-- TOP_PLAYLISTS_START -->[\s\S]*?<!-- TOP_PLAYLISTS_END -->/, 
+        `<!-- TOP_PLAYLISTS_START -->${playlistsHtml.join('')}<!-- TOP_PLAYLISTS_END -->`);
+
+      const newReleasesHtml = await Promise.all(data.newReleases.map(async (item) => {
+        if (item.type === 'album') {
+          let thumbUrl = await getAlbumThumbnailUrl(item, env);
+          return generateNewReleaseAlbumItem(item, thumbUrl, artists);
+        } else {
+          let thumbUrl = await getSongThumbnailUrl(item.id, env);
+          return generateNewReleaseSongItem(item, thumbUrl, artists);
+        }
+      }));
+      html = html.replace(/<!-- NEW_RELEASES_START -->[\s\S]*?<!-- NEW_RELEASES_END -->/, 
+        `<!-- NEW_RELEASES_START -->${newReleasesHtml.join('')}<!-- NEW_RELEASES_END -->`);
+
+      return html;
+    }
+
+    async function renderAlbumsChart(html, items, env) {
+      const artists = await getArtists();
+      const albumsHtml = await Promise.all(items.map(async (item) => {
+        let thumbUrl = await getAlbumThumbnailUrl(item, env);
+        return generateAlbumChartItem(item, thumbUrl, artists, false);
+      }));
+      return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
+        `<!-- ITEMS_START -->${albumsHtml.join('')}<!-- ITEMS_END -->`);
+    }
+
+    async function renderSongsChart(html, items, env) {
+      const artists = await getArtists();
+      const songsHtml = await Promise.all(items.map(async (item) => {
+        let thumbUrl = await getSongThumbnailUrl(item.key, env);
+        return generateSongChartItem(item, thumbUrl, artists, false);
+      }));
+      return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
+        `<!-- ITEMS_START -->${songsHtml.join('')}<!-- ITEMS_END -->`);
+    }
+
+    async function renderArtistsChart(html, items, env) {
+      const artistsHtml = await Promise.all(items.map(async (item) => {
+        let thumbUrl = await getArtistThumbnailUrl(item, env);
+        return generateArtistChartItem(item, thumbUrl, false);
+      }));
+      return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
+        `<!-- ITEMS_START -->${artistsHtml.join('')}<!-- ITEMS_END -->`);
+    }
+
+    async function renderPlaylistsChart(html, items, env) {
+      const playlistsHtml = await Promise.all(items.map(async (item) => {
+        let thumbUrl = await getPlaylistThumbnailUrl(item, env);
+        return generatePlaylistChartItem(item, thumbUrl, false);
+      }));
+      return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
+        `<!-- ITEMS_START -->${playlistsHtml.join('')}<!-- ITEMS_END -->`);
+    }
+
+    async function renderNewReleases(html, items, env) {
+      const artists = await getArtists();
+      const releasesHtml = await Promise.all(items.map(async (item) => {
+        if (item.type === 'album') {
+          let thumbUrl = await getAlbumThumbnailUrl(item, env);
+          return generateNewReleaseAlbumItem(item, thumbUrl, artists);
+        } else {
+          let thumbUrl = await getSongThumbnailUrl(item.id, env);
+          return generateNewReleaseSongItem(item, thumbUrl, artists);
+        }
+      }));
+      return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
+        `<!-- ITEMS_START -->${releasesHtml.join('')}<!-- ITEMS_END -->`);
+    }
+    // ==================== END CHART FUNCTIONS ====================
+
     // =========================
     // UPLOAD PAGE (GET)
     // =========================
@@ -485,7 +976,6 @@ export default {
         return `<option value="${id}">${artist.name}</option>`;
       }).join("");
       
-      // === Get playlists for dropdown ===
       const playlists = await getPlaylists();
       const playlistOptions = Object.keys(playlists).map(id => {
         const playlist = playlists[id];
@@ -652,7 +1142,7 @@ export default {
       const albumId = formData.get("album");
       const playlistId = formData.get("playlist");
       const artistNameInput = formData.get("artist_name");
-      const featured = formData.getAll("featured"); // could be array of IDs
+      const featured = formData.getAll("featured");
 
       if (!title || !audioFile || !imageFile) {
         return new Response("Missing fields", { status: 400 });
@@ -694,8 +1184,7 @@ export default {
       await env.media.put(imageKey, imageFile.stream());
       await env.media.put(descKey, description);
 
-      // Save metadata
-      const featuredArtists = featured.filter(id => id && id !== ""); // remove empty
+      const featuredArtists = featured.filter(id => id && id !== "");
       const metadata = {
         title,
         primaryArtist: artistId,
@@ -715,7 +1204,6 @@ export default {
       }
       
       await addSongToArtist(artistId, baseName);
-      // Add song to each featured artist
       for (const fid of featuredArtists) {
         await addSongToArtist(fid, baseName);
       }
@@ -1189,7 +1677,6 @@ export default {
       
       const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
       
-      // Pagination
       const ALBUMS_PER_PAGE = 12;
       const page = parseInt(url.searchParams.get("page")) || 1;
       const totalAlbums = albumList.length;
@@ -1197,7 +1684,6 @@ export default {
       const startIdx = (page - 1) * ALBUMS_PER_PAGE;
       const pageAlbums = albumList.slice(startIdx, startIdx + ALBUMS_PER_PAGE);
 
-      // Generate albums HTML
       const albumsHtml = await Promise.all(pageAlbums.map(async album => {
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
@@ -1247,7 +1733,6 @@ export default {
         `;
       }));
 
-      // Generate pagination HTML
       let paginationHtml = '';
       if (totalPages > 1) {
         paginationHtml = `<div class="pagination-container"><div class="pagination">`;
@@ -1266,9 +1751,6 @@ export default {
         paginationHtml += `</div></div>`;
       }
 
-      // ---------- RIGHT SIDEBAR CONTENT ----------
-      
-      // 1. FEATURED ALBUMS
       const featuredAlbums = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -1313,7 +1795,6 @@ export default {
         `;
       }));
 
-      // 2. TOP ARTISTS
       const topArtists = Object.values(artists)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -1355,7 +1836,6 @@ export default {
         `;
       }));
 
-      // 3. GENRES
       const genreCounts = {};
       Object.values(albums).forEach(album => {
         const title = album.title.toLowerCase();
@@ -1404,7 +1884,6 @@ export default {
         `;
       }).join('');
 
-      // 4. NEW RELEASES
       const newReleases = Object.values(albums)
         .sort((a, b) => b.created - a.created)
         .slice(0, 2);
@@ -1455,7 +1934,6 @@ export default {
         `;
       }));
 
-      // Replace all placeholders
       html = html.replace(
         /<!-- ALBUMS_START -->[\s\S]*?<!-- ALBUMS_END -->/g,
         `<!-- ALBUMS_START -->${albumsHtml.join('')}<!-- ALBUMS_END -->`
@@ -1508,7 +1986,6 @@ export default {
         return new Response("Album not found", { status: 404 });
       }
 
-      // Get aggregated stats for the album
       const albumStats = await getAggregatedStats(album.songs || [], env);
 
       const templateObj = await env.media.get("album.html");
@@ -1555,7 +2032,6 @@ export default {
       }
 
       const tracksHtml = await Promise.all(album.songs.map(async (songKey, index) => {
-        // Get metadata to display correct artist credit
         const meta = await getMetadata(songKey);
         let artistName = "";
         let artistDisplay = "";
@@ -1565,7 +2041,6 @@ export default {
           artistDisplay = featured ? `${primary} feat. ${featured}` : primary;
           artistName = primary;
         } else {
-          // Fallback to old method
           const [artistId] = songKey.split("_");
           const artist = artists[artistId];
           artistName = artist ? artist.name : artistId;
@@ -1627,8 +2102,6 @@ export default {
         </div></div>`;
       }
 
-      // ---------- RIGHT SIDEBAR CONTENT ----------
-      
       let moreByArtistHtml = '';
       if (primaryArtistId) {
         const artistAlbums = Object.values(albums)
@@ -1789,7 +2262,6 @@ export default {
         featuredArtistsHtml = `<div style="padding: 20px; text-align: center; color: #666;">No featured artists</div>`;
       }
 
-      // ========== REPLACE ALL PLACEHOLDERS ==========
       html = html.replace(/<title>.*?<\/title>/, `<title>${primaryArtist} - ${album.title} - ZEDALBUMS.TOP</title>`);
       html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
       html = html.replace(/<a href="albums\.html" class="breadcrumb-link">/g, '<a href="/albums" class="breadcrumb-link">');
@@ -1875,10 +2347,8 @@ export default {
         return new Response("Song not found", { status: 404 });
       }
 
-      // Get play and download stats
       const stats = await getSongStats(baseName, env);
 
-      // Check for playlist context
       const playlistId = url.searchParams.get("playlist");
       let contextPlaylist = null;
       if (playlistId) {
@@ -1892,7 +2362,6 @@ export default {
       }
       let html = await templateObj.text();
 
-      // Get metadata
       const meta = await getMetadata(baseName);
       let songTitle, primaryArtistId, featuredArtists = [], description = "";
       if (meta) {
@@ -1901,7 +2370,6 @@ export default {
         featuredArtists = meta.featuredArtists || [];
         description = meta.description || "";
       } else {
-        // Fallback to old method
         const [artistId, ...titleParts] = baseName.split("_");
         songTitle = titleParts.join(" ");
         primaryArtistId = artistId;
@@ -1910,20 +2378,15 @@ export default {
       const artists = await getArtists();
       const albums = await getAlbums();
 
-      // Get primary artist name
       let primaryArtistName = primaryArtistId;
       let primaryArtistObj = artists[primaryArtistId];
       if (primaryArtistObj) {
         primaryArtistName = primaryArtistObj.name;
       }
 
-      // Get featured artist names
       const featuredNames = featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
-
-      // Build full artist display string
       const artistDisplay = featuredNames ? `${primaryArtistName} feat. ${featuredNames}` : primaryArtistName;
 
-      // If no metadata, try to get description from old file
       if (!meta) {
         const descObj = await env.media.get(`descriptions/${baseName}.txt`);
         if (descObj) {
@@ -1961,7 +2424,6 @@ export default {
       const duration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
       const durationSeconds = parseInt(duration.split(':')[0]) * 60 + parseInt(duration.split(':')[1]);
 
-      // Find album containing this song (for fallback)
       let albumInfo = null;
       let albumId = null;
       let trackNumber = null;
@@ -1976,19 +2438,16 @@ export default {
         }
       }
 
-      // ---------- LEFT SIDEBAR: CONTEXTUAL (PLAYLIST OR ALBUM) ----------
       let playlistHtml = '';
       let sidebarTitle = '';
       let viewAllLink = '';
 
       if (contextPlaylist && contextPlaylist.songs) {
-        // Show songs from the same playlist
         const playlistSongs = await Promise.all(
           contextPlaylist.songs
-            .filter(songKey => songKey !== baseName) // exclude current song
-            .slice(0, 10) // limit to 10
+            .filter(songKey => songKey !== baseName)
+            .slice(0, 10)
             .map(async (songKey, index) => {
-              // Get metadata for each song to display correct artist
               const m = await getMetadata(songKey);
               let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
               let sartistDisplay = "";
@@ -2039,7 +2498,6 @@ export default {
         sidebarTitle = `More from "${contextPlaylist.title}" Playlist`;
         viewAllLink = contextPlaylist.songs.length > 10 ? `<a href="/playlist/${playlistId}" class="view-all">View All</a>` : '';
       } else if (albumInfo && albumId) {
-        // Fallback to album context
         const albumSongs = await Promise.all(albumInfo.songs.map(async (songKey, index) => {
           const m = await getMetadata(songKey);
           let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
@@ -2097,7 +2555,6 @@ export default {
         viewAllLink = '';
       }
 
-      // ---------- RIGHT SIDEBAR: MORE BY THIS ARTIST ----------
       let moreByArtistHtml = '';
       if (primaryArtistId) {
         const artistAlbums = Object.values(albums)
@@ -2146,7 +2603,6 @@ export default {
         }
       }
 
-      // ---------- RIGHT SIDEBAR: SIMILAR SONGS ----------
       const allSongs = await env.media.list({ prefix: "songs/", limit: 20 });
       const songFiles = allSongs.objects || [];
       const similarSongs = songFiles
@@ -2208,10 +2664,8 @@ export default {
         `;
       })).then(results => results.join(''));
 
-      // ---------- RIGHT SIDEBAR: QUICK INFO / PLAYLIST INFO ----------
       let quickInfoHtml = '';
       if (contextPlaylist) {
-        // Show playlist info
         const playlistSongCount = contextPlaylist.songs?.length || 0;
         const playlistCreated = new Date(contextPlaylist.created).toLocaleDateString('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric'
@@ -2232,7 +2686,6 @@ export default {
           </div>
         `;
       } else {
-        // Default song info with stats
         quickInfoHtml = `
           <div class="quick-info-section">
             <p><strong>Format:</strong> MP3</p>
@@ -2251,10 +2704,8 @@ export default {
         `;
       }
 
-      // ========== REPLACE ALL PLACEHOLDERS ==========
       html = html.replace(/<title>.*?<\/title>/, `<title>${artistDisplay} - ${songTitle} - ZEDALBUMS.TOP</title>`);
       
-      // Breadcrumbs (adjust for playlist context)
       if (contextPlaylist) {
         html = html.replace(
           /<a href="index\.html" class="breadcrumb-link">/g,
@@ -2273,7 +2724,6 @@ export default {
           `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`
         );
       } else {
-        // Default breadcrumbs
         html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
         html = html.replace(/<a href="songs\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
         html = html.replace(/<a href="artists\.html" class="breadcrumb-link">/g, '<a href="/artists" class="breadcrumb-link">');
@@ -2286,7 +2736,6 @@ export default {
       html = html.replace(/<div class="song-artist">.*?<\/div>/, `<div class="song-artist">${artistDisplay}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-clock"><\/i> Duration: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-clock"></i> Duration: ${duration}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-calendar"><\/i> Released: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-calendar"></i> Released: ${formattedDate}</div>`);
-      // Replace play/download stats (if placeholders exist in template)
       html = html.replace('<!-- SONG_PLAYS -->', stats.plays.toLocaleString());
       html = html.replace('<!-- SONG_DOWNLOADS -->', stats.downloads.toLocaleString());
       
@@ -2295,7 +2744,6 @@ export default {
       html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn"`);
       html = html.replace(/\/songs\/[^"]*\.mp3/g, `/songs/${encodeURIComponent(fileName)}`);
 
-      // Replace left sidebar title and view all link
       html = html.replace(
         /<h2 class="section-title">.*?<\/h2>/,
         `<h2 class="section-title">${sidebarTitle}</h2>`
@@ -2305,13 +2753,11 @@ export default {
         viewAllLink
       );
 
-      // Replace left sidebar content (the whole .latest-albums-list inside the left aside)
       html = html.replace(
         /(<div class="latest-albums-list">)([\s\S]*?)(<\/div>\s*<\/div>\s*<\/aside>)/,
         `$1${playlistHtml}$3`
       );
 
-      // Replace right sidebar sections
       html = html.replace(
         /<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g,
         `<!-- MORE_BY_ARTIST_START -->${moreByArtistHtml}<!-- MORE_BY_ARTIST_END -->`
@@ -2327,13 +2773,11 @@ export default {
         `<!-- QUICK_INFO_START -->${quickInfoHtml}<!-- QUICK_INFO_END -->`
       );
 
-      // Update navigation active states
       html = html.replace(/<a href="#" class="nav-item active">Playlists<\/a>/, '<a href="/playlists" class="nav-item">Playlists</a>');
       html = html.replace(/<a href="#" class="nav-item">Home<\/a>/, '<a href="/" class="nav-item">Home</a>');
       html = html.replace(/<a href="#" class="nav-item">Albums<\/a>/, '<a href="/albums" class="nav-item">Albums</a>');
       html = html.replace(/<a href="#" class="nav-item">Artists<\/a>/, '<a href="/artists" class="nav-item">Artists</a>');
 
-      // Add play tracking script
       const script = `
 <script>
   (function() {
@@ -2379,7 +2823,6 @@ export default {
       
       const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
       
-      // ---------- LEFT SIDEBAR: ALL ARTISTS WITH PAGINATION ----------
       const ARTISTS_PER_PAGE = 12;
       const page = parseInt(url.searchParams.get("page")) || 1;
       const totalArtists = artistList.length;
@@ -2437,7 +2880,6 @@ export default {
         paginationHtml += `</div></div>`;
       }
 
-      // ---------- RIGHT SIDEBAR: TOP ARTISTS (by song count) ----------
       const topArtists = Object.values(artists)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -2474,7 +2916,6 @@ export default {
         `;
       }));
 
-      // ---------- RIGHT SIDEBAR: NEW ARTISTS (by creation date) ----------
       const newArtists = Object.values(artists)
         .sort((a, b) => b.created - a.created)
         .slice(0, 3);
@@ -2512,7 +2953,6 @@ export default {
         `;
       }));
 
-      // ---------- RIGHT SIDEBAR: TOP GENRES ----------
       const genreCounts = {};
       Object.values(artists).forEach(artist => {
         let genre = artist.genre || 'Other';
@@ -2549,7 +2989,6 @@ export default {
         `;
       }).join('');
 
-      // ---------- RIGHT SIDEBAR: ARTIST STATS ----------
       const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
       const totalArtistsCount = Object.keys(artists).length;
       const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -2568,7 +3007,6 @@ export default {
         </div>
       `;
 
-      // ---------- REPLACE ALL PLACEHOLDERS ----------
       html = html.replace(
         /<!-- ARTISTS_START -->[\s\S]*?<!-- ARTISTS_END -->/g,
         `<!-- ARTISTS_START -->${artistsHtml.join('')}<!-- ARTISTS_END -->`
@@ -2621,23 +3059,18 @@ export default {
       const { albums: artistAlbums, singles, totalSongs, totalSingles } =
         await getArtistAlbumsAndSingles(artistId);
 
-      // Get aggregated play/download stats for all songs by this artist
       const allSongKeys = artist.songs || [];
       const artistStats = await getAggregatedStats(allSongKeys, env);
 
-      // Get all playlists that contain this artist's songs
       const artistPlaylists = [];
 
       for (const [playlistId, playlist] of Object.entries(playlists)) {
         if (!playlist.songs) continue;
         
-        // Check if any song in the playlist is by this artist
         for (const songKey of playlist.songs) {
           const meta = await getMetadata(songKey);
           if (meta) {
-            // Check if artist is primary or featured
             if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
-              // Count how many songs by this artist are in the playlist
               const artistSongCount = playlist.songs.filter(s => {
                 return s.startsWith(artistId + "_");
               }).length;
@@ -2651,10 +3084,9 @@ export default {
                 curator: playlist.curator || 'ZEDALBUMS.TOP',
                 created: playlist.created
               });
-              break; // Found at least one song, no need to check more
+              break;
             }
           } else {
-            // Fallback to old method
             if (songKey.startsWith(artistId + "_")) {
               const artistSongCount = playlist.songs.filter(s => {
                 return s.startsWith(artistId + "_");
@@ -2675,7 +3107,6 @@ export default {
         }
       }
 
-      // Sort playlists by newest first
       artistPlaylists.sort((a, b) => b.created - a.created);
 
       const templateObj = await env.media.get("artist.html");
@@ -2696,7 +3127,6 @@ export default {
       const description = artist.description || `All songs by ${artistName}.`;
       const genre = artist.genre || "Zam Pop / R&B";
       const songCount = totalSongs || artist.songs?.length || 0;
-      // Use real stats instead of dummy numbers
       const plays = artistStats.plays.toLocaleString();
       const downloads = artistStats.downloads.toLocaleString();
 
@@ -2714,22 +3144,20 @@ export default {
         } catch (e) {}
       }
 
-      // Gather all songs with role information
       const allSongs = [];
 
-      // Songs from albums where artist is primary (via song prefix)
       for (const alb of artistAlbums) {
         for (const songKey of alb.songs) {
           const [sid] = songKey.split("_");
           if (sid !== artistId) continue;
           const meta = await getMetadata(songKey);
           const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-          const uploaded = alb.created; // approximate
+          const uploaded = alb.created;
           allSongs.push({
             key: songKey,
             title,
             artistName,
-            artists: [artistName], // will be updated from metadata
+            artists: [artistName],
             albumId: alb.id,
             albumTitle: alb.title,
             uploaded,
@@ -2738,7 +3166,6 @@ export default {
         }
       }
 
-      // Singles (where artist is primary, and song not in any album)
       for (const songKey of singles) {
         const audioObj = await env.media.get(`songs/${songKey}.mp3`);
         const uploaded = audioObj?.uploaded || Date.now();
@@ -2756,7 +3183,6 @@ export default {
         });
       }
 
-      // Also include songs where artist is featured (by checking metadata)
       const processedKeys = new Set(allSongs.map(s => s.key));
       for (const songKey of artist.songs) {
         if (processedKeys.has(songKey)) continue;
@@ -2870,7 +3296,6 @@ export default {
           }
         }
       }
-      // Also consider featured appearances in other artists' songs
       for (const songKey of artist.songs) {
         const meta = await getMetadata(songKey);
         if (meta && meta.primaryArtist !== artistId && meta.featuredArtists.includes(artistId)) {
@@ -2919,7 +3344,6 @@ export default {
             ).then((r) => r.join(""))
           : `<div style="padding: 20px; text-align: center; color: #666;">No collaborations yet</div>`;
 
-      // Generate playlists HTML (max 3)
       const artistPlaylistsHtml = artistPlaylists.length > 0 
         ? await Promise.all(artistPlaylists.slice(0, 3).map(async pl => {
             let thumbUrl = "/images/placeholder.jpg";
@@ -3073,6 +3497,82 @@ export default {
     }
 
     // =========================
+    // CHARTS PAGES - DYNAMIC FROM TEMPLATE
+    // =========================
+    if (path.startsWith("/charts")) {
+      const subPath = path.replace("/charts", "") || "/";
+      
+      let templateFile = "charts/index.html";
+      let title = "Charts";
+      let dataFunction = null;
+      
+      if (subPath === "/" || subPath === "") {
+        templateFile = "charts/index.html";
+        title = "Charts Overview";
+        dataFunction = async () => ({
+          topAlbums: await (await getTopAlbums(env, 5)),
+          topSongs: await (await getTopSongs(env, 5)),
+          topArtists: await (await getTopArtists(env, 5)),
+          topPlaylists: await (await getTopPlaylists(env, 3)),
+          newReleases: await getNewReleases(env, 3)
+        });
+      } else if (subPath === "/albums") {
+        templateFile = "charts/albums.html";
+        title = "Top Albums Chart";
+        dataFunction = async () => ({ items: await getTopAlbums(env, 50) });
+      } else if (subPath === "/songs") {
+        templateFile = "charts/songs.html";
+        title = "Top Songs Chart";
+        dataFunction = async () => ({ items: await getTopSongs(env, 100) });
+      } else if (subPath === "/artists") {
+        templateFile = "charts/artists.html";
+        title = "Top Artists Chart";
+        dataFunction = async () => ({ items: await getTopArtists(env, 50) });
+      } else if (subPath === "/playlists") {
+        templateFile = "charts/playlists.html";
+        title = "Top Playlists Chart";
+        dataFunction = async () => ({ items: await getTopPlaylists(env, 50) });
+      } else if (subPath === "/new-releases") {
+        templateFile = "charts/new-releases.html";
+        title = "New Releases";
+        dataFunction = async () => ({ items: await getNewReleases(env, 50) });
+      } else {
+        return new Response("Chart page not found", { status: 404 });
+      }
+
+      const templateObj = await env.media.get(templateFile);
+      if (!templateObj) {
+        return new Response(`Template ${templateFile} not found in R2`, { status: 500 });
+      }
+      let html = await templateObj.text();
+
+      const chartData = await dataFunction();
+
+      if (subPath === "/" || subPath === "") {
+        html = await renderChartsOverview(html, chartData, env);
+      } else if (subPath === "/albums") {
+        html = await renderAlbumsChart(html, chartData.items, env);
+      } else if (subPath === "/songs") {
+        html = await renderSongsChart(html, chartData.items, env);
+      } else if (subPath === "/artists") {
+        html = await renderArtistsChart(html, chartData.items, env);
+      } else if (subPath === "/playlists") {
+        html = await renderPlaylistsChart(html, chartData.items, env);
+      } else if (subPath === "/new-releases") {
+        html = await renderNewReleases(html, chartData.items, env);
+      }
+
+      html = html.replace(/<title>.*?<\/title>/, `<title>${title} - ZEDALBUMS.TOP</title>`);
+
+      return new Response(html, {
+        headers: {
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=300"
+        }
+      });
+    }
+
+    // =========================
     // HOMEPAGE - DYNAMIC WITH LATEST SONGS AND TRACK COUNTS
     // =========================
     if (path === "/") {
@@ -3099,7 +3599,6 @@ export default {
       const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
       const artistList = Object.values(artists).sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0));
 
-      // ---------- LATEST ALBUMS with Pagination and TRACK COUNTS ----------
       const ALBUMS_PER_PAGE = 6;
       const page = parseInt(url.searchParams.get("page")) || 1;
       const totalAlbums = albumList.length;
@@ -3171,7 +3670,6 @@ export default {
         paginationHtml += `</div></div>`;
       }
 
-      // ---------- LATEST SONGS ----------
       const songsList = await env.media.list({ prefix: "songs/", limit: 50 });
       const songFiles = songsList.objects || [];
       songFiles.sort((a, b) => b.uploaded - a.uploaded);
@@ -3232,7 +3730,6 @@ export default {
         `;
       }));
 
-      // ---------- FEATURED ARTISTS ----------
       const featuredArtists = artistList.slice(0, 4);
       const featuredArtistsHtml = await Promise.all(featuredArtists.map(async artist => {
         let thumbUrl = "/images/placeholder.jpg";
@@ -3268,7 +3765,6 @@ export default {
         `;
       }));
 
-      // ---------- TOP RATED ----------
       const topRated = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -3316,7 +3812,6 @@ export default {
         `;
       }));
 
-      // ---------- FEATURED PLAYLISTS ----------
       const featuredPlaylists = Object.values(playlists)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -3363,7 +3858,6 @@ export default {
         `;
       }));
 
-      // ---------- TRENDING ALBUMS ----------
       const trending = Object.values(albums)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -3411,7 +3905,6 @@ export default {
         `;
       }));
 
-      // ---------- REPLACE ALL PLACEHOLDERS ----------
       html = html.replace(
         /<!-- LATEST_ALBUMS_START -->[\s\S]*?<!-- LATEST_ALBUMS_END -->/g,
         `<!-- LATEST_ALBUMS_START -->${latestAlbumsHtml.join('')}<!-- LATEST_ALBUMS_END -->`
@@ -3474,7 +3967,6 @@ export default {
 
       let playlistList = Object.values(playlists).sort((a, b) => b.created - a.created);
       
-      // Check for artist filter
       const artistId = url.searchParams.get("artist");
       let filterArtistName = "";
       let filteredPlaylists = playlistList;
@@ -3484,7 +3976,6 @@ export default {
         if (artist) {
           filterArtistName = artist.name;
           
-          // Filter playlists to only those containing this artist's songs
           filteredPlaylists = [];
           
           for (const playlist of playlistList) {
@@ -3506,10 +3997,8 @@ export default {
         }
       }
       
-      // Use filteredPlaylists for display
       const displayPlaylists = filteredPlaylists;
 
-      // ---------- LEFT SIDEBAR: ALL PLAYLISTS (pagination) ----------
       const ITEMS_PER_PAGE = 10;
       const page = parseInt(url.searchParams.get("page")) || 1;
       const totalPlaylists = displayPlaylists.length;
@@ -3581,7 +4070,6 @@ export default {
         paginationHtmlPlaylists += `</div></div>`;
       }
 
-      // Add filter header if filtering by artist
       let filterHeaderHtml = '';
       if (artistId && filterArtistName) {
         filterHeaderHtml = `
@@ -3593,7 +4081,6 @@ export default {
         `;
       }
 
-      // ---------- RIGHT SIDEBAR: FEATURED PLAYLISTS ----------
       const featured = playlistList
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -3631,7 +4118,6 @@ export default {
         `;
       }));
 
-      // ---------- RIGHT SIDEBAR: TOP ARTISTS ----------
       const topArtistsPlaylist = Object.values(artists)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -3668,7 +4154,6 @@ export default {
         `;
       }));
 
-      // ---------- RIGHT SIDEBAR: GENRES ----------
       const genresHtmlPlaylist = `
         <div class="album-item">
           <div class="album-thumbnail placeholder"></div>
@@ -3705,7 +4190,6 @@ export default {
         </div>
       `;
 
-      // ---------- RIGHT SIDEBAR: RECENTLY ADDED PLAYLISTS ----------
       const recent = playlistList
         .sort((a, b) => b.created - a.created)
         .slice(0, 3);
@@ -3747,7 +4231,6 @@ export default {
         `;
       }));
 
-      // ---------- REPLACE ALL PLACEHOLDERS ----------
       html = html.replace(
         /<!-- FILTER_HEADER_START -->[\s\S]*?<!-- FILTER_HEADER_END -->/g,
         `<!-- FILTER_HEADER_START -->${filterHeaderHtml}<!-- FILTER_HEADER_END -->`
@@ -3783,7 +4266,6 @@ export default {
         `<!-- RECENT_PLAYLISTS_START -->${recentHtml.join('')}<!-- RECENT_PLAYLISTS_END -->`
       );
       
-      // Update page title if filtered
       if (artistId && filterArtistName) {
         html = html.replace(
           /<title>.*?<\/title>/,
@@ -3809,7 +4291,6 @@ export default {
       const playlist = playlists[playlistId];
       if (!playlist) return new Response("Playlist not found", { status: 404 });
 
-      // Get aggregated stats for the playlist
       const playlistStats = await getAggregatedStats(playlist.songs || [], env);
 
       const templateObj = await env.media.get("playlist.html");
@@ -3821,7 +4302,6 @@ export default {
       const albums = await getAlbums();
       const artists = await getArtists();
 
-      // ---------- PLAYLIST HEADER ----------
       const songCount = playlist.songs?.length || 0;
       const createdDate = new Date(playlist.created);
       const formattedDate = createdDate.toLocaleDateString('en-GB', {
@@ -3852,7 +4332,6 @@ export default {
         } catch (e) {}
       }
 
-      // ---------- SONGS IN THIS PLAYLIST ----------
       const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
         const meta = await getMetadata(songKey);
         let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
@@ -3917,7 +4396,6 @@ export default {
         </div></div>`;
       }
 
-      // ---------- RIGHT SIDEBAR: More by Artist ----------
       let mainArtistId = null;
       let mainArtistName = null;
       if (playlist.songs && playlist.songs.length > 0) {
@@ -3980,7 +4458,6 @@ export default {
         moreByArtistHtml = `<div style="padding: 20px; text-align: center; color: #666;">No artist found</div>`;
       }
 
-      // ---------- RIGHT SIDEBAR: Similar Playlists ----------
       const similarPlaylists = Object.values(playlists)
         .filter(p => p.id !== playlistId && p.songs && p.songs.length > 0)
         .sort(() => 0.5 - Math.random())
@@ -4022,7 +4499,6 @@ export default {
         `;
       })).then(results => results.join(''));
 
-      // ---------- RIGHT SIDEBAR: Featured Artists ----------
       const featuredArtistsPlaylist = Object.values(artists)
         .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
         .slice(0, 3);
@@ -4058,7 +4534,6 @@ export default {
         `;
       }));
 
-      // ---------- RIGHT SIDEBAR: Playlist Info ----------
       const playlistInfoHtml = `
         <div style="padding: 15px; font-size: 0.9rem; color: #555;">
           <p><strong>Created:</strong> ${formattedDate}</p>
@@ -4075,7 +4550,6 @@ export default {
         </div>
       `;
 
-      // ---------- REPLACE PLACEHOLDERS ----------
       html = html.replace(/<title>.*?<\/title>/, `<title>${playlist.title} - Playlist - ZEDALBUMS.TOP</title>`);
       html = html.replace(
         /<span class="breadcrumb-current">.*?<\/span>/,
@@ -4143,7 +4617,6 @@ export default {
       const fileName = decodeURIComponent(path.replace("/download/",""));
       const songKey = fileName.replace(".mp3", "");
       
-      // Increment download counter in the background
       ctx.waitUntil(incrementDownload(songKey, env));
 
       const html = `
@@ -4206,7 +4679,6 @@ export default {
         "Accept-Ranges": "bytes",
       };
 
-      // Note: This download path is already handled above; the condition here is for non-download requests
       if (path.startsWith("/download/")) {
         contentDisposition = `attachment; filename="${fileName.split('/').pop()}"`;
       }
