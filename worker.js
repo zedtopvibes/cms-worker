@@ -52,140 +52,59 @@ export default {
     };
 
     // -----------------------------
-    // NEW: Helper to extract actual MP3 duration by parsing the file
+    // Helper to format duration (seconds -> mm:ss or hh:mm:ss)
     // -----------------------------
-    async function extractMp3Duration(arrayBuffer) {
-      const view = new DataView(arrayBuffer);
+    const formatDuration = (seconds) => {
+      if (!seconds || seconds < 0) return "?:??";
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      if (hrs > 0) {
+        return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+      }
+      return `${mins}:${secs.toString().padStart(2,'0')}`;
+    };
+
+    // ---------- MP3 duration parser ----------
+    async function getMp3Duration(arrayBuffer) {
+      const dataView = new DataView(arrayBuffer);
+      const uint8 = new Uint8Array(arrayBuffer);
       
-      // Check for ID3v2 tag at the beginning
+      // Search for the first valid MP3 frame (sync word 0xFF)
       let offset = 0;
-      let hasId3v2 = false;
-      
-      // Check for ID3v2 tag (first 3 bytes should be 'ID3')
-      if (view.getUint8(0) === 0x49 && view.getUint8(1) === 0x44 && view.getUint8(2) === 0x33) {
-        hasId3v2 = true;
-        // Get ID3v2 tag size (sync-safe integer)
-        const size = ((view.getUint8(6) & 0x7f) << 21) |
-                     ((view.getUint8(7) & 0x7f) << 14) |
-                     ((view.getUint8(8) & 0x7f) << 7) |
-                     (view.getUint8(9) & 0x7f);
-        offset = 10 + size; // Skip ID3v2 tag
+      while (offset < arrayBuffer.byteLength - 1 && (uint8[offset] !== 0xFF || (uint8[offset + 1] & 0xE0) !== 0xE0)) {
+        offset++;
       }
-      
-      let frameCount = 0;
-      let totalSamples = 0;
-      let bitrate = 128; // Default assumption
-      let samplingRate = 44100; // Default assumption
-      
-      // MP3 frame header pattern: first 11 bits should be 1 (frame sync)
-      // This is a simplified but reasonably accurate parser
-      for (let i = offset; i < arrayBuffer.byteLength - 4; i++) {
-        const header = view.getUint32(i, false);
-        
-        // Check for frame sync (first 11 bits are 1)
-        if ((header & 0xFFE00000) === 0xFFE00000) {
-          frameCount++;
-          
-          // Extract MPEG version and layer from header
-          const mpegVersion = (header >> 19) & 3;
-          const layer = (header >> 17) & 3;
-          const bitrateIndex = (header >> 12) & 15;
-          const samplingRateIndex = (header >> 10) & 3;
-          const padding = (header >> 9) & 1;
-          
-          // Determine sampling rate based on MPEG version
-          const samplingRates = [
-            [44100, 48000, 32000], // MPEG 1
-            [22050, 24000, 16000], // MPEG 2
-            [11025, 12000, 8000]   // MPEG 2.5
-          ];
-          
-          if (mpegVersion <= 2 && samplingRateIndex < 3) {
-            samplingRate = samplingRates[mpegVersion][samplingRateIndex];
-          }
-          
-          // Calculate frame size
-          let frameSize = 0;
-          if (layer === 3) { // Layer III
-            if (mpegVersion === 3) { // MPEG 1
-              const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
-              if (bitrateIndex > 0 && bitrateIndex < 15) {
-                bitrate = bitrates[bitrateIndex];
-              }
-              frameSize = Math.floor((144000 * bitrate) / samplingRate) + padding;
-            } else { // MPEG 2/2.5
-              const bitrates = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
-              if (bitrateIndex > 0 && bitrateIndex < 15) {
-                bitrate = bitrates[bitrateIndex];
-              }
-              frameSize = Math.floor((72000 * bitrate) / samplingRate) + padding;
-            }
-          }
-          
-          // Samples per frame based on layer
-          const samplesPerFrame = layer === 3 ? 1152 : 384; // Layer III uses 1152 samples per frame
-          totalSamples += samplesPerFrame;
-          
-          // Jump to next frame (simplified - actual frame size varies)
-          // Using calculated frame size if available, otherwise skip typical frame size
-          if (frameSize > 0) {
-            i += frameSize - 4;
-          } else {
-            i += 384; // Skip approximate frame size
+      if (offset >= arrayBuffer.byteLength - 1) return null; // No valid frame found
+
+      // Try to find Xing/Info header (often after the first frame)
+      const xingOffset = offset + 4 + 32; // typical location
+      if (xingOffset + 8 < arrayBuffer.byteLength) {
+        const xingTag = String.fromCharCode(uint8[xingOffset], uint8[xingOffset + 1], uint8[xingOffset + 2], uint8[xingOffset + 3]);
+        if (xingTag === 'Xing' || xingTag === 'Info') {
+          // Read total frames (4 bytes) after the flags
+          const flags = dataView.getUint32(xingOffset + 4, false);
+          let pos = xingOffset + 8;
+          if (flags & 0x0001) { // Frames field present
+            const totalFrames = dataView.getUint32(pos, false);
+            pos += 4;
+            // Read bytes (if present) – skip for now
+            if (flags & 0x0002) pos += 4; // Bytes
+            if (flags & 0x0004) pos += 100; // TOC
+            if (flags & 0x0008) pos += 4; // VBR scale
+            // Calculate bitrate and duration
+            const fileSize = arrayBuffer.byteLength;
+            const avgBitrate = Math.round((fileSize * 8) / (totalFrames * 0.026)); // approximate
+            const duration = Math.floor((fileSize * 8) / avgBitrate);
+            return duration; // seconds
           }
         }
       }
-      
-      if (frameCount > 0) {
-        // Calculate duration: total samples / sampling rate
-        const durationSeconds = totalSamples / samplingRate;
-        
-        const minutes = Math.floor(durationSeconds / 60);
-        const seconds = Math.floor(durationSeconds % 60);
-        
-        return {
-          seconds: durationSeconds,
-          formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
-        };
-      }
-      
-      // Fallback: Try to find Xing/Info header for VBR files
-      for (let i = offset; i < Math.min(offset + 5000, arrayBuffer.byteLength - 4); i++) {
-        // Look for Xing or Info header
-        if (view.getUint8(i) === 0x58 && view.getUint8(i+1) === 0x69 && 
-            view.getUint8(i+2) === 0x6E && view.getUint8(i+3) === 0x67) { // "Xing"
-          // Xing header found - this is a VBR file
-          const flags = view.getUint32(i+4, false);
-          let frameCount = 0;
-          
-          if (flags & 1) { // Frames flag
-            frameCount = view.getUint32(i+8, false);
-          }
-          
-          if (frameCount > 0) {
-            // Assume 1152 samples per frame for Layer III
-            const durationSeconds = (frameCount * 1152) / 44100;
-            const minutes = Math.floor(durationSeconds / 60);
-            const seconds = Math.floor(durationSeconds % 60);
-            
-            return {
-              seconds: durationSeconds,
-              formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
-            };
-          }
-          break;
-        }
-      }
-      
-      // Ultimate fallback: Use file size estimation if all else fails
-      const estimatedSeconds = (arrayBuffer.byteLength * 8) / (128000); // Assume 128kbps
-      const minutes = Math.floor(estimatedSeconds / 60);
-      const seconds = Math.floor(estimatedSeconds % 60);
-      
-      return {
-        seconds: estimatedSeconds,
-        formatted: `${minutes || 1}:${seconds.toString().padStart(2, '0') || '00'}`
-      };
+
+      // Fallback: assume constant bitrate of 128 kbps (common for CBR)
+      const bitrate = 128; // kbps
+      const duration = Math.floor((arrayBuffer.byteLength * 8) / (bitrate * 1000));
+      return duration;
     }
 
     // === ALBUMS FUNCTIONS ===
@@ -531,7 +450,7 @@ export default {
     };
     // ========== END PLAYLIST FUNCTIONS ==========
 
-    // ========== NEW: METADATA FUNCTIONS (for song-level artist details) ==========
+    // ========== NEW: METADATA FUNCTIONS (for song-level artist details and duration) ==========
     const getMetadata = async (songKey) => {
       const now = Date.now();
       // Check cache
@@ -657,8 +576,6 @@ export default {
           title: meta?.title || baseName.split("_").slice(1).join(" "),
           primaryArtist: meta?.primaryArtist || baseName.split("_")[0],
           featuredArtists: meta?.featuredArtists || [],
-          duration: meta?.duration || '3:30',
-          durationSeconds: meta?.durationSeconds || 210,
           plays: stats.plays,
           downloads: stats.downloads,
           uploaded: file.uploaded,
@@ -754,7 +671,6 @@ export default {
               title: meta?.title || baseName.split("_").slice(1).join(" "),
               type: 'single',
               artistId: meta?.primaryArtist || baseName.split("_")[0],
-              duration: meta?.duration || '3:30',
               created: file.uploaded,
               thumbnail: null
             };
@@ -1170,7 +1086,6 @@ export default {
         <p style="margin-top:5px; font-size:0.9em; color:#666;">Hold Ctrl/Cmd to select multiple</p>
       `;
 
-      // UPDATED: Removed duration field - now auto-extracted from MP3
       const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -1190,7 +1105,6 @@ export default {
           .back-link a:hover { color: #ff5500; }
           .section-title { margin-top: 25px; margin-bottom: 10px; font-size: 1.1rem; font-weight: 600; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
           select[multiple] { height: auto; min-height: 100px; }
-          .duration-note { font-size: 0.8rem; color: #666; margin-top: 3px; }
         </style>
         <script>
           document.addEventListener('DOMContentLoaded', function() {
@@ -1287,7 +1201,7 @@ export default {
     }
 
     // =========================
-    // UPLOAD HANDLER (POST) - UPDATED WITH ACTUAL MP3 DURATION EXTRACTION
+    // UPLOAD HANDLER (POST)
     // =========================
     if (path === "/upload" && req.method === "POST") {
       const formData = await req.formData();
@@ -1337,14 +1251,12 @@ export default {
       const imgType = imageFile.type.includes("png") ? "png" : "jpg";
       const imageKey = `images/${baseName}.${imgType}`;
 
-      // Get audio file as array buffer to extract duration
-      const audioArrayBuffer = await audioFile.arrayBuffer();
-      
-      // Extract actual duration from MP3 file
-      const duration = await extractMp3Duration(audioArrayBuffer);
+      // Read audio file to get duration
+      const audioBuffer = await audioFile.arrayBuffer();
+      const duration = await getMp3Duration(audioBuffer); // seconds
 
-      // Store the audio file
-      await env.media.put(audioKey, audioArrayBuffer);
+      // Upload audio using the buffer
+      await env.media.put(audioKey, audioBuffer);
       await env.media.put(imageKey, imageFile.stream());
       await env.media.put(descKey, description);
 
@@ -1354,8 +1266,7 @@ export default {
         primaryArtist: artistId,
         featuredArtists,
         description,
-        duration: duration.formatted,
-        durationSeconds: duration.seconds
+        duration          // store duration in seconds
       };
       await saveMetadata(baseName, metadata);
 
@@ -1397,7 +1308,6 @@ export default {
           <div class="success">
             <h1>✅ Upload Successful!</h1>
             <p style="font-size: 1.2rem; margin: 20px 0;">${title} by ${artistName}</p>
-            <p style="font-size: 1rem; color: #666;">Duration: ${duration.formatted}</p>
             <a href="/song/${encodeURIComponent(baseName + ".mp3")}" class="btn">View Song</a>
             ${playlistId ? `<a href="/playlist/${playlistId}" class="btn btn-playlist">View Playlist</a>` : ''}
             ${albumId && albumId !== "" && albumId !== "__create_new__" ? `<a href="/album/${albumId}" class="btn btn-album">View Album</a>` : ''}
@@ -2140,7 +2050,7 @@ export default {
     }
 
     // =========================
-    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS AND REAL DURATIONS)
+    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS AND ACTUAL DURATIONS)
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
       const albumId = decodeURIComponent(path.replace("/album/", ""));
@@ -2177,24 +2087,19 @@ export default {
       });
 
       const trackCount = album.songs?.length || 0;
-      
-      // UPDATED: Calculate total duration from actual song durations
+
+      // Calculate total duration from actual song durations
       let totalSeconds = 0;
-      for (const songKey of album.songs || []) {
+      const songDurations = await Promise.all(album.songs.map(async (songKey) => {
         const meta = await getMetadata(songKey);
-        if (meta && meta.durationSeconds) {
-          totalSeconds += meta.durationSeconds;
-        } else {
-          totalSeconds += 210; // Default 3:30 if no duration
-        }
-      }
-      const totalMinutes = Math.floor(totalSeconds / 60);
-      const remainingSeconds = totalSeconds % 60;
-      const totalHours = Math.floor(totalMinutes / 60);
-      const totalMins = totalMinutes % 60;
+        return meta?.duration || 0;
+      }));
+      totalSeconds = songDurations.reduce((acc, dur) => acc + dur, 0);
+      const totalHours = Math.floor(totalSeconds / 3600);
+      const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
       const totalDuration = totalHours > 0 
-        ? `${totalHours} hr ${totalMins} min` 
-        : `${totalMins} min`;
+        ? `${totalHours} hr ${totalMinutes} min` 
+        : `${totalMinutes} min`;
 
       let hasImage = false;
       let thumbUrl = "/images/placeholder.jpg";
@@ -2212,7 +2117,6 @@ export default {
         } catch (e) {}
       }
 
-      // UPDATED: Use actual durations from metadata
       const tracksHtml = await Promise.all(album.songs.map(async (songKey, index) => {
         const meta = await getMetadata(songKey);
         let artistName = "";
@@ -2230,7 +2134,6 @@ export default {
         }
         
         const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-        const duration = meta?.duration || '3:30';
         
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
@@ -2249,6 +2152,8 @@ export default {
           }
         } catch (e) {}
         
+        const durationSeconds = meta?.duration || 0;
+        const durationFormatted = formatDuration(durationSeconds);
         const trackNumber = (index + 1).toString().padStart(2, '0');
         const thumbnailClass = hasImage ? '' : 'track-placeholder';
         const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : '';
@@ -2262,7 +2167,7 @@ export default {
               <span class="album-title">${title}</span>
               <div class="album-meta">
                 <span class="album-artist">${artistDisplay}</span>
-                <span class="track-duration">${duration}</span>
+                <span class="track-duration">${durationFormatted}</span>
                 <span class="album-genre">Track ${trackNumber}</span>
               </div>
               <span class="album-date">Track ${trackNumber}</span>
@@ -2519,7 +2424,7 @@ export default {
     }
 
     // =========================
-    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT, STATS, AND REAL DURATION)
+    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT AND STATS AND ACTUAL DURATION)
     // =========================
     if (path.startsWith("/song/")) {
       const fileName = decodeURIComponent(path.replace("/song/", ""));
@@ -2531,7 +2436,6 @@ export default {
       }
 
       const stats = await getSongStats(baseName, env);
-      const meta = await getMetadata(baseName);
 
       const playlistId = url.searchParams.get("playlist");
       let contextPlaylist = null;
@@ -2546,17 +2450,14 @@ export default {
       }
       let html = await templateObj.text();
 
-      let songTitle, primaryArtistId, featuredArtists = [], description = "";
-      let duration = '3:30';
-      let durationSeconds = 210;
-      
+      const meta = await getMetadata(baseName);
+      let songTitle, primaryArtistId, featuredArtists = [], description = "", durationSeconds = 0;
       if (meta) {
         songTitle = meta.title;
         primaryArtistId = meta.primaryArtist;
         featuredArtists = meta.featuredArtists || [];
         description = meta.description || "";
-        duration = meta.duration || '3:30';
-        durationSeconds = meta.durationSeconds || 210;
+        durationSeconds = meta.duration || 0;
       } else {
         const [artistId, ...titleParts] = baseName.split("_");
         songTitle = titleParts.join(" ");
@@ -2609,6 +2510,8 @@ export default {
         year: 'numeric' 
       });
 
+      const durationFormatted = formatDuration(durationSeconds);
+
       let albumInfo = null;
       let albumId = null;
       let trackNumber = null;
@@ -2660,7 +2563,8 @@ export default {
                   }
                 }
               } catch (e) {}
-              const sduration = m?.duration || '3:30';
+              const sdurationSeconds = m?.duration || 0;
+              const sdurationFormatted = formatDuration(sdurationSeconds);
               const trackNum = (index + 1).toString().padStart(2, '0');
               return `
                 <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}?playlist=${playlistId}'">
@@ -2671,7 +2575,7 @@ export default {
                     <span class="album-title">${sartistDisplay} - ${stitle}</span>
                     <div class="album-meta">
                       <span class="album-artist">${sartistDisplay}</span>
-                      <span class="song-duration">${sduration}</span>
+                      <span class="song-duration">${sdurationFormatted}</span>
                     </div>
                     <span class="album-date">Track ${trackNum}</span>
                   </div>
@@ -2711,7 +2615,8 @@ export default {
               }
             }
           } catch (e) {}
-          const sduration = m?.duration || '3:30';
+          const sdurationSeconds = m?.duration || 0;
+          const sdurationFormatted = formatDuration(sdurationSeconds);
           const trackNum = (index + 1).toString().padStart(2, '0');
           const isCurrentSong = songKey === baseName;
           const activeClass = isCurrentSong ? ' style="background: rgba(255, 85, 0, 0.05); border-left: 4px solid #ff5500;"' : '';
@@ -2724,7 +2629,7 @@ export default {
                 <span class="album-title">${sartistDisplay} - ${stitle}</span>
                 <div class="album-meta">
                   <span class="album-artist">${sartistDisplay}</span>
-                  <span class="song-duration">${sduration}</span>
+                  <span class="song-duration">${sdurationFormatted}</span>
                 </div>
                 <span class="album-date">Track ${trackNum}</span>
               </div>
@@ -2831,7 +2736,8 @@ export default {
           month: 'short', 
           year: 'numeric' 
         });
-        const fDuration = m?.duration || '3:30';
+        const fDurationSeconds = m?.duration || 0;
+        const fDurationFormatted = formatDuration(fDurationSeconds);
         return `
           <div class="album-item" onclick="window.location='/song/${encodeURIComponent(fName)}'">
             <div class="album-thumbnail ${fHasImage ? '' : 'placeholder'}">
@@ -2841,7 +2747,7 @@ export default {
               <span class="album-title">${fArtistDisplay} - ${fTitle}</span>
               <div class="album-meta">
                 <span class="album-artist">${fArtistDisplay}</span>
-                <span class="song-duration">${fDuration}</span>
+                <span class="song-duration">${fDurationFormatted}</span>
               </div>
               <span class="album-date">${fFormattedDate}</span>
             </div>
@@ -2878,7 +2784,7 @@ export default {
             <p><strong>Quality:</strong> High Quality</p>
             <p><strong>Release Date:</strong> ${formattedDate}</p>
             <p><strong>Genre:</strong> ${albumInfo?.genre || 'Zam Pop'}</p>
-            <p><strong>Duration:</strong> ${duration}</p>
+            <p><strong>Duration:</strong> ${durationFormatted}</p>
             <p><strong><i class="fas fa-play"></i> Plays:</strong> ${stats.plays.toLocaleString()}</p>
             <p><strong><i class="fas fa-download"></i> Downloads:</strong> ${stats.downloads.toLocaleString()}</p>
             <div class="info-note">
@@ -2919,13 +2825,13 @@ export default {
       html = html.replace(/<div class="song-cover">[\s\S]*?<\/div>/, `<div class="song-cover">${songCoverHtml}</div>`);
       html = html.replace(/<h1 class="song-title">.*?<\/h1>/, `<h1 class="song-title">${songTitle}</h1>`);
       html = html.replace(/<div class="song-artist">.*?<\/div>/, `<div class="song-artist">${artistDisplay}</div>`);
-      html = html.replace(/<div class="song-stats"><i class="fas fa-clock"><\/i> Duration: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-clock"></i> Duration: ${duration}</div>`);
+      html = html.replace(/<div class="song-stats"><i class="fas fa-clock"><\/i> Duration: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-clock"></i> Duration: ${durationFormatted}</div>`);
       html = html.replace(/<div class="song-stats"><i class="fas fa-calendar"><\/i> Released: [^<]+<\/div>/, `<div class="song-stats"><i class="fas fa-calendar"></i> Released: ${formattedDate}</div>`);
       html = html.replace('<!-- SONG_PLAYS -->', stats.plays.toLocaleString());
       html = html.replace('<!-- SONG_DOWNLOADS -->', stats.downloads.toLocaleString());
       
       html = html.replace(/<p class="playlist-description">[\s\S]*?<\/p>/, `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistDisplay}.`}</p>`);
-      html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${duration}</span>`);
+      html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${durationFormatted}</span>`);
       html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn"`);
       html = html.replace(/\/songs\/[^"]*\.mp3/g, `/songs/${encodeURIComponent(fileName)}`);
 
@@ -3231,7 +3137,7 @@ export default {
     }
 
     // =========================
-    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH REAL STATS AND DURATIONS)
+    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH REAL STATS AND ACTUAL DURATIONS)
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -3337,7 +3243,6 @@ export default {
           if (sid !== artistId) continue;
           const meta = await getMetadata(songKey);
           const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-          const duration = meta?.duration || '3:30';
           const uploaded = alb.created;
           allSongs.push({
             key: songKey,
@@ -3346,7 +3251,6 @@ export default {
             artists: [artistName],
             albumId: alb.id,
             albumTitle: alb.title,
-            duration,
             uploaded,
             role: 'primary'
           });
@@ -3358,7 +3262,6 @@ export default {
         const uploaded = audioObj?.uploaded || Date.now();
         const meta = await getMetadata(songKey);
         const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-        const duration = meta?.duration || '3:30';
         allSongs.push({
           key: songKey,
           title,
@@ -3366,7 +3269,6 @@ export default {
           artists: [artistName],
           albumId: null,
           albumTitle: null,
-          duration,
           uploaded,
           role: 'primary'
         });
@@ -3381,7 +3283,6 @@ export default {
           const uploaded = audioObj?.uploaded || Date.now();
           const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
           const title = meta.title;
-          const duration = meta?.duration || '3:30';
           allSongs.push({
             key: songKey,
             title,
@@ -3389,7 +3290,6 @@ export default {
             artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
             albumId: null,
             albumTitle: null,
-            duration,
             uploaded,
             role: 'featured'
           });
@@ -3417,6 +3317,9 @@ export default {
           } catch (e) {}
 
           const date = formatDate(song.uploaded);
+          const meta = await getMetadata(song.key);
+          const durationSeconds = meta?.duration || 0;
+          const durationFormatted = formatDuration(durationSeconds);
           const artistDisplay = song.artists.join(', ');
           const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
 
@@ -3431,7 +3334,7 @@ export default {
                 <span class="album-title">${song.title}</span>
                 <div class="album-meta">
                   <span class="album-artist">${artistDisplay}</span>
-                  <span class="song-duration">${song.duration}</span>
+                  <span class="song-duration">${durationFormatted}</span>
                   <span class="album-genre">${song.role === 'featured' ? 'Featured' : 'Song'}</span>
                 </div>
                 <span class="album-date">${date} ${roleBadge}</span>
@@ -3683,7 +3586,7 @@ export default {
     }
 
     // =========================
-    // CHARTS PAGES - DYNAMIC FROM TEMPLATE (UPDATED WITH DURATIONS)
+    // CHARTS PAGES - DYNAMIC FROM TEMPLATE
     // =========================
     if (path.startsWith("/charts")) {
       const subPath = path.replace("/charts", "") || "/";
@@ -3867,7 +3770,6 @@ export default {
         const meta = await getMetadata(baseName);
         let title = meta ? meta.title : baseName.split("_").slice(1).join(" ");
         let artistDisplay = "";
-        let duration = meta?.duration || '3:30';
         if (meta) {
           const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
           const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
@@ -3909,7 +3811,7 @@ export default {
               <span class="album-title">${title}</span>
               <div class="album-meta">
                 <span class="album-artist">${artistDisplay}</span>
-                <span class="song-stats">${duration}</span>
+                <span class="song-stats">Single</span>
               </div>
               <span class="album-date">${formattedDate}</span>
             </div>
@@ -4469,7 +4371,7 @@ export default {
     }
 
     // =========================
-    // PLAYLIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS AND REAL DURATIONS)
+    // PLAYLIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS AND ACTUAL DURATIONS)
     // =========================
     if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
       const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
@@ -4495,23 +4397,18 @@ export default {
         day: '2-digit', month: 'short', year: 'numeric'
       });
 
-      // UPDATED: Calculate total duration from actual song durations
+      // Calculate total duration from actual song durations
       let totalSeconds = 0;
-      for (const songKey of playlist.songs || []) {
-        const meta = await getMetadata(songKey);
-        if (meta && meta.durationSeconds) {
-          totalSeconds += meta.durationSeconds;
-        } else {
-          totalSeconds += 210; // Default 3:30
-        }
+      if (playlist.songs) {
+        const durations = await Promise.all(playlist.songs.map(async songKey => {
+          const meta = await getMetadata(songKey);
+          return meta?.duration || 0;
+        }));
+        totalSeconds = durations.reduce((acc, dur) => acc + dur, 0);
       }
-      const totalMinutes = Math.floor(totalSeconds / 60);
-      const remainingSeconds = totalSeconds % 60;
-      const totalHours = Math.floor(totalMinutes / 60);
-      const totalMins = totalMinutes % 60;
-      const totalDuration = totalHours > 0 
-        ? `${totalHours} hr ${totalMins} min` 
-        : `${totalMins} min`;
+      const totalHours = Math.floor(totalSeconds / 3600);
+      const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
+      const totalDuration = totalHours > 0 ? `${totalHours} hr ${totalMinutes} min` : `${totalMinutes} min`;
 
       let hasCover = false;
       let coverHtml = `<i class="fas fa-music"></i>`;
@@ -4527,7 +4424,6 @@ export default {
         } catch (e) {}
       }
 
-      // UPDATED: Use actual durations from metadata
       const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
         const meta = await getMetadata(songKey);
         let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
@@ -4558,7 +4454,8 @@ export default {
           }
         } catch (e) {}
 
-        const duration = meta?.duration || '3:30';
+        const durationSeconds = meta?.duration || 0;
+        const durationFormatted = formatDuration(durationSeconds);
         const trackNumber = (index + 1).toString().padStart(2, '0');
 
         return `
@@ -4570,7 +4467,7 @@ export default {
               <span class="album-title">${artistDisplay} - ${title}</span>
               <div class="album-meta">
                 <span class="album-artist">${artistDisplay}</span>
-                <span class="song-duration">${duration}</span>
+                <span class="song-duration">${durationFormatted}</span>
                 <span class="album-genre">Track ${trackNumber}</span>
               </div>
               <span class="album-date">Track ${trackNumber}</span>
