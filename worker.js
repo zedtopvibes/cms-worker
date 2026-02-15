@@ -238,7 +238,7 @@ export default {
               albumSongIds.add(songKey);
             }
           }
-          
+           
           let thumbUrl = "/images/placeholder.jpg";
           if (album.thumbnail) {
             try {
