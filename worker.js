@@ -4800,35 +4800,32 @@ export default {
       });
     }
 
-    // =========================
-    // DOWNLOAD PAGE (updated with counter)
-    // =========================
-    if (path.startsWith("/download/")) {
-      const fileName = decodeURIComponent(path.replace("/download/",""));
-      const songKey = fileName.replace(".mp3", "");
-      
-      ctx.waitUntil(incrementDownload(songKey, env));
+// =========================
+// DOWNLOAD FILE (with counter)
+// =========================
+if (path.startsWith("/download/")) {
+  const fileName = decodeURIComponent(path.replace("/download/", ""));
+  const songKey = fileName.replace(".mp3", "");
 
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Downloading...</title>
-          <meta http-equiv="refresh" content="0;url=/songs/${encodeURIComponent(fileName)}">
-        </head>
-        <body>
-          <p>Download started. <a href="/songs/${encodeURIComponent(fileName)}">Click here</a> if download doesn't start automatically.</p>
-          <p><a href="/">Back to Home</a></p>
-        </body>
-        </html>
-      `;
-      return new Response(html, { 
-        headers: { 
-          "Content-Type": "text/html",
-          "Cache-Control": "public, max-age=300"
-        } 
-      });
-    }
+  // Increment download count in the background
+  ctx.waitUntil(incrementDownload(songKey, env));
+
+  // Fetch the audio file from R2
+  const obj = await env.media.get(`songs/${fileName}`);
+  if (!obj) {
+    return new Response("File not found", { status: 404 });
+  }
+
+  // Serve the file as a download
+  const headers = {
+    "Content-Type": "audio/mpeg",
+    "Content-Disposition": `attachment; filename="${fileName}"`,
+    "Cache-Control": "public, max-age=604800", // 7 days
+    "Accept-Ranges": "bytes",
+  };
+
+  return new Response(obj.body, { headers });
+}
 
     // =========================
     // API: INCREMENT PLAY COUNT
@@ -4868,10 +4865,6 @@ export default {
         "Cache-Control": cacheControl,
         "Accept-Ranges": "bytes",
       };
-
-      if (path.startsWith("/download/")) {
-        contentDisposition = `attachment; filename="${fileName.split('/').pop()}"`;
-      }
 
       headers["Content-Disposition"] = contentDisposition;
 
