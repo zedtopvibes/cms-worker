@@ -65,48 +65,79 @@ export default {
       return `${mins}:${secs.toString().padStart(2,'0')}`;
     };
 
-    // ---------- MP3 duration parser ----------
-    async function getMp3Duration(arrayBuffer) {
-      const dataView = new DataView(arrayBuffer);
-      const uint8 = new Uint8Array(arrayBuffer);
+// ---------- Accurate MP3 duration parser ----------
+async function getMp3Duration(arrayBuffer) {
+  const dataView = new DataView(arrayBuffer);
+  const uint8 = new Uint8Array(arrayBuffer);
+  
+  // MP3 frame header bitrate table (kbps) - MPEG-1, Layer III
+  const bitrateTable = [
+    [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0], // Version 1
+    [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0]       // Version 2
+  ];
+  
+  // Sampling rate table (Hz)
+  const sampleRateTable = [
+    [44100, 48000, 32000, 0], // Version 1
+    [22050, 24000, 16000, 0], // Version 2
+    [11025, 12000, 8000, 0]   // Version 2.5
+  ];
+  
+  let totalFrames = 0;
+  let offset = 0;
+  const fileSize = arrayBuffer.byteLength;
+  
+  // Find first valid frame
+  while (offset < fileSize - 3) {
+    // Check for frame sync (first 11 bits set)
+    if (uint8[offset] === 0xFF && (uint8[offset + 1] & 0xE0) === 0xE0) {
+      const header = (uint8[offset] << 24) | (uint8[offset + 1] << 16) | 
+                     (uint8[offset + 2] << 8) | uint8[offset + 3];
       
-      // Search for the first valid MP3 frame (sync word 0xFF)
-      let offset = 0;
-      while (offset < arrayBuffer.byteLength - 1 && (uint8[offset] !== 0xFF || (uint8[offset + 1] & 0xE0) !== 0xE0)) {
-        offset++;
-      }
-      if (offset >= arrayBuffer.byteLength - 1) return null; // No valid frame found
-
-      // Try to find Xing/Info header (often after the first frame)
-      const xingOffset = offset + 4 + 32; // typical location
-      if (xingOffset + 8 < arrayBuffer.byteLength) {
-        const xingTag = String.fromCharCode(uint8[xingOffset], uint8[xingOffset + 1], uint8[xingOffset + 2], uint8[xingOffset + 3]);
-        if (xingTag === 'Xing' || xingTag === 'Info') {
-          // Read total frames (4 bytes) after the flags
-          const flags = dataView.getUint32(xingOffset + 4, false);
-          let pos = xingOffset + 8;
-          if (flags & 0x0001) { // Frames field present
-            const totalFrames = dataView.getUint32(pos, false);
-            pos += 4;
-            // Read bytes (if present) – skip for now
-            if (flags & 0x0002) pos += 4; // Bytes
-            if (flags & 0x0004) pos += 100; // TOC
-            if (flags & 0x0008) pos += 4; // VBR scale
-            // Calculate bitrate and duration
-            const fileSize = arrayBuffer.byteLength;
-            const avgBitrate = Math.round((fileSize * 8) / (totalFrames * 0.026)); // approximate
-            const duration = Math.floor((fileSize * 8) / avgBitrate);
-            return duration; // seconds
-          }
+      // Parse header
+      const version = (header >> 19) & 0x3; // 0=MPEG 2.5, 2=MPEG 2, 3=MPEG 1
+      const layer = (header >> 17) & 0x3;   // 1=Layer III
+      const bitrateIdx = (header >> 12) & 0xF;
+      const sampleRateIdx = (header >> 10) & 0x3;
+      const padding = (header >> 9) & 0x1;
+      
+      // Validate (should be Layer III)
+      if (layer === 0x1) { // Layer III
+        // Determine version index for tables
+        let verIdx = 0; // MPEG-1
+        if (version === 2) verIdx = 1; // MPEG-2
+        else if (version === 0) verIdx = 2; // MPEG-2.5
+        
+        const bitrate = bitrateTable[verIdx < 2 ? verIdx : 0][bitrateIdx] * 1000;
+        const sampleRate = sampleRateTable[verIdx][sampleRateIdx];
+        
+        if (bitrate > 0 && sampleRate > 0) {
+          // Calculate frame size
+          const frameSize = Math.floor((144000 * bitrate) / sampleRate) + padding;
+          
+          totalFrames++;
+          offset += frameSize;
+          continue;
         }
       }
-
-      // Fallback: assume constant bitrate of 128 kbps (common for CBR)
-      const bitrate = 128; // kbps
-      const duration = Math.floor((arrayBuffer.byteLength * 8) / (bitrate * 1000));
-      return duration;
     }
-
+    offset++;
+  }
+  
+  if (totalFrames === 0) {
+    // Fallback: estimate based on file size (assuming 128 kbps)
+    return Math.floor(fileSize / (128 * 125)); // ~128 kbps
+  }
+  
+  // Average bitrate method
+  const avgFrameSize = fileSize / totalFrames;
+  const estimatedBitrate = Math.floor((avgFrameSize * sampleRateTable[0][0]) / 144000);
+  
+  // Calculate duration
+  const duration = Math.floor((fileSize * 8) / (estimatedBitrate * 1000));
+  
+  return duration;
+}
     // === ALBUMS FUNCTIONS ===
     const getAlbums = async () => {
       const now = Date.now();
