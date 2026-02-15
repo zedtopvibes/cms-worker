@@ -52,23 +52,141 @@ export default {
     };
 
     // -----------------------------
-    // NEW: Helper to estimate MP3 duration from file size
+    // NEW: Helper to extract actual MP3 duration by parsing the file
     // -----------------------------
-    const estimateMp3Duration = (fileSize, bitrate = 128) => {
-      // Assuming average bitrate of 128 kbps
-      // fileSize is in bytes, bitrate in kbps (kilobits per second)
-      const sizeInBits = fileSize * 8;
-      const bitrateInBps = bitrate * 1000;
-      const durationSeconds = sizeInBits / bitrateInBps;
+    async function extractMp3Duration(arrayBuffer) {
+      const view = new DataView(arrayBuffer);
       
-      const minutes = Math.floor(durationSeconds / 60);
-      const seconds = Math.floor(durationSeconds % 60);
+      // Check for ID3v2 tag at the beginning
+      let offset = 0;
+      let hasId3v2 = false;
+      
+      // Check for ID3v2 tag (first 3 bytes should be 'ID3')
+      if (view.getUint8(0) === 0x49 && view.getUint8(1) === 0x44 && view.getUint8(2) === 0x33) {
+        hasId3v2 = true;
+        // Get ID3v2 tag size (sync-safe integer)
+        const size = ((view.getUint8(6) & 0x7f) << 21) |
+                     ((view.getUint8(7) & 0x7f) << 14) |
+                     ((view.getUint8(8) & 0x7f) << 7) |
+                     (view.getUint8(9) & 0x7f);
+        offset = 10 + size; // Skip ID3v2 tag
+      }
+      
+      let frameCount = 0;
+      let totalSamples = 0;
+      let bitrate = 128; // Default assumption
+      let samplingRate = 44100; // Default assumption
+      
+      // MP3 frame header pattern: first 11 bits should be 1 (frame sync)
+      // This is a simplified but reasonably accurate parser
+      for (let i = offset; i < arrayBuffer.byteLength - 4; i++) {
+        const header = view.getUint32(i, false);
+        
+        // Check for frame sync (first 11 bits are 1)
+        if ((header & 0xFFE00000) === 0xFFE00000) {
+          frameCount++;
+          
+          // Extract MPEG version and layer from header
+          const mpegVersion = (header >> 19) & 3;
+          const layer = (header >> 17) & 3;
+          const bitrateIndex = (header >> 12) & 15;
+          const samplingRateIndex = (header >> 10) & 3;
+          const padding = (header >> 9) & 1;
+          
+          // Determine sampling rate based on MPEG version
+          const samplingRates = [
+            [44100, 48000, 32000], // MPEG 1
+            [22050, 24000, 16000], // MPEG 2
+            [11025, 12000, 8000]   // MPEG 2.5
+          ];
+          
+          if (mpegVersion <= 2 && samplingRateIndex < 3) {
+            samplingRate = samplingRates[mpegVersion][samplingRateIndex];
+          }
+          
+          // Calculate frame size
+          let frameSize = 0;
+          if (layer === 3) { // Layer III
+            if (mpegVersion === 3) { // MPEG 1
+              const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+              if (bitrateIndex > 0 && bitrateIndex < 15) {
+                bitrate = bitrates[bitrateIndex];
+              }
+              frameSize = Math.floor((144000 * bitrate) / samplingRate) + padding;
+            } else { // MPEG 2/2.5
+              const bitrates = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+              if (bitrateIndex > 0 && bitrateIndex < 15) {
+                bitrate = bitrates[bitrateIndex];
+              }
+              frameSize = Math.floor((72000 * bitrate) / samplingRate) + padding;
+            }
+          }
+          
+          // Samples per frame based on layer
+          const samplesPerFrame = layer === 3 ? 1152 : 384; // Layer III uses 1152 samples per frame
+          totalSamples += samplesPerFrame;
+          
+          // Jump to next frame (simplified - actual frame size varies)
+          // Using calculated frame size if available, otherwise skip typical frame size
+          if (frameSize > 0) {
+            i += frameSize - 4;
+          } else {
+            i += 384; // Skip approximate frame size
+          }
+        }
+      }
+      
+      if (frameCount > 0) {
+        // Calculate duration: total samples / sampling rate
+        const durationSeconds = totalSamples / samplingRate;
+        
+        const minutes = Math.floor(durationSeconds / 60);
+        const seconds = Math.floor(durationSeconds % 60);
+        
+        return {
+          seconds: durationSeconds,
+          formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
+        };
+      }
+      
+      // Fallback: Try to find Xing/Info header for VBR files
+      for (let i = offset; i < Math.min(offset + 5000, arrayBuffer.byteLength - 4); i++) {
+        // Look for Xing or Info header
+        if (view.getUint8(i) === 0x58 && view.getUint8(i+1) === 0x69 && 
+            view.getUint8(i+2) === 0x6E && view.getUint8(i+3) === 0x67) { // "Xing"
+          // Xing header found - this is a VBR file
+          const flags = view.getUint32(i+4, false);
+          let frameCount = 0;
+          
+          if (flags & 1) { // Frames flag
+            frameCount = view.getUint32(i+8, false);
+          }
+          
+          if (frameCount > 0) {
+            // Assume 1152 samples per frame for Layer III
+            const durationSeconds = (frameCount * 1152) / 44100;
+            const minutes = Math.floor(durationSeconds / 60);
+            const seconds = Math.floor(durationSeconds % 60);
+            
+            return {
+              seconds: durationSeconds,
+              formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
+            };
+          }
+          break;
+        }
+      }
+      
+      // Ultimate fallback: Use file size estimation if all else fails
+      const estimatedSeconds = (arrayBuffer.byteLength * 8) / (128000); // Assume 128kbps
+      const minutes = Math.floor(estimatedSeconds / 60);
+      const seconds = Math.floor(estimatedSeconds % 60);
       
       return {
-        seconds: durationSeconds,
-        formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
+        seconds: estimatedSeconds,
+        formatted: `${minutes || 1}:${seconds.toString().padStart(2, '0') || '00'}`
       };
-    };
+    }
 
     // === ALBUMS FUNCTIONS ===
     const getAlbums = async () => {
@@ -1052,7 +1170,7 @@ export default {
         <p style="margin-top:5px; font-size:0.9em; color:#666;">Hold Ctrl/Cmd to select multiple</p>
       `;
 
-      // UPDATED: Added duration field to upload form
+      // UPDATED: Removed duration field - now auto-extracted from MP3
       const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -1142,10 +1260,6 @@ export default {
             <label>Description</label>
             <textarea name="description" rows="3" placeholder="Song description..." required></textarea>
             
-            <label>Duration (Optional - MM:SS)</label>
-            <input type="text" name="duration" placeholder="e.g. 3:45" pattern="[0-9]+:[0-9]{2}">
-            <div class="duration-note">Leave blank to auto-calculate from file size</div>
-            
             <div class="section-title">Album Information</div>
             ${albumSection}
             
@@ -1173,7 +1287,7 @@ export default {
     }
 
     // =========================
-    // UPLOAD HANDLER (POST) - UPDATED WITH DURATION
+    // UPLOAD HANDLER (POST) - UPDATED WITH ACTUAL MP3 DURATION EXTRACTION
     // =========================
     if (path === "/upload" && req.method === "POST") {
       const formData = await req.formData();
@@ -1186,7 +1300,6 @@ export default {
       const playlistId = formData.get("playlist");
       const artistNameInput = formData.get("artist_name");
       const featured = formData.getAll("featured");
-      const durationInput = formData.get("duration");
 
       if (!title || !audioFile || !imageFile) {
         return new Response("Missing fields", { status: 400 });
@@ -1224,25 +1337,16 @@ export default {
       const imgType = imageFile.type.includes("png") ? "png" : "jpg";
       const imageKey = `images/${baseName}.${imgType}`;
 
-      await env.media.put(audioKey, audioFile.stream());
+      // Get audio file as array buffer to extract duration
+      const audioArrayBuffer = await audioFile.arrayBuffer();
+      
+      // Extract actual duration from MP3 file
+      const duration = await extractMp3Duration(audioArrayBuffer);
+
+      // Store the audio file
+      await env.media.put(audioKey, audioArrayBuffer);
       await env.media.put(imageKey, imageFile.stream());
       await env.media.put(descKey, description);
-
-      // Calculate duration
-      let durationFormatted = '3:30';
-      let durationSeconds = 210;
-      
-      if (durationInput && /^\d+:\d{2}$/.test(durationInput)) {
-        // Use manually entered duration
-        durationFormatted = durationInput;
-        const [mins, secs] = durationInput.split(':').map(Number);
-        durationSeconds = (mins * 60) + secs;
-      } else {
-        // Auto-calculate from file size
-        const duration = estimateMp3Duration(audioFile.size);
-        durationFormatted = duration.formatted;
-        durationSeconds = duration.seconds;
-      }
 
       const featuredArtists = featured.filter(id => id && id !== "");
       const metadata = {
@@ -1250,8 +1354,8 @@ export default {
         primaryArtist: artistId,
         featuredArtists,
         description,
-        duration: durationFormatted,
-        durationSeconds: durationSeconds
+        duration: duration.formatted,
+        durationSeconds: duration.seconds
       };
       await saveMetadata(baseName, metadata);
 
@@ -1292,7 +1396,8 @@ export default {
         <body>
           <div class="success">
             <h1>✅ Upload Successful!</h1>
-            <p style="font-size: 1.2rem; margin: 20px 0;">${title} by ${artistName} (Duration: ${durationFormatted})</p>
+            <p style="font-size: 1.2rem; margin: 20px 0;">${title} by ${artistName}</p>
+            <p style="font-size: 1rem; color: #666;">Duration: ${duration.formatted}</p>
             <a href="/song/${encodeURIComponent(baseName + ".mp3")}" class="btn">View Song</a>
             ${playlistId ? `<a href="/playlist/${playlistId}" class="btn btn-playlist">View Playlist</a>` : ''}
             ${albumId && albumId !== "" && albumId !== "__create_new__" ? `<a href="/album/${albumId}" class="btn btn-album">View Album</a>` : ''}
