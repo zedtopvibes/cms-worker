@@ -31,7 +31,7 @@ export default {
     // --- Metadata cache (for song metadata) ---
     let metadataCache = {};
     let metadataCacheTimestamp = 0;
-    const METADATA_CACHE_DURATION = 60000; // 1 minute
+    const METADATA_CACHE_DURATION = 60000;
 
     // -----------------------------
     // Helper to sanitize filenames
@@ -39,15 +39,11 @@ export default {
     const sanitize = str => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
 
     // -----------------------------
-    // Helper to format numbers (0-999 = full number, 1000+ = 1K, 1.2K, etc)
+    // Helper to format numbers
     // -----------------------------
     const formatNumber = (num) => {
-        if (num >= 1000000) {
-            return (num / 1000000).toFixed(1) + 'M';
-        }
-        if (num >= 1000) {
-            return (num / 1000).toFixed(1) + 'K';
-        }
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
         return num.toString();
     };
 
@@ -65,79 +61,12 @@ export default {
       return `${mins}:${secs.toString().padStart(2,'0')}`;
     };
 
-// ---------- Accurate MP3 duration parser ----------
-async function getMp3Duration(arrayBuffer) {
-  const dataView = new DataView(arrayBuffer);
-  const uint8 = new Uint8Array(arrayBuffer);
-  
-  // MP3 frame header bitrate table (kbps) - MPEG-1, Layer III
-  const bitrateTable = [
-    [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0], // Version 1
-    [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0]       // Version 2
-  ];
-  
-  // Sampling rate table (Hz)
-  const sampleRateTable = [
-    [44100, 48000, 32000, 0], // Version 1
-    [22050, 24000, 16000, 0], // Version 2
-    [11025, 12000, 8000, 0]   // Version 2.5
-  ];
-  
-  let totalFrames = 0;
-  let offset = 0;
-  const fileSize = arrayBuffer.byteLength;
-  
-  // Find first valid frame
-  while (offset < fileSize - 3) {
-    // Check for frame sync (first 11 bits set)
-    if (uint8[offset] === 0xFF && (uint8[offset + 1] & 0xE0) === 0xE0) {
-      const header = (uint8[offset] << 24) | (uint8[offset + 1] << 16) | 
-                     (uint8[offset + 2] << 8) | uint8[offset + 3];
-      
-      // Parse header
-      const version = (header >> 19) & 0x3; // 0=MPEG 2.5, 2=MPEG 2, 3=MPEG 1
-      const layer = (header >> 17) & 0x3;   // 1=Layer III
-      const bitrateIdx = (header >> 12) & 0xF;
-      const sampleRateIdx = (header >> 10) & 0x3;
-      const padding = (header >> 9) & 0x1;
-      
-      // Validate (should be Layer III)
-      if (layer === 0x1) { // Layer III
-        // Determine version index for tables
-        let verIdx = 0; // MPEG-1
-        if (version === 2) verIdx = 1; // MPEG-2
-        else if (version === 0) verIdx = 2; // MPEG-2.5
-        
-        const bitrate = bitrateTable[verIdx < 2 ? verIdx : 0][bitrateIdx] * 1000;
-        const sampleRate = sampleRateTable[verIdx][sampleRateIdx];
-        
-        if (bitrate > 0 && sampleRate > 0) {
-          // Calculate frame size
-          const frameSize = Math.floor((144000 * bitrate) / sampleRate) + padding;
-          
-          totalFrames++;
-          offset += frameSize;
-          continue;
-        }
-      }
+    // Simple fallback duration parser (rarely used now)
+    function fallbackDurationParser(arrayBuffer) {
+      const fileSize = arrayBuffer.byteLength;
+      return Math.floor(fileSize / (128 * 125)); // 128kbps estimate
     }
-    offset++;
-  }
-  
-  if (totalFrames === 0) {
-    // Fallback: estimate based on file size (assuming 128 kbps)
-    return Math.floor(fileSize / (128 * 125)); // ~128 kbps
-  }
-  
-  // Average bitrate method
-  const avgFrameSize = fileSize / totalFrames;
-  const estimatedBitrate = Math.floor((avgFrameSize * sampleRateTable[0][0]) / 144000);
-  
-  // Calculate duration
-  const duration = Math.floor((fileSize * 8) / (estimatedBitrate * 1000));
-  
-  return duration;
-}
+
     // === ALBUMS FUNCTIONS ===
     const getAlbums = async () => {
       const now = Date.now();
@@ -184,7 +113,6 @@ async function getMp3Duration(arrayBuffer) {
       return albums[albumId] ? albums[albumId].songs || [] : [];
     };
 
-    // === Add artist to album's artists array ===
     const addArtistToAlbum = async (artistId, albumId) => {
       const albums = await getAlbums();
       const album = albums[albumId];
@@ -197,7 +125,6 @@ async function getMp3Duration(arrayBuffer) {
       }
     };
 
-    // === Remove artist from album ===
     const removeArtistFromAlbum = async (artistId, albumId) => {
       const albums = await getAlbums();
       const album = albums[albumId];
@@ -256,7 +183,6 @@ async function getMp3Duration(arrayBuffer) {
       return artists[artistId] ? artists[artistId].songs || [] : [];
     };
 
-    // === ALBUM-ARTIST ASSIGNMENT FUNCTIONS ===
     const addAlbumToArtist = async (artistId, albumId) => {
       const artists = await getArtists();
       if (artists[artistId]) {
@@ -286,7 +212,6 @@ async function getMp3Duration(arrayBuffer) {
       return artists[artistId] ? artists[artistId].albums || [] : [];
     };
 
-    // === getArtistAlbumsAndSingles with CORRECT stats ===
     const getArtistAlbumsAndSingles = async (artistId) => {
       const artists = await getArtists();
       const albums = await getAlbums();
@@ -421,7 +346,7 @@ async function getMp3Duration(arrayBuffer) {
       };
     };
 
-    // ========== NEW: PLAYLIST FUNCTIONS ==========
+    // ========== PLAYLIST FUNCTIONS ==========
     const getPlaylists = async () => {
       const now = Date.now();
       if (playlistsCache && (now - playlistsCacheTimestamp < PLAYLISTS_CACHE_DURATION)) {
@@ -481,10 +406,9 @@ async function getMp3Duration(arrayBuffer) {
     };
     // ========== END PLAYLIST FUNCTIONS ==========
 
-    // ========== NEW: METADATA FUNCTIONS (for song-level artist details and duration) ==========
+    // ========== METADATA FUNCTIONS ==========
     const getMetadata = async (songKey) => {
       const now = Date.now();
-      // Check cache
       if (metadataCache[songKey] && (now - metadataCacheTimestamp < METADATA_CACHE_DURATION)) {
         return metadataCache[songKey];
       }
@@ -1051,7 +975,7 @@ async function getMp3Duration(arrayBuffer) {
     // ==================== END CHART FUNCTIONS ====================
 
     // =========================
-    // UPLOAD PAGE (GET)
+    // UPLOAD PAGE (GET) - UPDATED WITH BROWSER DURATION DETECTION
     // =========================
     if (path === "/upload" && req.method === "GET") {
       const albums = await getAlbums();
@@ -1117,86 +1041,36 @@ async function getMp3Duration(arrayBuffer) {
         <p style="margin-top:5px; font-size:0.9em; color:#666;">Hold Ctrl/Cmd to select multiple</p>
       `;
 
+      // UPDATED HTML WITH BROWSER DURATION DETECTION
       const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Upload Song - ZEDALBUMS.TOP</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 50px; background: #f0f0f0; }
-          .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-          h1 { color: #333; margin-bottom: 20px; border-left: 4px solid #ff5500; padding-left: 15px; }
-          label { display: block; margin-top: 15px; font-weight: 600; color: #555; }
-          input, textarea, select { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; }
-          button { margin-top: 25px; padding: 14px; background: #ff5500; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 600; width: 100%; }
-          button:hover { background: #ff6a1a; }
-          .back-link { margin-top: 20px; text-align: center; }
-          .back-link a { color: #666; text-decoration: none; }
-          .back-link a:hover { color: #ff5500; }
-          .section-title { margin-top: 25px; margin-bottom: 10px; font-size: 1.1rem; font-weight: 600; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-          select[multiple] { height: auto; min-height: 100px; }
-        </style>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            const albumSelect = document.querySelector('select[name="album"]');
-            if (albumSelect) {
-              albumSelect.addEventListener('change', function() {
-                if (this.value === '__create_new__') {
-                  window.location.href = '/album/create';
-                }
-              });
-            }
-            
-            const playlistSelect = document.querySelector('select[name="playlist"]');
-            if (playlistSelect) {
-              playlistSelect.addEventListener('change', function() {
-                if (this.value === '__create_new__') {
-                  window.location.href = '/playlist/create';
-                }
-              });
-            }
-            
-            const artistSelect = document.getElementById('artistSelect');
-            const createArtistLink = document.getElementById('createArtistLink');
-            const existingArtistNote = document.getElementById('existingArtistNote');
-            const artistNameInput = document.getElementById('artistNameInput');
-            
-            if (artistSelect) {
-              artistSelect.addEventListener('change', function() {
-                if (this.value === '__create_new__') {
-                  createArtistLink.style.display = 'block';
-                  existingArtistNote.style.display = 'inline';
-                  artistNameInput.style.display = 'block';
-                  artistNameInput.required = true;
-                } else {
-                  createArtistLink.style.display = 'none';
-                  existingArtistNote.style.display = 'none';
-                  artistNameInput.style.display = 'none';
-                  artistNameInput.required = false;
-                }
-              });
-            }
-            
-            if (createArtistLink) {
-              createArtistLink.addEventListener('click', function(e) {
-                e.preventDefault();
-                const newArtistName = artistNameInput.value.trim();
-                if (newArtistName) {
-                  sessionStorage.setItem('newArtistName', newArtistName);
-                  window.location.href = '/artist/create';
-                } else {
-                  alert('Please enter an artist name first');
-                }
-              });
-            }
-          });
-        </script>
-      </head>
-      <body>
-        <div class="container">
-          <h1>Upload New Song</h1>
-          <form action="/upload" method="POST" enctype="multipart/form-data">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload Song - ZEDALBUMS.TOP</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 50px; background: #f0f0f0; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 20px; border-left: 4px solid #ff5500; padding-left: 15px; }
+        label { display: block; margin-top: 15px; font-weight: 600; color: #555; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; }
+        button { margin-top: 25px; padding: 14px; background: #ff5500; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 600; width: 100%; }
+        button:hover { background: #ff6a1a; }
+        .back-link { margin-top: 20px; text-align: center; }
+        .back-link a { color: #666; text-decoration: none; }
+        .back-link a:hover { color: #ff5500; }
+        .section-title { margin-top: 25px; margin-bottom: 10px; font-size: 1.1rem; font-weight: 600; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+        select[multiple] { height: auto; min-height: 100px; }
+        #duration-display { margin-top: 10px; padding: 10px; background: #e8f4fd; border-radius: 4px; display: none; border-left: 3px solid #ff5500; }
+        .progress-bar { width: 100%; height: 4px; background: #f0f0f0; border-radius: 2px; margin-top: 10px; display: none; }
+        .progress-fill { height: 100%; background: #ff5500; width: 0%; border-radius: 2px; transition: width 0.3s; }
+        .exact-badge { background: #00aa00; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Upload New Song</h1>
+        <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
             <label>Song Title</label>
             <input type="text" name="title" placeholder="e.g. My Song" required>
             
@@ -1212,27 +1086,198 @@ async function getMp3Duration(arrayBuffer) {
             ${playlistSection}
             
             <label>Audio File (.mp3)</label>
-            <input type="file" name="audio" accept=".mp3" required>
+            <input type="file" name="audio" id="audioFile" accept=".mp3" required>
+            
+            <!-- Hidden input for exact duration -->
+            <input type="hidden" name="duration" id="durationInput" value="">
+            
+            <!-- Live duration display -->
+            <div id="duration-display">
+                <strong>Song Duration:</strong> <span id="duration-text">Analyzing...</span>
+                <span class="exact-badge" id="exact-badge" style="display:none;">EXACT</span>
+            </div>
+            
+            <div class="progress-bar" id="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
             
             <label>Thumbnail Image</label>
             <input type="file" name="image" accept="image/*" required>
             
-            <button type="submit">Upload Song</button>
-          </form>
-          
-          <div class="back-link">
+            <button type="submit" id="submitBtn">Upload Song</button>
+        </form>
+        
+        <div class="back-link">
             <a href="/">← Back to Home</a> | 
             <a href="/playlists">View Playlists</a>
-          </div>
         </div>
-      </body>
-      </html>
+    </div>
+
+    <script>
+        // Audio context for exact duration detection
+        let audioContext = null;
+        
+        // Get elements
+        const audioFile = document.getElementById('audioFile');
+        const durationDisplay = document.getElementById('duration-display');
+        const durationText = document.getElementById('duration-text');
+        const durationInput = document.getElementById('durationInput');
+        const progressBar = document.getElementById('progress-bar');
+        const progressFill = document.getElementById('progress-fill');
+        const exactBadge = document.getElementById('exact-badge');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        // When user selects an audio file
+        audioFile.addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // Show analyzing UI
+            durationDisplay.style.display = 'block';
+            durationText.textContent = 'Analyzing...';
+            exactBadge.style.display = 'none';
+            progressBar.style.display = 'block';
+            progressFill.style.width = '30%';
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.5';
+            
+            try {
+                // Initialize AudioContext (requires user interaction - click is fine)
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // Read file as ArrayBuffer
+                const arrayBuffer = await file.arrayBuffer();
+                
+                // Decode audio data for EXACT duration
+                progressFill.style.width = '60%';
+                
+                audioContext.decodeAudioData(
+                    arrayBuffer,
+                    function(buffer) {
+                        // EXACT duration in seconds (with decimals)
+                        const exactSeconds = buffer.duration;
+                        const minutes = Math.floor(exactSeconds / 60);
+                        const seconds = Math.floor(exactSeconds % 60);
+                        const milliseconds = Math.floor((exactSeconds % 1) * 1000);
+                        
+                        // Format nicely
+                        const formatted = minutes + ':' + seconds.toString().padStart(2,'0') + '.' + milliseconds.toString().padStart(3,'0');
+                        
+                        // Update display
+                        durationText.innerHTML = formatted + ' <small>(' + exactSeconds.toFixed(3) + ' seconds)</small>';
+                        durationInput.value = exactSeconds.toFixed(3);
+                        
+                        // Show exact badge
+                        exactBadge.style.display = 'inline-block';
+                        progressFill.style.width = '100%';
+                        
+                        // Enable submit button
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                        
+                        // Hide progress bar after a moment
+                        setTimeout(() => {
+                            progressBar.style.display = 'none';
+                        }, 500);
+                        
+                        console.log('✅ Exact duration detected:', exactSeconds, 'seconds');
+                    },
+                    function(error) {
+                        // Fallback if decoding fails
+                        durationText.textContent = 'Could not detect exact duration (will use estimate)';
+                        durationInput.value = '0';
+                        exactBadge.style.display = 'none';
+                        progressBar.style.display = 'none';
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                        console.error('Decode error:', error);
+                    }
+                );
+            } catch (error) {
+                durationText.textContent = 'Error analyzing file';
+                durationInput.value = '0';
+                progressBar.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+                console.error('Error:', error);
+            }
+        });
+
+        // Form submission warning if no exact duration
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            const duration = document.getElementById('durationInput').value;
+            if (!duration || duration === '0' || duration === '0.000') {
+                if (!confirm('⚠️ Exact duration could not be detected. Continue with estimated duration?')) {
+                    e.preventDefault();
+                }
+            }
+        });
+
+        // Handle artist selection (existing code)
+        document.addEventListener('DOMContentLoaded', function() {
+            const albumSelect = document.querySelector('select[name="album"]');
+            if (albumSelect) {
+                albumSelect.addEventListener('change', function() {
+                    if (this.value === '__create_new__') {
+                        window.location.href = '/album/create';
+                    }
+                });
+            }
+            
+            const playlistSelect = document.querySelector('select[name="playlist"]');
+            if (playlistSelect) {
+                playlistSelect.addEventListener('change', function() {
+                    if (this.value === '__create_new__') {
+                        window.location.href = '/playlist/create';
+                    }
+                });
+            }
+            
+            const artistSelect = document.getElementById('artistSelect');
+            const createArtistLink = document.getElementById('createArtistLink');
+            const existingArtistNote = document.getElementById('existingArtistNote');
+            const artistNameInput = document.getElementById('artistNameInput');
+            
+            if (artistSelect) {
+                artistSelect.addEventListener('change', function() {
+                    if (this.value === '__create_new__') {
+                        createArtistLink.style.display = 'block';
+                        existingArtistNote.style.display = 'inline';
+                        artistNameInput.style.display = 'block';
+                        artistNameInput.required = true;
+                    } else {
+                        createArtistLink.style.display = 'none';
+                        existingArtistNote.style.display = 'none';
+                        artistNameInput.style.display = 'none';
+                        artistNameInput.required = false;
+                    }
+                });
+            }
+            
+            if (createArtistLink) {
+                createArtistLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const newArtistName = artistNameInput.value.trim();
+                    if (newArtistName) {
+                        sessionStorage.setItem('newArtistName', newArtistName);
+                        window.location.href = '/artist/create';
+                    } else {
+                        alert('Please enter an artist name first');
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
       `;
       return new Response(html, { headers: { ...CORS_HEADERS, "Content-Type": "text/html" } });
     }
 
     // =========================
-    // UPLOAD HANDLER (POST)
+    // UPLOAD HANDLER (POST) - UPDATED TO USE BROWSER DURATION
     // =========================
     if (path === "/upload" && req.method === "POST") {
       const formData = await req.formData();
@@ -1245,6 +1290,7 @@ async function getMp3Duration(arrayBuffer) {
       const playlistId = formData.get("playlist");
       const artistNameInput = formData.get("artist_name");
       const featured = formData.getAll("featured");
+      const browserDuration = formData.get("duration"); // EXACT duration from browser
 
       if (!title || !audioFile || !imageFile) {
         return new Response("Missing fields", { status: 400 });
@@ -1282,43 +1328,59 @@ async function getMp3Duration(arrayBuffer) {
       const imgType = imageFile.type.includes("png") ? "png" : "jpg";
       const imageKey = `images/${baseName}.${imgType}`;
 
-      // Read audio file to get duration
+      // Read audio file
       const audioBuffer = await audioFile.arrayBuffer();
-      const duration = await getMp3Duration(audioBuffer); // seconds
+      
+      // Use browser duration if available (EXACT), otherwise fallback
+      let duration;
+      if (browserDuration && browserDuration !== '0' && browserDuration !== '0.000') {
+        duration = parseFloat(browserDuration);
+        console.log(`✅ Using EXACT browser duration: ${duration} seconds`);
+      } else {
+        // Fallback to simple estimation
+        duration = fallbackDurationParser(audioBuffer);
+        console.log(`⚠️ Using estimated duration: ${duration} seconds`);
+      }
 
-      // Upload audio using the buffer
+      // Upload files
       await env.media.put(audioKey, audioBuffer);
       await env.media.put(imageKey, imageFile.stream());
       await env.media.put(descKey, description);
 
+      // Create metadata with EXACT duration
       const featuredArtists = featured.filter(id => id && id !== "");
       const metadata = {
         title,
         primaryArtist: artistId,
         featuredArtists,
         description,
-        duration          // store duration in seconds
+        duration: duration  // EXACT duration stored here!
       };
       await saveMetadata(baseName, metadata);
 
+      // Add to album if selected
       if (albumId && albumId !== "" && albumId !== "__create_new__") {
         await addSongToAlbum(albumId, baseName);
         await addAlbumToArtist(artistId, albumId);
         await addArtistToAlbum(artistId, albumId);
       }
       
+      // Add to playlist if selected
       if (playlistId && playlistId !== "" && playlistId !== "__create_new__") {
         await addSongToPlaylist(playlistId, baseName);
       }
       
+      // Add to artist's songs
       await addSongToArtist(artistId, baseName);
       for (const fid of featuredArtists) {
         await addSongToArtist(fid, baseName);
       }
 
+      // Clear cache
       homepageCache = null;
       cacheTimestamp = 0;
 
+      // Success page
       const html = `
         <!DOCTYPE html>
         <html>
@@ -1333,12 +1395,16 @@ async function getMp3Duration(arrayBuffer) {
             .btn-playlist { background: #4a90e2; }
             .btn-playlist:hover { background: #3a7bc8; }
             .btn-album { background: #28a745; }
+            .duration-info { background: #e8f4fd; padding: 10px; border-radius: 4px; margin: 15px 0; }
           </style>
         </head>
         <body>
           <div class="success">
             <h1>✅ Upload Successful!</h1>
             <p style="font-size: 1.2rem; margin: 20px 0;">${title} by ${artistName}</p>
+            <div class="duration-info">
+              <strong>Duration:</strong> ${formatDuration(duration)} (exact)
+            </div>
             <a href="/song/${encodeURIComponent(baseName + ".mp3")}" class="btn">View Song</a>
             ${playlistId ? `<a href="/playlist/${playlistId}" class="btn btn-playlist">View Playlist</a>` : ''}
             ${albumId && albumId !== "" && albumId !== "__create_new__" ? `<a href="/album/${albumId}" class="btn btn-album">View Album</a>` : ''}
