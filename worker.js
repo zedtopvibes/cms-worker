@@ -38,18 +38,37 @@ export default {
     // -----------------------------
     const sanitize = str => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
 
-// -----------------------------
-// Helper to format numbers (0-999 = full number, 1000+ = 1K, 1.2K, etc)
-// -----------------------------
-const formatNumber = (num) => {
-    if (num >= 1000000) {
-        return (num / 1000000).toFixed(1) + 'M';
-    }
-    if (num >= 1000) {
-        return (num / 1000).toFixed(1) + 'K';
-    }
-    return num.toString();
-};
+    // -----------------------------
+    // Helper to format numbers (0-999 = full number, 1000+ = 1K, 1.2K, etc)
+    // -----------------------------
+    const formatNumber = (num) => {
+        if (num >= 1000000) {
+            return (num / 1000000).toFixed(1) + 'M';
+        }
+        if (num >= 1000) {
+            return (num / 1000).toFixed(1) + 'K';
+        }
+        return num.toString();
+    };
+
+    // -----------------------------
+    // NEW: Helper to estimate MP3 duration from file size
+    // -----------------------------
+    const estimateMp3Duration = (fileSize, bitrate = 128) => {
+      // Assuming average bitrate of 128 kbps
+      // fileSize is in bytes, bitrate in kbps (kilobits per second)
+      const sizeInBits = fileSize * 8;
+      const bitrateInBps = bitrate * 1000;
+      const durationSeconds = sizeInBits / bitrateInBps;
+      
+      const minutes = Math.floor(durationSeconds / 60);
+      const seconds = Math.floor(durationSeconds % 60);
+      
+      return {
+        seconds: durationSeconds,
+        formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
+      };
+    };
 
     // === ALBUMS FUNCTIONS ===
     const getAlbums = async () => {
@@ -520,6 +539,8 @@ const formatNumber = (num) => {
           title: meta?.title || baseName.split("_").slice(1).join(" "),
           primaryArtist: meta?.primaryArtist || baseName.split("_")[0],
           featuredArtists: meta?.featuredArtists || [],
+          duration: meta?.duration || '3:30',
+          durationSeconds: meta?.durationSeconds || 210,
           plays: stats.plays,
           downloads: stats.downloads,
           uploaded: file.uploaded,
@@ -615,6 +636,7 @@ const formatNumber = (num) => {
               title: meta?.title || baseName.split("_").slice(1).join(" "),
               type: 'single',
               artistId: meta?.primaryArtist || baseName.split("_")[0],
+              duration: meta?.duration || '3:30',
               created: file.uploaded,
               thumbnail: null
             };
@@ -1030,6 +1052,7 @@ const formatNumber = (num) => {
         <p style="margin-top:5px; font-size:0.9em; color:#666;">Hold Ctrl/Cmd to select multiple</p>
       `;
 
+      // UPDATED: Added duration field to upload form
       const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -1049,6 +1072,7 @@ const formatNumber = (num) => {
           .back-link a:hover { color: #ff5500; }
           .section-title { margin-top: 25px; margin-bottom: 10px; font-size: 1.1rem; font-weight: 600; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
           select[multiple] { height: auto; min-height: 100px; }
+          .duration-note { font-size: 0.8rem; color: #666; margin-top: 3px; }
         </style>
         <script>
           document.addEventListener('DOMContentLoaded', function() {
@@ -1118,6 +1142,10 @@ const formatNumber = (num) => {
             <label>Description</label>
             <textarea name="description" rows="3" placeholder="Song description..." required></textarea>
             
+            <label>Duration (Optional - MM:SS)</label>
+            <input type="text" name="duration" placeholder="e.g. 3:45" pattern="[0-9]+:[0-9]{2}">
+            <div class="duration-note">Leave blank to auto-calculate from file size</div>
+            
             <div class="section-title">Album Information</div>
             ${albumSection}
             
@@ -1145,7 +1173,7 @@ const formatNumber = (num) => {
     }
 
     // =========================
-    // UPLOAD HANDLER (POST)
+    // UPLOAD HANDLER (POST) - UPDATED WITH DURATION
     // =========================
     if (path === "/upload" && req.method === "POST") {
       const formData = await req.formData();
@@ -1158,6 +1186,7 @@ const formatNumber = (num) => {
       const playlistId = formData.get("playlist");
       const artistNameInput = formData.get("artist_name");
       const featured = formData.getAll("featured");
+      const durationInput = formData.get("duration");
 
       if (!title || !audioFile || !imageFile) {
         return new Response("Missing fields", { status: 400 });
@@ -1199,12 +1228,30 @@ const formatNumber = (num) => {
       await env.media.put(imageKey, imageFile.stream());
       await env.media.put(descKey, description);
 
+      // Calculate duration
+      let durationFormatted = '3:30';
+      let durationSeconds = 210;
+      
+      if (durationInput && /^\d+:\d{2}$/.test(durationInput)) {
+        // Use manually entered duration
+        durationFormatted = durationInput;
+        const [mins, secs] = durationInput.split(':').map(Number);
+        durationSeconds = (mins * 60) + secs;
+      } else {
+        // Auto-calculate from file size
+        const duration = estimateMp3Duration(audioFile.size);
+        durationFormatted = duration.formatted;
+        durationSeconds = duration.seconds;
+      }
+
       const featuredArtists = featured.filter(id => id && id !== "");
       const metadata = {
         title,
         primaryArtist: artistId,
         featuredArtists,
-        description
+        description,
+        duration: durationFormatted,
+        durationSeconds: durationSeconds
       };
       await saveMetadata(baseName, metadata);
 
@@ -1245,7 +1292,7 @@ const formatNumber = (num) => {
         <body>
           <div class="success">
             <h1>✅ Upload Successful!</h1>
-            <p style="font-size: 1.2rem; margin: 20px 0;">${title} by ${artistName}</p>
+            <p style="font-size: 1.2rem; margin: 20px 0;">${title} by ${artistName} (Duration: ${durationFormatted})</p>
             <a href="/song/${encodeURIComponent(baseName + ".mp3")}" class="btn">View Song</a>
             ${playlistId ? `<a href="/playlist/${playlistId}" class="btn btn-playlist">View Playlist</a>` : ''}
             ${albumId && albumId !== "" && albumId !== "__create_new__" ? `<a href="/album/${albumId}" class="btn btn-album">View Album</a>` : ''}
@@ -1988,7 +2035,7 @@ const formatNumber = (num) => {
     }
 
     // =========================
-    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS)
+    // ALBUM DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS AND REAL DURATIONS)
     // =========================
     if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
       const albumId = decodeURIComponent(path.replace("/album/", ""));
@@ -2025,10 +2072,24 @@ const formatNumber = (num) => {
       });
 
       const trackCount = album.songs?.length || 0;
-      const totalMinutes = trackCount * 4;
+      
+      // UPDATED: Calculate total duration from actual song durations
+      let totalSeconds = 0;
+      for (const songKey of album.songs || []) {
+        const meta = await getMetadata(songKey);
+        if (meta && meta.durationSeconds) {
+          totalSeconds += meta.durationSeconds;
+        } else {
+          totalSeconds += 210; // Default 3:30 if no duration
+        }
+      }
+      const totalMinutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
       const totalHours = Math.floor(totalMinutes / 60);
       const totalMins = totalMinutes % 60;
-      const totalDuration = totalHours > 0 ? `${totalHours} hr ${totalMins} min` : `${totalMins} min`;
+      const totalDuration = totalHours > 0 
+        ? `${totalHours} hr ${totalMins} min` 
+        : `${totalMins} min`;
 
       let hasImage = false;
       let thumbUrl = "/images/placeholder.jpg";
@@ -2046,6 +2107,7 @@ const formatNumber = (num) => {
         } catch (e) {}
       }
 
+      // UPDATED: Use actual durations from metadata
       const tracksHtml = await Promise.all(album.songs.map(async (songKey, index) => {
         const meta = await getMetadata(songKey);
         let artistName = "";
@@ -2063,6 +2125,7 @@ const formatNumber = (num) => {
         }
         
         const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+        const duration = meta?.duration || '3:30';
         
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
@@ -2081,7 +2144,6 @@ const formatNumber = (num) => {
           }
         } catch (e) {}
         
-        const duration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
         const trackNumber = (index + 1).toString().padStart(2, '0');
         const thumbnailClass = hasImage ? '' : 'track-placeholder';
         const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : '';
@@ -2223,6 +2285,7 @@ const formatNumber = (num) => {
           <p><strong>Producer:</strong> ${album.producer || primaryArtist}</p>
           <p><strong>Format:</strong> Digital, Streaming</p>
           <p><strong>Total Tracks:</strong> ${trackCount}</p>
+          <p><strong>Total Duration:</strong> ${totalDuration}</p>
           <p><strong>Total Plays:</strong> ${albumStats.plays.toLocaleString()}</p>
           <p><strong>Total Downloads:</strong> ${albumStats.downloads.toLocaleString()}</p>
           <p><strong>℗ ${new Date(album.created).getFullYear()}</strong> ${album.copyright || 'ZEDALBUMS.TOP'}</p>
@@ -2351,7 +2414,7 @@ const formatNumber = (num) => {
     }
 
     // =========================
-    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT AND STATS)
+    // SONG DETAIL PAGE - DYNAMIC FROM TEMPLATE (UPDATED WITH PLAYLIST CONTEXT, STATS, AND REAL DURATION)
     // =========================
     if (path.startsWith("/song/")) {
       const fileName = decodeURIComponent(path.replace("/song/", ""));
@@ -2363,6 +2426,7 @@ const formatNumber = (num) => {
       }
 
       const stats = await getSongStats(baseName, env);
+      const meta = await getMetadata(baseName);
 
       const playlistId = url.searchParams.get("playlist");
       let contextPlaylist = null;
@@ -2377,13 +2441,17 @@ const formatNumber = (num) => {
       }
       let html = await templateObj.text();
 
-      const meta = await getMetadata(baseName);
       let songTitle, primaryArtistId, featuredArtists = [], description = "";
+      let duration = '3:30';
+      let durationSeconds = 210;
+      
       if (meta) {
         songTitle = meta.title;
         primaryArtistId = meta.primaryArtist;
         featuredArtists = meta.featuredArtists || [];
         description = meta.description || "";
+        duration = meta.duration || '3:30';
+        durationSeconds = meta.durationSeconds || 210;
       } else {
         const [artistId, ...titleParts] = baseName.split("_");
         songTitle = titleParts.join(" ");
@@ -2436,9 +2504,6 @@ const formatNumber = (num) => {
         year: 'numeric' 
       });
 
-      const duration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
-      const durationSeconds = parseInt(duration.split(':')[0]) * 60 + parseInt(duration.split(':')[1]);
-
       let albumInfo = null;
       let albumId = null;
       let trackNumber = null;
@@ -2490,7 +2555,7 @@ const formatNumber = (num) => {
                   }
                 }
               } catch (e) {}
-              const sduration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+              const sduration = m?.duration || '3:30';
               const trackNum = (index + 1).toString().padStart(2, '0');
               return `
                 <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}?playlist=${playlistId}'">
@@ -2541,7 +2606,7 @@ const formatNumber = (num) => {
               }
             }
           } catch (e) {}
-          const sduration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+          const sduration = m?.duration || '3:30';
           const trackNum = (index + 1).toString().padStart(2, '0');
           const isCurrentSong = songKey === baseName;
           const activeClass = isCurrentSong ? ' style="background: rgba(255, 85, 0, 0.05); border-left: 4px solid #ff5500;"' : '';
@@ -2661,7 +2726,7 @@ const formatNumber = (num) => {
           month: 'short', 
           year: 'numeric' 
         });
-        const fDuration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+        const fDuration = m?.duration || '3:30';
         return `
           <div class="album-item" onclick="window.location='/song/${encodeURIComponent(fName)}'">
             <div class="album-thumbnail ${fHasImage ? '' : 'placeholder'}">
@@ -3061,7 +3126,7 @@ const formatNumber = (num) => {
     }
 
     // =========================
-    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH REAL STATS)
+    // ARTIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH REAL STATS AND DURATIONS)
     // =========================
     if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
       const artistId = decodeURIComponent(path.replace("/artist/", ""));
@@ -3167,6 +3232,7 @@ const formatNumber = (num) => {
           if (sid !== artistId) continue;
           const meta = await getMetadata(songKey);
           const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+          const duration = meta?.duration || '3:30';
           const uploaded = alb.created;
           allSongs.push({
             key: songKey,
@@ -3175,6 +3241,7 @@ const formatNumber = (num) => {
             artists: [artistName],
             albumId: alb.id,
             albumTitle: alb.title,
+            duration,
             uploaded,
             role: 'primary'
           });
@@ -3186,6 +3253,7 @@ const formatNumber = (num) => {
         const uploaded = audioObj?.uploaded || Date.now();
         const meta = await getMetadata(songKey);
         const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+        const duration = meta?.duration || '3:30';
         allSongs.push({
           key: songKey,
           title,
@@ -3193,6 +3261,7 @@ const formatNumber = (num) => {
           artists: [artistName],
           albumId: null,
           albumTitle: null,
+          duration,
           uploaded,
           role: 'primary'
         });
@@ -3207,6 +3276,7 @@ const formatNumber = (num) => {
           const uploaded = audioObj?.uploaded || Date.now();
           const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
           const title = meta.title;
+          const duration = meta?.duration || '3:30';
           allSongs.push({
             key: songKey,
             title,
@@ -3214,6 +3284,7 @@ const formatNumber = (num) => {
             artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
             albumId: null,
             albumTitle: null,
+            duration,
             uploaded,
             role: 'featured'
           });
@@ -3241,11 +3312,6 @@ const formatNumber = (num) => {
           } catch (e) {}
 
           const date = formatDate(song.uploaded);
-          const duration = `${3 + Math.floor(Math.random() * 2)}:${Math.floor(
-            Math.random() * 60
-          )
-            .toString()
-            .padStart(2, "0")}`;
           const artistDisplay = song.artists.join(', ');
           const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
 
@@ -3260,7 +3326,7 @@ const formatNumber = (num) => {
                 <span class="album-title">${song.title}</span>
                 <div class="album-meta">
                   <span class="album-artist">${artistDisplay}</span>
-                  <span class="song-duration">${duration}</span>
+                  <span class="song-duration">${song.duration}</span>
                   <span class="album-genre">${song.role === 'featured' ? 'Featured' : 'Song'}</span>
                 </div>
                 <span class="album-date">${date} ${roleBadge}</span>
@@ -3512,7 +3578,7 @@ const formatNumber = (num) => {
     }
 
     // =========================
-    // CHARTS PAGES - DYNAMIC FROM TEMPLATE
+    // CHARTS PAGES - DYNAMIC FROM TEMPLATE (UPDATED WITH DURATIONS)
     // =========================
     if (path.startsWith("/charts")) {
       const subPath = path.replace("/charts", "") || "/";
@@ -3696,6 +3762,7 @@ const formatNumber = (num) => {
         const meta = await getMetadata(baseName);
         let title = meta ? meta.title : baseName.split("_").slice(1).join(" ");
         let artistDisplay = "";
+        let duration = meta?.duration || '3:30';
         if (meta) {
           const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
           const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
@@ -3737,7 +3804,7 @@ const formatNumber = (num) => {
               <span class="album-title">${title}</span>
               <div class="album-meta">
                 <span class="album-artist">${artistDisplay}</span>
-                <span class="song-stats">Single</span>
+                <span class="song-stats">${duration}</span>
               </div>
               <span class="album-date">${formattedDate}</span>
             </div>
@@ -4297,7 +4364,7 @@ const formatNumber = (num) => {
     }
 
     // =========================
-    // PLAYLIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS)
+    // PLAYLIST DETAIL PAGE - DYNAMIC FROM TEMPLATE (WITH STATS AND REAL DURATIONS)
     // =========================
     if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
       const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
@@ -4323,15 +4390,23 @@ const formatNumber = (num) => {
         day: '2-digit', month: 'short', year: 'numeric'
       });
 
-      let totalMinutes = 0;
-      if (playlist.songs) {
-        for (const songKey of playlist.songs) {
-          totalMinutes += Math.floor(Math.random() * 2) + 3;
+      // UPDATED: Calculate total duration from actual song durations
+      let totalSeconds = 0;
+      for (const songKey of playlist.songs || []) {
+        const meta = await getMetadata(songKey);
+        if (meta && meta.durationSeconds) {
+          totalSeconds += meta.durationSeconds;
+        } else {
+          totalSeconds += 210; // Default 3:30
         }
       }
+      const totalMinutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
       const totalHours = Math.floor(totalMinutes / 60);
       const totalMins = totalMinutes % 60;
-      const totalDuration = totalHours > 0 ? `${totalHours} hr ${totalMins} min` : `${totalMins} min`;
+      const totalDuration = totalHours > 0 
+        ? `${totalHours} hr ${totalMins} min` 
+        : `${totalMins} min`;
 
       let hasCover = false;
       let coverHtml = `<i class="fas fa-music"></i>`;
@@ -4347,6 +4422,7 @@ const formatNumber = (num) => {
         } catch (e) {}
       }
 
+      // UPDATED: Use actual durations from metadata
       const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
         const meta = await getMetadata(songKey);
         let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
@@ -4377,7 +4453,7 @@ const formatNumber = (num) => {
           }
         } catch (e) {}
 
-        const duration = `${Math.floor(Math.random() * 2) + 3}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+        const duration = meta?.duration || '3:30';
         const trackNumber = (index + 1).toString().padStart(2, '0');
 
         return `
