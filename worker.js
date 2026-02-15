@@ -480,11 +480,12 @@ const formatNumber = (num) => {
         return {
           ...album,
           totalPlays: stats.plays,
-          totalDownloads: stats.downloads
+          totalDownloads: stats.downloads,
+          score: stats.plays + (stats.downloads * 3)
         };
       }));
       
-      const sorted = albumsWithStats.sort((a, b) => b.totalPlays - a.totalPlays);
+      const sorted = albumsWithStats.sort((a, b) => b.score - a.score);
       
       return sorted.slice(0, limit).map((album, index) => ({
         ...album,
@@ -527,7 +528,7 @@ const formatNumber = (num) => {
       }));
 
       const sorted = songsWithStats
-        .map(song => ({ ...song, score: song.plays + (song.downloads * 2) }))
+        .map(song => ({ ...song, score: song.plays + (song.downloads * 3) }))
         .sort((a, b) => b.score - a.score);
 
       return sorted.slice(0, limit).map((song, index) => ({
@@ -552,11 +553,12 @@ const formatNumber = (num) => {
           totalDownloads: stats.downloads,
           monthlyListeners: monthlyListeners,
           songCount: artist.songs?.length || 0,
-          albumCount: artist.albums?.length || 0
+          albumCount: artist.albums?.length || 0,
+          score: stats.plays + (stats.downloads * 3)
         };
       }));
 
-      const sorted = artistsWithStats.sort((a, b) => b.totalPlays - a.totalPlays);
+      const sorted = artistsWithStats.sort((a, b) => b.score - a.score);
       
       return sorted.slice(0, limit).map((artist, index) => ({
         ...artist,
@@ -576,11 +578,12 @@ const formatNumber = (num) => {
           ...playlist,
           totalPlays: stats.plays,
           totalDownloads: stats.downloads,
-          songCount: playlist.songs?.length || 0
+          songCount: playlist.songs?.length || 0,
+          score: stats.plays + (stats.downloads * 3)
         };
       }));
 
-      const sorted = playlistsWithStats.sort((a, b) => b.totalDownloads - a.totalDownloads);
+      const sorted = playlistsWithStats.sort((a, b) => b.score - a.score);
       
       return sorted.slice(0, limit).map((playlist, index) => ({
         ...playlist,
