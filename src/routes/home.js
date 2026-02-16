@@ -11,8 +11,8 @@ export async function handleHomepage(req, env, ctx) {
   const url = new URL(req.url);
   const now = Date.now();
 
-// Track homepage view
-ctx.waitUntil(incrementPageView(env, 'page', 'homepage'));
+  // Track homepage view
+  ctx.waitUntil(incrementPageView(env, 'page', 'homepage'));
   
   // Return cached version if available
   if (homepageCache && (now - cacheTimestamp < CACHE_DURATION)) {
