@@ -181,7 +181,7 @@ export async function handleSearch(req, env, ctx) {
             type: 'playlist',
             id: playlist.id,
             title: playlist.title,
-            curator: playlist.curator || 'ZEDALBUMS',
+            curator: playlist.curator || 'ZEDALBUMS.TOP',
             thumbnail: thumbUrl,
             songCount: playlist.songs?.length || 0,
             created: playlist.created,
@@ -241,6 +241,12 @@ export async function handleSearch(req, env, ctx) {
   html = html.replace(/<!-- SEARCH_RESULTS -->/g, resultsHtml || getNoResultsHtml(query));
   html = html.replace(/<!-- PAGINATION -->/g, paginationHtml);
   html = html.replace(/<!-- SEARCH_TIME -->/g, new Date().toLocaleTimeString());
+  
+  // Replace count placeholders in right sidebar
+  html = html.replace(/<!-- SONGS_COUNT -->/g, songResults.length.toString());
+  html = html.replace(/<!-- ALBUMS_COUNT -->/g, albumResults.length.toString());
+  html = html.replace(/<!-- ARTISTS_COUNT -->/g, artistResults.length.toString());
+  html = html.replace(/<!-- PLAYLISTS_COUNT -->/g, playlistResults.length.toString());
 
   return new Response(html, {
     headers: { "Content-Type": "text/html" }
@@ -281,15 +287,16 @@ function generateSongResult(item) {
   });
   
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
-      <div class="result-thumbnail">
-        <img src="${item.thumbnail}" alt="${item.title}" loading="lazy">
-        <span class="result-type song">Song</span>
+    <div class="search-result-item type-song" onclick="window.location='${item.url}'">
+      <div class="result-thumbnail song-thumbnail">
+        ${item.thumbnail !== '/images/placeholder.jpg' ? 
+          `<img src="${item.thumbnail}" alt="${item.title}" loading="lazy">` : ''}
+        <span class="result-type-badge">SONG</span>
       </div>
       <div class="result-info">
-        <h3 class="result-title">${highlightMatch(item.title)}</h3>
+        <h3 class="result-title">${escapeHtml(item.title)}</h3>
         <div class="result-meta">
-          <span class="result-artist">${highlightMatch(item.artist)}</span>
+          <span class="result-artist">${escapeHtml(item.artist)}</span>
           <span class="result-duration"><i class="fas fa-clock"></i> ${duration}</span>
           <span class="result-stats"><i class="fas fa-play"></i> ${formatNumber(item.plays)}</span>
         </div>
@@ -306,15 +313,16 @@ function generateAlbumResult(item) {
   });
   
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
-      <div class="result-thumbnail">
-        <img src="${item.thumbnail}" alt="${item.title}" loading="lazy">
-        <span class="result-type album">Album</span>
+    <div class="search-result-item type-album" onclick="window.location='${item.url}'">
+      <div class="result-thumbnail album-thumbnail">
+        ${item.thumbnail !== '/images/placeholder.jpg' ? 
+          `<img src="${item.thumbnail}" alt="${item.title}" loading="lazy">` : ''}
+        <span class="result-type-badge">ALBUM</span>
       </div>
       <div class="result-info">
-        <h3 class="result-title">${highlightMatch(item.title)}</h3>
+        <h3 class="result-title">${escapeHtml(item.title)}</h3>
         <div class="result-meta">
-          <span class="result-artist">${highlightMatch(item.artist)}</span>
+          <span class="result-artist">${escapeHtml(item.artist)}</span>
           <span class="result-tracks"><i class="fas fa-music"></i> ${item.songCount} tracks</span>
         </div>
         <span class="result-date">${date}</span>
@@ -326,17 +334,17 @@ function generateAlbumResult(item) {
 // Generate HTML for artist result
 function generateArtistResult(item) {
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
-      <div class="result-thumbnail artist-thumbnail" ${item.thumbnail !== '/images/placeholder.jpg' ? 
-        `style="background-image:url('${item.thumbnail}')"` : ''}>
-        ${item.thumbnail === '/images/placeholder.jpg' ? '<i class="fas fa-microphone"></i>' : ''}
-        <span class="result-type artist">Artist</span>
+    <div class="search-result-item type-artist" onclick="window.location='${item.url}'">
+      <div class="result-thumbnail artist-thumbnail">
+        ${item.thumbnail !== '/images/placeholder.jpg' ? 
+          `<img src="${item.thumbnail}" alt="${item.name}" loading="lazy">` : ''}
+        <span class="result-type-badge">ARTIST</span>
       </div>
       <div class="result-info">
-        <h3 class="result-title">${highlightMatch(item.name)}</h3>
+        <h3 class="result-title">${escapeHtml(item.name)}</h3>
         <div class="result-meta">
-          <span class="result-genre">${item.genre}</span>
-          <span class="result-counts">${item.songCount} songs • ${item.albumCount} albums</span>
+          <span class="result-genre">${escapeHtml(item.genre)}</span>
+          <span class="result-tracks"><i class="fas fa-music"></i> ${item.songCount} songs</span>
         </div>
       </div>
     </div>
@@ -350,17 +358,16 @@ function generatePlaylistResult(item) {
   });
   
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
+    <div class="search-result-item type-playlist" onclick="window.location='${item.url}'">
       <div class="result-thumbnail playlist-thumbnail">
         ${item.thumbnail !== '/images/placeholder.jpg' ? 
-          `<img src="${item.thumbnail}" alt="${item.title}">` : 
-          '<i class="fas fa-list"></i>'}
-        <span class="result-type playlist">Playlist</span>
+          `<img src="${item.thumbnail}" alt="${item.title}" loading="lazy">` : ''}
+        <span class="result-type-badge">PLAYLIST</span>
       </div>
       <div class="result-info">
-        <h3 class="result-title">${highlightMatch(item.title)}</h3>
+        <h3 class="result-title">${escapeHtml(item.title)}</h3>
         <div class="result-meta">
-          <span class="result-curator">${highlightMatch(item.curator)}</span>
+          <span class="result-artist">${escapeHtml(item.curator)}</span>
           <span class="result-tracks"><i class="fas fa-music"></i> ${item.songCount} songs</span>
         </div>
         <span class="result-date">${date}</span>
@@ -398,44 +405,41 @@ function generatePagination(query, type, currentPage, totalPages) {
   
   // Previous button
   if (currentPage > 1) {
-    html += `<a href="/search?q=${encodeURIComponent(query)}&type=${type}&page=${currentPage-1}" class="page-link prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
+    html += `<a href="/search?q=${encodeURIComponent(query)}&type=${type}&page=${currentPage-1}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
   } else {
-    html += `<span class="page-link prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
+    html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
   }
 
   // Page numbers
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
       const active = i === currentPage ? 'active' : '';
-      html += `<a href="/search?q=${encodeURIComponent(query)}&type=${type}&page=${i}" class="page-link ${active}">${i}</a>`;
+      html += `<a href="/search?q=${encodeURIComponent(query)}&type=${type}&page=${i}" class="pagination-item ${active}">${i}</a>`;
     } else if (i === currentPage - 3 || i === currentPage + 3) {
-      html += `<span class="page-link dots">...</span>`;
+      html += `<span class="pagination-ellipsis">...</span>`;
     }
   }
 
   // Next button
   if (currentPage < totalPages) {
-    html += `<a href="/search?q=${encodeURIComponent(query)}&type=${type}&page=${currentPage+1}" class="page-link next">Next <i class="fas fa-chevron-right"></i></a>`;
+    html += `<a href="/search?q=${encodeURIComponent(query)}&type=${type}&page=${currentPage+1}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
   } else {
-    html += `<span class="page-link next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
+    html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
   }
 
   html += '</div>';
   return html;
 }
 
-// Highlight matching text
-function highlightMatch(text) {
-  if (!text) return '';
-  // This is handled by client-side JS for better performance
-  return text;
-}
-
 // Escape HTML for safety
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // No results HTML
@@ -445,12 +449,12 @@ function getNoResultsHtml(query) {
       <i class="fas fa-search"></i>
       <h3>No results found for "${escapeHtml(query)}"</h3>
       <p>Try different keywords or check your spelling</p>
-      <div class="suggestions">
+      <div class="suggestions-list">
         <h4>Suggestions:</h4>
         <ul>
-          <li>Use more general keywords</li>
-          <li>Check for typos</li>
-          <li>Browse our <a href="/charts">charts</a> instead</li>
+          <li>• Use more general keywords</li>
+          <li>• Check for typos</li>
+          <li>• Browse our <a href="/charts">charts</a> instead</li>
         </ul>
       </div>
     </div>
