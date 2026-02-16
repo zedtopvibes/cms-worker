@@ -1,5 +1,5 @@
 name = "cms"
-main = "worker.js"
+main = "src/index.js"  # Changed to point to new modular structure
 compatibility_date = "2025-02-01"
 
 [[r2_buckets]]
