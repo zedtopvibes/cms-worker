@@ -1,5 +1,7 @@
-import { createSession } from '../../middleware/adminAuth.js';
+// ==================== ADMIN LOGIN HANDLERS ====================
+import { createSession, deleteSession } from '../../middleware/adminAuth.js';
 
+// Login page (GET)
 export async function handleAdminLogin(req, env, ctx) {
   const url = new URL(req.url);
   const error = url.searchParams.get('error');
@@ -46,11 +48,13 @@ export async function handleAdminLogin(req, env, ctx) {
   return new Response(html, { headers: { 'Content-Type': 'text/html' } });
 }
 
+// Login form submission (POST)
 export async function handleAdminLoginPost(req, env, ctx) {
   const formData = await req.formData();
   const username = formData.get('username');
   const password = formData.get('password');
 
+  // Check against Cloudflare Secrets
   if (username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) {
     const sessionId = await createSession(env, username);
 
@@ -69,10 +73,14 @@ export async function handleAdminLoginPost(req, env, ctx) {
   });
 }
 
+// Logout handler
 export async function handleAdminLogout(req, env, ctx) {
   const cookieHeader = req.headers.get('Cookie');
   const sessionId = cookieHeader?.match(/admin_session=([^;]+)/)?.[1];
-  if (sessionId) await env.ADMIN_SESSIONS.delete(`session:${sessionId}`);
+  
+  if (sessionId) {
+    await deleteSession(env, sessionId);
+  }
 
   return new Response(null, {
     status: 302,
