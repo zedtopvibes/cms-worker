@@ -1,5 +1,4 @@
 // ==================== MAIN ENTRY POINT ====================
-import { handleSearch } from './routes/search.js';
 import { CORS_HEADERS } from './middleware/cors.js';
 import { handleHomepage } from './routes/home.js';
 import { handleAlbums } from './routes/albums.js';
@@ -8,6 +7,7 @@ import { handlePlaylists } from './routes/playlists.js';
 import { handleSongs } from './routes/songs.js';
 import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
+import { handleSearch } from './routes/search.js';  // <-- ADD THIS LINE
 
 export default {
   async fetch(req, env, ctx) {
@@ -24,11 +24,11 @@ export default {
       if (path === "/") {
         return await handleHomepage(req, env, ctx);
       }
- 
-      if (path === "/search") {
-  return await handleSearch(req, env, ctx);
-} 
-
+      
+      if (path === "/search") {  // <-- ADD THIS ROUTE
+        return await handleSearch(req, env, ctx);
+      }
+      
       if (path.startsWith("/album") || path.startsWith("/albums")) {
         return await handleAlbums(req, env, ctx);
       }
