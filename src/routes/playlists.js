@@ -1,4 +1,10 @@
 // ==================== PLAYLISTS ROUTES ====================
+import { incrementPageView } from '../helpers/pageViews.js';
+
+// Inside playlist detail handler:
+if (playlist) {
+  ctx.waitUntil(incrementPageView(env, 'playlist', playlistId));
+}
 import { getPlaylists, getAlbums, getArtists, getMetadata, savePlaylists } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
