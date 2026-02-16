@@ -26,6 +26,14 @@ import {
   handleAdminArtistMerge,
   handleAdminArtistMergePost
 } from './artists.js';
+import { 
+  handleAdminPlaylists,
+  handleAdminPlaylistEdit,
+  handleAdminPlaylistEditPost,
+  handleAdminPlaylistDelete,
+  handleAdminPlaylistSongs,
+  handleAdminPlaylistSongsPost
+} from './playlists.js';
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
@@ -394,30 +402,82 @@ if (path === '/artists/merge') {
   }
 }
 
-  // ===== MANAGE PLAYLISTS (Placeholder) =====
-  if (path === '/playlists') {
-    const content = `
-        <div class="empty-state">
-            <i class="fas fa-list"></i>
-            <h3>Playlists Management</h3>
-            <p>This feature is coming soon. You'll be able to:</p>
-            <ul style="list-style: none; margin-top: 15px; color: #666;">
-                <li style="margin-bottom: 8px;">✓ View all playlists</li>
-                <li style="margin-bottom: 8px;">✓ Edit playlist details</li>
-                <li style="margin-bottom: 8px;">✓ Add/remove songs</li>
-                <li style="margin-bottom: 8px;">✓ Feature playlists</li>
-            </ul>
-            <div style="margin-top: 30px;">
-                <a href="/admin/upload" class="btn btn-primary">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload a Song
-                </a>
-            </div>
-        </div>
-    `;
-    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists'), {
+  // ===== PLAYLISTS MANAGEMENT =====
+if (path === '/playlists') {
+  const content = await handleAdminPlaylists(req, env, ctx, auth);
+  return new Response(adminLayout('Manage Playlists', content, auth, 'playlists'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+if (path === '/playlists/edit') {
+  if (req.method === 'GET') {
+    const result = await handleAdminPlaylistEdit(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists'), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminPlaylistEditPost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/playlists?updated=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'playlists'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
+
+if (path === '/playlists/delete') {
+  const result = await handleAdminPlaylistDelete(req, env, ctx, auth);
+  if (result.success) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/admin/playlists?deleted=1' }
+    });
+  } else {
+    const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+    return new Response(adminLayout('Error', content, auth, 'playlists'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+if (path === '/playlists/songs') {
+  if (req.method === 'GET') {
+    const result = await handleAdminPlaylistSongs(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminPlaylistSongsPost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/playlists?updated=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'playlists'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
 
   // ===== STATISTICS (Placeholder) =====
   if (path === '/stats') {
