@@ -789,7 +789,7 @@ export async function handleArtists(req, env, ctx) {
 
   return new Response("Not found", { status: 404 });
 }
-
+ 
 // Helper function for artist albums and singles
 import { getArtistAlbumsAndSingles } from '../helpers/storage.js';
 import { formatDuration } from '../helpers/formatting.js';
