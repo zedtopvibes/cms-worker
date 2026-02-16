@@ -8,7 +8,7 @@ import {
   getTopPlaylists, 
   getNewReleases 
 } from '../helpers/charts.js';
-import {
+import { 
   getAlbumThumbnailUrl,
   getSongThumbnailUrl,
   getArtistThumbnailUrl,
