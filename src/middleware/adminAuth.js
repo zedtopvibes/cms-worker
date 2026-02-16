@@ -1,20 +1,24 @@
-// ==================== SIMPLE SESSION MIDDLEWARE ====================
+// ==================== ADMIN AUTH MIDDLEWARE ====================
 
-// In-memory session store (resets on worker restart)
-// For production, you'd want D1, but this is fine for basic admin needs
+// Simple in-memory session store
 const sessions = new Map();
 
-export function createAdminSession(admin) {
+// Create a new session
+export function createSession(username) {
   const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  const expiresAt = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7 days
+  
   sessions.set(sessionId, {
-    admin,
+    username,
     createdAt: Date.now(),
-    expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 days
+    expiresAt
   });
+  
   return sessionId;
 }
 
-export function validateAdminSession(sessionId) {
+// Validate a session
+export function validateSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return null;
   
@@ -23,25 +27,17 @@ export function validateAdminSession(sessionId) {
     return null;
   }
   
-  return session.admin;
+  return session;
 }
 
-export function deleteAdminSession(sessionId) {
+// Delete a session (logout)
+export function deleteSession(sessionId) {
   sessions.delete(sessionId);
 }
 
-// Middleware to check if request is authenticated
-export async function requireAdmin(req, env) {
-  const cookieHeader = req.headers.get('Cookie');
-  if (!cookieHeader) {
-    return {
-      authenticated: false,
-      response: new Response(null, {
-        status: 302,
-        headers: { Location: '/admin/login' }
-      })
-    };
-  }
+// Get session from cookie
+export function getSessionFromCookie(cookieHeader) {
+  if (!cookieHeader) return null;
   
   const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
     const [key, value] = cookie.trim().split('=');
@@ -49,7 +45,14 @@ export async function requireAdmin(req, env) {
     return acc;
   }, {});
   
-  const sessionId = cookies['admin_session'];
+  return cookies['admin_session'] || null;
+}
+
+// Require admin middleware
+export async function requireAdmin(req, env) {
+  const cookieHeader = req.headers.get('Cookie');
+  const sessionId = getSessionFromCookie(cookieHeader);
+  
   if (!sessionId) {
     return {
       authenticated: false,
@@ -60,8 +63,8 @@ export async function requireAdmin(req, env) {
     };
   }
   
-  const admin = validateAdminSession(sessionId);
-  if (!admin) {
+  const session = validateSession(sessionId);
+  if (!session) {
     return {
       authenticated: false,
       response: new Response(null, {
@@ -76,7 +79,6 @@ export async function requireAdmin(req, env) {
   
   return {
     authenticated: true,
-    admin,
-    sessionId
+    session
   };
 }
