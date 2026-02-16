@@ -480,25 +480,13 @@ if (path === '/playlists/songs') {
   }
 }
 
-  // ===== STATISTICS (Placeholder) =====
-  if (path === '/stats') {
-    const content = `
-        <div class="empty-state">
-            <i class="fas fa-chart-line"></i>
-            <h3>Statistics</h3>
-            <p>This feature is coming soon. You'll be able to see:</p>
-            <ul style="list-style: none; margin-top: 15px; color: #666;">
-                <li style="margin-bottom: 8px;">✓ Total plays/downloads</li>
-                <li style="margin-bottom: 8px;">✓ Popular songs</li>
-                <li style="margin-bottom: 8px;">✓ Top artists</li>
-                <li style="margin-bottom: 8px;">✓ Charts analytics</li>
-            </ul>
-        </div>
-    `;
-    return new Response(adminLayout('Statistics', content, auth, 'stats'), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
+  // ===== STATISTICS =====
+if (path === '/stats') {
+  const content = await handleAdminStats(req, env, ctx, auth);
+  return new Response(adminLayout('Statistics', content, auth, 'stats'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
 
 // ===== SONGS MANAGEMENT =====
 if (path === '/songs') {
