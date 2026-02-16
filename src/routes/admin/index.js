@@ -233,32 +233,82 @@ export async function handleAdmin(req, env, ctx) {
       });
     }
   }
-  
-  // ===== MANAGE ALBUMS (Placeholder) =====
-  if (path === '/albums') {
-    const content = `
-        <div class="empty-state">
-            <i class="fas fa-compact-disc"></i>
-            <h3>Albums Management</h3>
-            <p>This feature is coming soon. You'll be able to:</p>
-            <ul style="list-style: none; margin-top: 15px; color: #666;">
-                <li style="margin-bottom: 8px;">✓ View all albums</li>
-                <li style="margin-bottom: 8px;">✓ Edit album details</li>
-                <li style="margin-bottom: 8px;">✓ Add/remove songs</li>
-                <li style="margin-bottom: 8px;">✓ Assign artists</li>
-            </ul>
-            <div style="margin-top: 30px;">
-                <a href="/admin/upload" class="btn btn-primary">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload a Song
-                </a>
-            </div>
-        </div>
-    `;
-    return new Response(adminLayout('Manage Albums', content, auth, 'albums'), {
+  // ===== ALBUMS MANAGEMENT =====
+if (path === '/albums') {
+  const content = await handleAdminAlbums(req, env, ctx, auth);
+  return new Response(adminLayout('Manage Albums', content, auth, 'albums'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+if (path === '/albums/edit') {
+  if (req.method === 'GET') {
+    const result = await handleAdminAlbumEdit(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Edit Album', result.content, auth, 'albums'), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminAlbumEditPost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/albums?updated=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'albums'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
 
+if (path === '/albums/delete') {
+  const result = await handleAdminAlbumDelete(req, env, ctx, auth);
+  if (result.success) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/admin/albums?deleted=1' }
+    });
+  } else {
+    const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+    return new Response(adminLayout('Error', content, auth, 'albums'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+if (path === '/albums/songs') {
+  if (req.method === 'GET') {
+    const result = await handleAdminAlbumSongs(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Album Songs', result.content, auth, 'albums'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminAlbumSongsPost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/albums?updated=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'albums'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
   // ===== MANAGE ARTISTS (Placeholder) =====
   if (path === '/artists') {
     const content = `
