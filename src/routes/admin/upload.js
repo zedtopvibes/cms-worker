@@ -12,12 +12,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
     return `<option value="${id}">${album.title} (${album.songs?.length || 0} tracks)</option>`;
   }).join("");
 
-  const artistOptions = Object.keys(artists).map(id => {
-    const artist = artists[id];
-    const songCount = artist.songs?.length || 0;
-    return `<option value="${id}">${artist.name} (${songCount} songs)</option>`;
-  }).join("");
-
   const playlistOptions = Object.keys(playlists).map(id => {
     const playlist = playlists[id];
     return `<option value="${id}">${playlist.title} (${playlist.songs?.length || 0} songs)</option>`;
@@ -40,24 +34,55 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <input type="text" name="title" class="form-control" placeholder="e.g. My Song" required>
             </div>
             
-            <!-- Primary Artist -->
+            <!-- Primary Artist - Searchable Select -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-microphone" style="color: #ff5500; width: 20px;"></i>
                     Primary Artist
                 </label>
-                <select name="artist" id="artistSelect" class="form-control" required>
-                    <option value="">-- Select Primary Artist --</option>
-                    ${artistOptions}
-                    <option value="__create_new__">➕ Create New Artist</option>
-                </select>
-                <div id="newArtistContainer" style="margin-top: 10px; display: none;">
-                    <input type="text" name="artist_name" id="artistNameInput" class="form-control" 
-                           placeholder="Enter new artist name">
+                
+                <!-- Searchable Select Container -->
+                <div class="searchable-select-container">
+                    <div class="searchable-select" onclick="toggleDropdown('primary')">
+                        <span id="primarySelectedDisplay">-- Select Primary Artist --</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    
+                    <!-- Dropdown with Search -->
+                    <div id="primaryDropdown" class="searchable-dropdown" style="display: none;">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="primarySearch" placeholder="Search artists..." onkeyup="filterArtists('primary')">
+                        </div>
+                        <div class="artist-list" id="primaryArtistList">
+                            <!-- Artists will be loaded here dynamically -->
+                        </div>
+                        <div class="dropdown-footer">
+                            <button type="button" onclick="showCreateArtist('primary')" class="btn btn-secondary btn-sm" style="width: 100%;">
+                                <i class="fas fa-plus-circle"></i> Create New Artist
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Hidden input for selected artist -->
+                <input type="hidden" name="artist" id="primaryArtistInput" value="">
+                
+                <!-- Create New Artist Input (Hidden by default) -->
+                <div id="primaryNewArtistContainer" style="margin-top: 10px; display: none;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <input type="text" id="primaryNewArtistName" class="form-control" placeholder="Enter new artist name" style="flex: 1;">
+                        <button type="button" onclick="saveNewArtist('primary')" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <button type="button" onclick="cancelNewArtist('primary')" class="btn btn-secondary">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
             
-            <!-- Featured Artists - Redesigned -->
+            <!-- Featured Artists - Searchable Select with Tags -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-users" style="color: #ff5500; width: 20px;"></i>
@@ -69,32 +94,38 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     <!-- Selected tags will appear here dynamically -->
                 </div>
                 
-                <!-- Featured Artist Selector -->
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <select id="featuredArtistSelect" class="form-control" style="flex: 1; min-width: 200px;">
-                        <option value="">-- Add Featured Artist --</option>
-                        ${artistOptions}
-                    </select>
-                    <button type="button" id="addFeaturedBtn" class="btn btn-secondary" style="white-space: nowrap; padding: 0 20px;">
-                        <i class="fas fa-plus"></i> Add
-                    </button>
+                <!-- Searchable Select for Featured Artists -->
+                <div class="searchable-select-container">
+                    <div class="searchable-select" onclick="toggleDropdown('featured')">
+                        <span id="featuredSelectedDisplay">-- Add Featured Artist --</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    
+                    <!-- Dropdown with Search -->
+                    <div id="featuredDropdown" class="searchable-dropdown" style="display: none;">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="featuredSearch" placeholder="Search artists..." onkeyup="filterArtists('featured')">
+                        </div>
+                        <div class="artist-list" id="featuredArtistList">
+                            <!-- Artists will be loaded here dynamically -->
+                        </div>
+                        <div class="dropdown-footer">
+                            <button type="button" onclick="showCreateArtist('featured')" class="btn btn-secondary btn-sm" style="width: 100%;">
+                                <i class="fas fa-plus-circle"></i> Create New Artist
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 
-                <!-- Create New Featured Artist Option -->
-                <div style="margin-top: 10px;">
-                    <button type="button" id="showNewFeaturedBtn" class="btn btn-secondary btn-sm" style="background: #f0f0f0;">
-                        <i class="fas fa-plus-circle"></i> Create New Featured Artist
-                    </button>
-                </div>
-                
-                <!-- New Featured Artist Input (Hidden by default) -->
-                <div id="newFeaturedContainer" style="margin-top: 10px; display: none;">
+                <!-- Create New Featured Artist Input (Hidden by default) -->
+                <div id="featuredNewArtistContainer" style="margin-top: 10px; display: none;">
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <input type="text" id="newFeaturedName" class="form-control" placeholder="Enter new artist name" style="flex: 1;">
-                        <button type="button" id="saveNewFeaturedBtn" class="btn btn-primary">
+                        <input type="text" id="featuredNewArtistName" class="form-control" placeholder="Enter new artist name" style="flex: 1;">
+                        <button type="button" onclick="saveNewArtist('featured')" class="btn btn-primary">
                             <i class="fas fa-save"></i> Save
                         </button>
-                        <button type="button" id="cancelNewFeaturedBtn" class="btn btn-secondary">
+                        <button type="button" onclick="cancelNewArtist('featured')" class="btn btn-secondary">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -104,7 +135,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <input type="hidden" name="featured" id="featuredInput" value="">
                 
                 <p style="font-size: 0.8rem; color: #666; margin-top: 8px;">
-                    <i class="fas fa-info-circle"></i> Click + to add artists. Click the ✕ on tags to remove.
+                    <i class="fas fa-info-circle"></i> Click to search and select artists. Click the ✕ on tags to remove.
                 </p>
             </div>
             
@@ -206,6 +237,106 @@ export async function handleAdminUpload(req, env, ctx, auth) {
     </div>
     
     <style>
+        /* Searchable Select Styles */
+        .searchable-select-container {
+            position: relative;
+            width: 100%;
+        }
+        
+        .searchable-select {
+            width: 100%;
+            padding: 12px 15px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 44px;
+        }
+        
+        .searchable-select:hover {
+            border-color: #ff5500;
+        }
+        
+        .searchable-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-top: 5px;
+            max-height: 400px;
+            overflow: hidden;
+            z-index: 1000;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .search-box {
+            padding: 10px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .search-box i {
+            color: #999;
+        }
+        
+        .search-box input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            padding: 8px 0;
+        }
+        
+        .artist-list {
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 5px 0;
+        }
+        
+        .artist-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        
+        .artist-item:hover {
+            background: #f0f0f0;
+        }
+        
+        .artist-item.selected {
+            background: #fff0e6;
+            border-left: 3px solid #ff5500;
+        }
+        
+        .artist-name {
+            font-weight: 500;
+        }
+        
+        .artist-song-count {
+            font-size: 0.7rem;
+            color: #999;
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 12px;
+        }
+        
+        .dropdown-footer {
+            padding: 10px;
+            border-top: 1px solid #e0e0e0;
+            background: #f9f9f9;
+        }
+        
         .featured-tag {
             display: inline-flex;
             align-items: center;
@@ -240,6 +371,19 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             transform: scale(1.2);
         }
         
+        /* Mobile adjustments */
+        @media (max-width: 768px) {
+            .searchable-dropdown {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 90%;
+                max-width: 400px;
+                max-height: 80vh;
+            }
+        }
+        
         @media (max-width: 480px) {
             .featured-tag {
                 font-size: 0.8rem;
@@ -249,6 +393,19 @@ export async function handleAdminUpload(req, env, ctx, auth) {
     </style>
     
     <script>
+        // ===== ARTISTS DATA =====
+        const artistsData = [
+            ${Object.entries(artists).map(([id, artist]) => {
+                return `{ id: "${id}", name: "${artist.name.replace(/"/g, '\\"')}", songCount: ${artist.songs?.length || 0} }`;
+            }).join(',')}
+        ];
+        
+        // Sort artists alphabetically
+        artistsData.sort((a, b) => a.name.localeCompare(b.name));
+        
+        // ===== FEATURED ARTISTS ARRAY =====
+        let featuredArtists = [];
+        
         // ===== AUDIO DURATION DETECTION =====
         let audioContext = null;
         
@@ -263,142 +420,167 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const submitBtn = document.getElementById('submitBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
         
-        // ===== PRIMARY ARTIST HANDLING =====
-        const artistSelect = document.getElementById('artistSelect');
-        const newArtistContainer = document.getElementById('newArtistContainer');
-        const artistNameInput = document.getElementById('artistNameInput');
+        // ===== SEARCHABLE SELECT FUNCTIONS =====
+        let activeDropdown = null;
         
-        artistSelect.addEventListener('change', function() {
-            if (this.value === '__create_new__') {
-                newArtistContainer.style.display = 'block';
-                artistNameInput.required = true;
-            } else {
-                newArtistContainer.style.display = 'none';
-                artistNameInput.required = false;
+        function toggleDropdown(type) {
+            const dropdown = document.getElementById(type + 'Dropdown');
+            const isVisible = dropdown.style.display === 'block';
+            
+            // Close all dropdowns first
+            document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
+            
+            if (!isVisible) {
+                dropdown.style.display = 'block';
+                activeDropdown = type;
+                renderArtistList(type);
+                setTimeout(() => {
+                    document.getElementById(type + 'Search').focus();
+                }, 100);
             }
-        });
-        
-        // ===== FEATURED ARTISTS HANDLING =====
-        let featuredArtists = [];
-        
-        // DOM Elements for featured artists
-        const featuredSelect = document.getElementById('featuredArtistSelect');
-        const addFeaturedBtn = document.getElementById('addFeaturedBtn');
-        const selectedContainer = document.getElementById('selectedFeaturedContainer');
-        const featuredInput = document.getElementById('featuredInput');
-        const showNewFeaturedBtn = document.getElementById('showNewFeaturedBtn');
-        const newFeaturedContainer = document.getElementById('newFeaturedContainer');
-        const newFeaturedName = document.getElementById('newFeaturedName');
-        const saveNewFeaturedBtn = document.getElementById('saveNewFeaturedBtn');
-        const cancelNewFeaturedBtn = document.getElementById('cancelNewFeaturedBtn');
-        
-        // Update the displayed tags
-        function updateFeaturedTags() {
-            // Clear container
-            selectedContainer.innerHTML = '';
-            
-            if (featuredArtists.length === 0) {
-                // Show empty state
-                const emptyMsg = document.createElement('div');
-                emptyMsg.style.cssText = 'color: #999; font-style: italic; padding: 8px 0;';
-                emptyMsg.textContent = 'No featured artists added';
-                selectedContainer.appendChild(emptyMsg);
-                return;
-            }
-            
-            // Create tags for each featured artist
-            featuredArtists.forEach((artist, index) => {
-                const tag = document.createElement('div');
-                tag.className = 'featured-tag';
-                
-                // Get artist name from select options
-                let artistName = artist;
-                const option = Array.from(featuredSelect.options).find(opt => opt.value === artist);
-                if (option) {
-                    artistName = option.text.split(' (')[0]; // Remove song count if present
-                } else if (artist.startsWith('new_')) {
-                    artistName = artist.replace('new_', '');
-                }
-                
-                tag.innerHTML = \`
-                    <span>\${artistName}</span>
-                    <i class="fas fa-times-circle" onclick="removeFeaturedArtist(\${index})"></i>
-                \`;
-                
-                selectedContainer.appendChild(tag);
-            });
-            
-            // Update hidden input
-            featuredInput.value = JSON.stringify(featuredArtists);
         }
         
-        // Add featured artist
-        addFeaturedBtn.addEventListener('click', function() {
-            const selectedValue = featuredSelect.value;
-            if (!selectedValue) {
-                alert('Please select an artist');
+        function filterArtists(type) {
+            renderArtistList(type);
+        }
+        
+        function renderArtistList(type) {
+            const searchTerm = document.getElementById(type + 'Search').value.toLowerCase();
+            const listContainer = document.getElementById(type + 'ArtistList');
+            
+            const filteredArtists = artistsData.filter(artist => 
+                artist.name.toLowerCase().includes(searchTerm)
+            );
+            
+            if (filteredArtists.length === 0) {
+                listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No artists found</div>';
                 return;
             }
             
-            if (!featuredArtists.includes(selectedValue)) {
-                featuredArtists.push(selectedValue);
-                updateFeaturedTags();
-                featuredSelect.value = ''; // Reset select
+            const selectedArtistId = type === 'primary' 
+                ? document.getElementById('primaryArtistInput').value
+                : null;
+            
+            const selectedFeatured = type === 'featured' 
+                ? featuredArtists 
+                : [];
+            
+            listContainer.innerHTML = filteredArtists.map(artist => {
+                const isSelected = type === 'primary' 
+                    ? artist.id === selectedArtistId
+                    : selectedFeatured.includes(artist.id);
+                
+                return `
+                    <div class="artist-item ${isSelected ? 'selected' : ''}" 
+                         onclick="selectArtist('${type}', '${artist.id}', '${artist.name.replace(/'/g, "\\'")}')">
+                        <span class="artist-name">${artist.name}</span>
+                        <span class="artist-song-count">${artist.songCount} songs</span>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function selectArtist(type, artistId, artistName) {
+            if (type === 'primary') {
+                document.getElementById('primaryArtistInput').value = artistId;
+                document.getElementById('primarySelectedDisplay').textContent = artistName;
             } else {
-                alert('This artist is already added');
+                // For featured, add to tags
+                if (!featuredArtists.includes(artistId)) {
+                    featuredArtists.push(artistId);
+                    updateFeaturedTags();
+                }
             }
-        });
+            
+            // Close dropdown
+            document.getElementById(type + 'Dropdown').style.display = 'none';
+        }
         
-        // Remove featured artist
-        window.removeFeaturedArtist = function(index) {
-            featuredArtists.splice(index, 1);
-            updateFeaturedTags();
-        };
+        function showCreateArtist(type) {
+            document.getElementById(type + 'Dropdown').style.display = 'none';
+            document.getElementById(type + 'NewArtistContainer').style.display = 'block';
+            document.getElementById(type + 'NewArtistName').focus();
+        }
         
-        // Show new featured artist input
-        showNewFeaturedBtn.addEventListener('click', function() {
-            newFeaturedContainer.style.display = 'block';
-            showNewFeaturedBtn.style.display = 'none';
-            newFeaturedName.focus();
-        });
-        
-        // Save new featured artist
-        saveNewFeaturedBtn.addEventListener('click', async function() {
-            const newName = newFeaturedName.value.trim();
+        function saveNewArtist(type) {
+            const newName = document.getElementById(type + 'NewArtistName').value.trim();
             if (!newName) {
                 alert('Please enter an artist name');
                 return;
             }
             
-            // Show loading
-            saveNewFeaturedBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-            saveNewFeaturedBtn.disabled = true;
-            
-            // Create a temporary ID
+            // Create temporary ID
             const tempId = 'new_' + newName.replace(/\\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
             
-            // Add to featured artists
-            if (!featuredArtists.includes(tempId)) {
-                featuredArtists.push(tempId);
-                updateFeaturedTags();
+            if (type === 'primary') {
+                document.getElementById('primaryArtistInput').value = tempId;
+                document.getElementById('primarySelectedDisplay').textContent = newName + ' (new)';
+            } else {
+                // Add to featured artists
+                if (!featuredArtists.includes(tempId)) {
+                    featuredArtists.push(tempId);
+                    updateFeaturedTags();
+                }
             }
             
-            // Hide new artist input
-            newFeaturedContainer.style.display = 'none';
-            showNewFeaturedBtn.style.display = 'inline-flex';
-            newFeaturedName.value = '';
-            
-            // Reset button
-            saveNewFeaturedBtn.innerHTML = '<i class="fas fa-save"></i> Save';
-            saveNewFeaturedBtn.disabled = false;
+            // Hide create container
+            document.getElementById(type + 'NewArtistContainer').style.display = 'none';
+            document.getElementById(type + 'NewArtistName').value = '';
+        }
+        
+        function cancelNewArtist(type) {
+            document.getElementById(type + 'NewArtistContainer').style.display = 'none';
+            document.getElementById(type + 'NewArtistName').value = '';
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.searchable-select-container')) {
+                document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
+            }
         });
         
-        // Cancel new featured artist
-        cancelNewFeaturedBtn.addEventListener('click', function() {
-            newFeaturedContainer.style.display = 'none';
-            showNewFeaturedBtn.style.display = 'inline-flex';
-            newFeaturedName.value = '';
-        });
+        // ===== FEATURED TAGS FUNCTIONS =====
+        function updateFeaturedTags() {
+            const container = document.getElementById('selectedFeaturedContainer');
+            const featuredInput = document.getElementById('featuredInput');
+            
+            container.innerHTML = '';
+            
+            if (featuredArtists.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.style.cssText = 'color: #999; font-style: italic; padding: 8px 0;';
+                emptyMsg.textContent = 'No featured artists added';
+                container.appendChild(emptyMsg);
+                return;
+            }
+            
+            featuredArtists.forEach((artistId, index) => {
+                // Find artist name
+                let artistName = artistId;
+                const artist = artistsData.find(a => a.id === artistId);
+                if (artist) {
+                    artistName = artist.name;
+                } else if (artistId.startsWith('new_')) {
+                    artistName = artistId.replace('new_', '');
+                }
+                
+                const tag = document.createElement('div');
+                tag.className = 'featured-tag';
+                tag.innerHTML = \`
+                    <span>\${artistName}</span>
+                    <i class="fas fa-times-circle" onclick="removeFeaturedArtist(\${index})"></i>
+                \`;
+                container.appendChild(tag);
+            });
+            
+            featuredInput.value = JSON.stringify(featuredArtists);
+        }
+        
+        window.removeFeaturedArtist = function(index) {
+            featuredArtists.splice(index, 1);
+            updateFeaturedTags();
+        };
         
         // ===== ALBUM & PLAYLIST REDIRECTS =====
         document.getElementById('albumSelect').addEventListener('change', function() {
@@ -501,7 +683,6 @@ export async function handleAdminUploadPost(req, env, ctx) {
     const imageFile = formData.get('image');
     const albumId = formData.get('album');
     const playlistId = formData.get('playlist');
-    const artistNameInput = formData.get('artist_name');
     const featuredJson = formData.get('featured');
     const browserDuration = formData.get('duration');
 
@@ -547,13 +728,12 @@ export async function handleAdminUploadPost(req, env, ctx) {
     let artistName = artist;
     let artistId = artist;
 
-    // Create new primary artist if needed
-    if (artist === '__create_new__' && artistNameInput) {
-      artistName = artistNameInput;
-      artistId = sanitize(artistNameInput);
-
+    // Check if primary artist is a new one (starts with 'new_')
+    if (artist && artist.startsWith('new_')) {
+      artistName = artist.replace('new_', '');
+      artistId = sanitize(artistName);
+      
       const artists = await getArtists(env);
-
       if (!artists[artistId]) {
         artists[artistId] = {
           id: artistId,
