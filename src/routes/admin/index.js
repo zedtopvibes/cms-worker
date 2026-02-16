@@ -317,30 +317,82 @@ if (path === '/albums/songs') {
     }
   }
 }
-  // ===== MANAGE ARTISTS (Placeholder) =====
-  if (path === '/artists') {
-    const content = `
-        <div class="empty-state">
-            <i class="fas fa-microphone"></i>
-            <h3>Artists Management</h3>
-            <p>This feature is coming soon. You'll be able to:</p>
-            <ul style="list-style: none; margin-top: 15px; color: #666;">
-                <li style="margin-bottom: 8px;">✓ View all artists</li>
-                <li style="margin-bottom: 8px;">✓ Edit artist bios</li>
-                <li style="margin-bottom: 8px;">✓ Merge duplicate artists</li>
-                <li style="margin-bottom: 8px;">✓ Add artist images</li>
-            </ul>
-            <div style="margin-top: 30px;">
-                <a href="/admin/upload" class="btn btn-primary">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload a Song
-                </a>
-            </div>
-        </div>
-    `;
-    return new Response(adminLayout('Manage Artists', content, auth, 'artists'), {
+  // ===== ARTISTS MANAGEMENT =====
+if (path === '/artists') {
+  const content = await handleAdminArtists(req, env, ctx, auth);
+  return new Response(adminLayout('Manage Artists', content, auth, 'artists'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+if (path === '/artists/edit') {
+  if (req.method === 'GET') {
+    const result = await handleAdminArtistEdit(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Edit Artist', result.content, auth, 'artists'), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminArtistEditPost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/artists?updated=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'artists'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
+
+if (path === '/artists/delete') {
+  const result = await handleAdminArtistDelete(req, env, ctx, auth);
+  if (result.success) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/admin/artists?deleted=1' }
+    });
+  } else {
+    const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+    return new Response(adminLayout('Error', content, auth, 'artists'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+if (path === '/artists/merge') {
+  if (req.method === 'GET') {
+    const result = await handleAdminArtistMerge(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Merge Artists', result.content, auth, 'artists'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminArtistMergePost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/artists?merged=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'artists'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
 
   // ===== MANAGE PLAYLISTS (Placeholder) =====
   if (path === '/playlists') {
