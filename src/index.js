@@ -24,7 +24,11 @@ export default {
       if (path === "/") {
         return await handleHomepage(req, env, ctx);
       }
-      
+ 
+      if (path === "/search") {
+  return await handleSearch(req, env, ctx);
+} 
+
       if (path.startsWith("/album") || path.startsWith("/albums")) {
         return await handleAlbums(req, env, ctx);
       }
