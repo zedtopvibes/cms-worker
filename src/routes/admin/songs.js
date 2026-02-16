@@ -1,6 +1,7 @@
 // ==================== ADMIN SONGS MANAGEMENT ====================
 import { getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
 import { getSongStats } from '../../helpers/db.js';
+import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
 
 export async function handleAdminSongs(req, env, ctx, auth) {
@@ -16,13 +17,14 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   const artists = await getArtists(env);
   const albums = await getAlbums(env);
 
-  // Get detailed song data
+  // Get detailed song data with views
   let songsData = await Promise.all(
     songs.map(async (song) => {
       const fileName = song.key.split('/')[1];
       const baseName = fileName.replace('.mp3', '');
       const meta = await getMetadata(env, baseName);
       const stats = await getSongStats(baseName, env);
+      const pageViews = await getPageViews(env, 'song', baseName);
       
       // Find album
       let albumInfo = null;
@@ -53,6 +55,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
         duration: meta?.duration || 0,
         plays: stats.plays,
         downloads: stats.downloads,
+        views: pageViews,
         uploaded: new Date(song.uploaded),
         size: song.size
       };
@@ -70,7 +73,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
     );
   }
 
-  // Apply sorting
+  // Apply sorting with views
   songsData.sort((a, b) => {
     switch (sort) {
       case 'title':
@@ -81,6 +84,8 @@ export async function handleAdminSongs(req, env, ctx, auth) {
         return b.plays - a.plays;
       case 'downloads':
         return b.downloads - a.downloads;
+      case 'views':
+        return (b.views || 0) - (a.views || 0);
       case 'duration':
         return b.duration - a.duration;
       case 'date':
@@ -95,20 +100,34 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   const startIdx = (page - 1) * ITEMS_PER_PAGE;
   const pageSongs = songsData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
-  // Generate sort options
+  // Sort options with views
   const sortOptions = [
     { value: 'date', label: 'Date Added' },
     { value: 'title', label: 'Title' },
     { value: 'artist', label: 'Artist' },
     { value: 'plays', label: 'Most Played' },
     { value: 'downloads', label: 'Most Downloaded' },
+    { value: 'views', label: 'Most Viewed' },
     { value: 'duration', label: 'Duration' }
   ];
 
+  // Calculate totals
+  const totalPlays = songsData.reduce((acc, s) => acc + s.plays, 0);
+  const totalDownloads = songsData.reduce((acc, s) => acc + s.downloads, 0);
+  const totalViews = songsData.reduce((acc, s) => acc + (s.views || 0), 0);
+
   const content = `
     <div style="margin-bottom: 20px;">
+        <!-- Header -->
         <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
-            <!-- Search and Filter Bar -->
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center;">
+                <h2 style="margin:0; font-size:1.3rem;"><i class="fas fa-music"></i> Songs Management</h2>
+                <a href="/admin/upload" class="btn btn-primary">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload New
+                </a>
+            </div>
+            
+            <!-- Search and Filter -->
             <div style="display: flex; flex-wrap: wrap; gap: 10px;">
                 <div style="flex: 1; min-width: 200px;">
                     <div style="position: relative;">
@@ -125,22 +144,20 @@ export async function handleAdminSongs(req, env, ctx, auth) {
                 <button onclick="applyFilters()" class="btn btn-primary">
                     <i class="fas fa-filter"></i> Apply
                 </button>
-                <a href="/admin/upload" class="btn btn-primary">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload New
-                </a>
             </div>
             
-            <!-- Stats Summary -->
+            <!-- Stats Summary with Views -->
             <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
                 <div><i class="fas fa-music" style="color: #ff5500;"></i> Total: <strong>${totalSongs}</strong> songs</div>
-                <div><i class="fas fa-play" style="color: #ff5500;"></i> Total Plays: <strong>${formatNumber(songsData.reduce((acc, s) => acc + s.plays, 0))}</strong></div>
-                <div><i class="fas fa-download" style="color: #ff5500;"></i> Total Downloads: <strong>${formatNumber(songsData.reduce((acc, s) => acc + s.downloads, 0))}</strong></div>
+                <div><i class="fas fa-play" style="color: #ff5500;"></i> Plays: <strong>${formatNumber(totalPlays)}</strong></div>
+                <div><i class="fas fa-download" style="color: #ff5500;"></i> Downloads: <strong>${formatNumber(totalDownloads)}</strong></div>
+                <div><i class="fas fa-eye" style="color: #4a90e2;"></i> Views: <strong>${formatNumber(totalViews)}</strong></div>
             </div>
         </div>
         
-        <!-- Mobile Cards View -->
+        <!-- Mobile Cards -->
         <div class="mobile-cards">
-            ${pageSongs.map(song => generateMobileCard(song, artists)).join('')}
+            ${pageSongs.map(song => generateMobileCard(song)).join('')}
             ${pageSongs.length === 0 ? `
                 <div class="empty-state">
                     <i class="fas fa-music"></i>
@@ -153,7 +170,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
             ` : ''}
         </div>
         
-        <!-- Desktop Table View -->
+        <!-- Desktop Table -->
         <div class="table-responsive">
             <table class="admin-table">
                 <thead>
@@ -164,6 +181,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
                         <th>Duration</th>
                         <th>Plays</th>
                         <th>Downloads</th>
+                        <th>Views</th>
                         <th>Added</th>
                         <th>Actions</th>
                     </tr>
@@ -172,8 +190,8 @@ export async function handleAdminSongs(req, env, ctx, auth) {
                     ${pageSongs.map(song => generateTableRow(song)).join('')}
                     ${pageSongs.length === 0 ? `
                         <tr>
-                            <td colspan="8" style="text-align: center; padding: 40px;">
-                                <i class="fas fa-music" style="font-size: 2rem; color: #ccc; margin-bottom: 10px; display: block;"></i>
+                            <td colspan="9" style="text-align: center; padding: 40px;">
+                                <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i><br>
                                 No songs found
                             </td>
                         </tr>
@@ -196,99 +214,68 @@ export async function handleAdminSongs(req, env, ctx, auth) {
     </style>
     
     <script>
-            function applyFilters() {
-                const search = document.getElementById('searchInput').value;
-                const sort = document.getElementById('sortSelect').value;
-                let url = '/admin/songs?';
-                if (search) url += 'search=' + encodeURIComponent(search) + '&';
-                url += 'sort=' + sort;
-                window.location.href = url;
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value;
+            const sort = document.getElementById('sortSelect').value;
+            let url = '/admin/songs?';
+            if (search) url += 'search=' + encodeURIComponent(search) + '&';
+            url += 'sort=' + sort;
+            window.location.href = url;
+        }
+        
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyFilters();
+        });
+        
+        window.deleteSong = function(baseName) {
+            if (confirm('Are you sure you want to delete this song? This action cannot be undone.')) {
+                window.location.href = '/admin/songs/delete?name=' + encodeURIComponent(baseName);
             }
-            
-            function searchSongs() {
-                applyFilters();
-            }
-            
-            // Enter key in search
-            document.getElementById('searchInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') applyFilters();
-            });
-            
-            // Delete confirmation
-            window.deleteSong = function(baseName) {
-                if (confirm('Are you sure you want to delete this song? This action cannot be undone.')) {
-                    window.location.href = '/admin/songs/delete?name=' + encodeURIComponent(baseName);
-                }
-            };
-            
-            // Edit song
-            window.editSong = function(baseName) {
-                window.location.href = '/admin/songs/edit?name=' + encodeURIComponent(baseName);
-            };
+        };
+        
+        window.editSong = function(baseName) {
+            window.location.href = '/admin/songs/edit?name=' + encodeURIComponent(baseName);
+        };
     </script>
   `;
 
   return content;
 }
 
-// Generate mobile card HTML
-function generateMobileCard(song, artists) {
+// Mobile card with views
+function generateMobileCard(song) {
   const date = song.uploaded.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
   });
   
   const featuredHtml = song.featuredNames ? 
     `<div style="font-size: 0.8rem; color: #666; margin-top: 2px;">
-        <i class="fas fa-users" style="color: #ff5500; width: 16px;"></i> ${song.featuredNames}
+        <i class="fas fa-users" style="color: #ff5500;"></i> ${song.featuredNames}
     </div>` : '';
 
   return `
     <div class="mobile-card">
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-heading"></i> Title:</span>
-            <span class="mobile-card-value">${song.title}</span>
-        </div>
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-microphone"></i> Artist:</span>
-            <span class="mobile-card-value">${song.primaryArtistName}</span>
-        </div>
+        <div style="font-weight: 700; margin-bottom: 8px;">${song.title}</div>
+        <div style="color: #ff5500; font-size: 0.9rem; margin-bottom: 5px;">${song.primaryArtistName}</div>
         ${featuredHtml}
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-compact-disc"></i> Album:</span>
-            <span class="mobile-card-value">${song.album?.title || '—'}</span>
+        <div style="font-size: 0.85rem; color: #666; margin: 5px 0;">Album: ${song.album?.title || '—'}</div>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin: 8px 0;">
+            <span><i class="fas fa-clock"></i> ${formatDuration(song.duration)}</span>
+            <span><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(song.plays)}</span>
+            <span><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(song.downloads)}</span>
+            <span><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(song.views || 0)}</span>
         </div>
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-clock"></i> Duration:</span>
-            <span class="mobile-card-value">${formatDuration(song.duration)}</span>
-        </div>
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-play"></i> Plays:</span>
-            <span class="mobile-card-value">${formatNumber(song.plays)}</span>
-        </div>
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-download"></i> Downloads:</span>
-            <span class="mobile-card-value">${formatNumber(song.downloads)}</span>
-        </div>
-        <div class="mobile-card-row">
-            <span class="mobile-card-label"><i class="fas fa-calendar"></i> Added:</span>
-            <span class="mobile-card-value">${date}</span>
-        </div>
-        <div style="display: flex; gap: 8px; margin-top: 12px;">
-            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" style="flex: 1;">
-                <i class="fas fa-edit"></i> Edit
-            </button>
-            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" style="flex: 1;">
-                <i class="fas fa-trash"></i> Delete
-            </button>
-            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" style="flex: 1;">
-                <i class="fas fa-eye"></i> View
-            </a>
+        <div style="font-size: 0.75rem; color: #999; margin-bottom: 10px;">Added: ${date}</div>
+        <div style="display: flex; gap: 8px;">
+            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
+            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1;">View</a>
         </div>
     </div>
   `;
 }
 
-// Generate table row HTML
+// Table row with views
 function generateTableRow(song) {
   const date = song.uploaded.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -297,214 +284,48 @@ function generateTableRow(song) {
   return `
     <tr>
         <td><strong>${song.title}</strong></td>
-        <td>
-            ${song.primaryArtistName}
-            ${song.featuredNames ? `<br><small style="color: #666;">feat. ${song.featuredNames}</small>` : ''}
-        </td>
+        <td>${song.primaryArtistName}${song.featuredNames ? `<br><small>feat. ${song.featuredNames}</small>` : ''}</td>
         <td>${song.album?.title || '—'}</td>
         <td>${formatDuration(song.duration)}</td>
         <td>${formatNumber(song.plays)}</td>
         <td>${formatNumber(song.downloads)}</td>
+        <td><span style="color: #4a90e2; font-weight: 600;">${formatNumber(song.views || 0)}</span></td>
         <td>${date}</td>
         <td>
-            <div style="display: flex; gap: 5px;">
-                <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
-                <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" title="View">
-                    <i class="fas fa-eye"></i>
-                </a>
-            </div>
+            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" title="Edit"><i class="fas fa-edit"></i></button>
+            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete"><i class="fas fa-trash"></i></button>
+            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" title="View"><i class="fas fa-eye"></i></a>
         </td>
     </tr>
   `;
 }
 
-// Generate pagination HTML
+// Pagination helper
 function generatePagination(currentPage, totalPages, search, sort) {
   if (totalPages <= 1) return '';
 
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
   
-  // Previous button
   if (currentPage > 1) {
-    html += `<a href="?page=${currentPage-1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-prev">
-                <i class="fas fa-chevron-left"></i> Prev
-             </a>`;
+    html += `<a href="?page=${currentPage-1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
   } else {
     html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
   }
   
-  // Page numbers
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
-      html += `<a href="?page=${i}&search=${encodeURIComponent(search)}&sort=${sort}" 
-                  class="pagination-item ${i === currentPage ? 'active' : ''}">${i}</a>`;
+      html += `<a href="?page=${i}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item ${i === currentPage ? 'active' : ''}">${i}</a>`;
     } else if (i === currentPage - 3 || i === currentPage + 3) {
       html += `<span class="pagination-ellipsis">...</span>`;
     }
   }
   
-  // Next button
   if (currentPage < totalPages) {
-    html += `<a href="?page=${currentPage+1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-next">
-                Next <i class="fas fa-chevron-right"></i>
-             </a>`;
+    html += `<a href="?page=${currentPage+1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
   } else {
     html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
   }
   
   html += '</div>';
   return html;
-}
-
-// Handle song deletion
-export async function handleAdminSongDelete(req, env, ctx, auth) {
-  const url = new URL(req.url);
-  const baseName = url.searchParams.get('name');
-  
-  if (!baseName) {
-    return { success: false, error: 'No song specified' };
-  }
-  
-  try {
-    // Delete from R2
-    await env.media.delete(`songs/${baseName}.mp3`).catch(() => {});
-    await env.media.delete(`images/${baseName}.jpg`).catch(() => {});
-    await env.media.delete(`images/${baseName}.png`).catch(() => {});
-    await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
-    await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
-    
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// Edit song page
-export async function handleAdminSongEdit(req, env, ctx, auth) {
-  const url = new URL(req.url);
-  const baseName = url.searchParams.get('name');
-  
-  if (!baseName) {
-    return { redirect: '/admin/songs' };
-  }
-  
-  // Get song data
-  const meta = await getMetadata(env, baseName);
-  const artists = await getArtists(env);
-  const albums = await getAlbums(env);
-  
-  // Find current album
-  let currentAlbum = null;
-  for (const [id, album] of Object.entries(albums)) {
-    if (album.songs?.includes(baseName)) {
-      currentAlbum = { id, title: album.title };
-      break;
-    }
-  }
-  
-  // Get description
-  let description = '';
-  try {
-    const descObj = await env.media.get(`descriptions/${baseName}.txt`);
-    if (descObj) description = await descObj.text();
-  } catch (e) {}
-  
-  const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Song</h2>
-        
-        <form id="editForm" action="/admin/songs/edit" method="POST">
-            <input type="hidden" name="baseName" value="${baseName}">
-            
-            <div class="form-group">
-                <label>Title</label>
-                <input type="text" name="title" class="form-control" value="${meta?.title || baseName.split('_').slice(1).join(' ')}" required>
-            </div>
-            
-            <div class="form-group">
-                <label>Primary Artist ID</label>
-                <input type="text" name="primaryArtist" class="form-control" value="${meta?.primaryArtist || baseName.split('_')[0]}" required>
-                <p style="font-size: 0.8rem; color: #666;">Artist ID (e.g., yo_maps)</p>
-            </div>
-            
-            <div class="form-group">
-                <label>Featured Artists (comma-separated IDs)</label>
-                <input type="text" name="featuredArtists" class="form-control" value="${meta?.featuredArtists?.join(', ') || ''}">
-            </div>
-            
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="4">${description}</textarea>
-            </div>
-            
-            <div class="form-group">
-                <label>Duration (seconds)</label>
-                <input type="number" name="duration" class="form-control" value="${meta?.duration || 0}" step="0.001">
-            </div>
-            
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Save Changes
-                </button>
-                <a href="/admin/songs" class="btn btn-secondary">
-                    <i class="fas fa-times"></i> Cancel
-                </a>
-            </div>
-        </form>
-    </div>
-    
-    <script>
-        document.getElementById('editForm').addEventListener('submit', function(e) {
-            if (!confirm('Save changes to this song?')) {
-                e.preventDefault();
-            }
-        });
-    </script>
-  `;
-  
-  return { content };
-}
-
-// Handle edit submission
-export async function handleAdminSongEditPost(req, env, ctx, auth) {
-  const formData = await req.formData();
-  const baseName = formData.get('baseName');
-  const title = formData.get('title');
-  const primaryArtist = formData.get('primaryArtist');
-  const featuredArtistsStr = formData.get('featuredArtists');
-  const description = formData.get('description');
-  const duration = parseFloat(formData.get('duration'));
-  
-  if (!baseName || !title || !primaryArtist) {
-    return { success: false, error: 'Missing required fields' };
-  }
-  
-  // Parse featured artists
-  const featuredArtists = featuredArtistsStr
-    ? featuredArtistsStr.split(',').map(s => s.trim()).filter(s => s)
-    : [];
-  
-  try {
-    // Update metadata
-    const metadata = {
-      title,
-      primaryArtist,
-      featuredArtists,
-      description,
-      duration
-    };
-    await saveMetadata(env, baseName, metadata);
-    
-    // Update description file
-    await env.media.put(`descriptions/${baseName}.txt`, description);
-    
-    return { success: true, redirect: '/admin/songs' };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
 }
