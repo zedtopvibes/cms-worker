@@ -7,7 +7,8 @@ import { handlePlaylists } from './routes/playlists.js';
 import { handleSongs } from './routes/songs.js';
 import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
-import { handleSearch } from './routes/search.js';  // <-- ADD THIS LINE
+import { handleSearch } from './routes/search.js';
+import { handleAdmin } from './routes/admin/index.js';  // <-- ADD THIS LINE
 
 export default {
   async fetch(req, env, ctx) {
@@ -21,11 +22,17 @@ export default {
 
     try {
       // Route to appropriate handler
+      
+      // ADMIN ROUTES - Add this FIRST before other routes
+      if (path.startsWith("/admin")) {
+        return await handleAdmin(req, env, ctx);
+      }
+      
       if (path === "/") {
         return await handleHomepage(req, env, ctx);
       }
       
-      if (path === "/search") {  // <-- ADD THIS ROUTE
+      if (path === "/search") {
         return await handleSearch(req, env, ctx);
       }
       
