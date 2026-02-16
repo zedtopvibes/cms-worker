@@ -4,7 +4,12 @@ import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
 import { handleAdminUpload, handleAdminUploadPost } from './upload.js';
 import { formatDuration } from '../../helpers/formatting.js';
-
+import { 
+  handleAdminSongs, 
+  handleAdminSongDelete, 
+  handleAdminSongEdit, 
+  handleAdminSongEditPost 
+} from './songs.js';
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
