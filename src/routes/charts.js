@@ -27,6 +27,17 @@ export async function handleCharts(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
   const subPath = path.replace("/charts", "") || "/";
+
+
+  // Track chart page views
+  let chartType = 'charts-overview';
+  if (subPath === '/albums') chartType = 'charts-albums';
+  else if (subPath === '/songs') chartType = 'charts-songs';
+  else if (subPath === '/artists') chartType = 'charts-artists';
+  else if (subPath === '/playlists') chartType = 'charts-playlists';
+  else if (subPath === '/new-releases') chartType = 'charts-new-releases';
+  
+  ctx.waitUntil(incrementPageView(env, 'chart', chartType));
   
   let templateFile = "charts/index.html";
   let title = "Charts";
