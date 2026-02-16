@@ -1,4 +1,10 @@
 // ==================== ARTISTS ROUTES ====================
+import { incrementPageView } from '../helpers/pageViews.js';
+
+// Inside artist detail handler:
+if (artist) {
+  ctx.waitUntil(incrementPageView(env, 'artist', artistId));
+}
 import { getArtists, getAlbums, getPlaylists, getMetadata, saveArtists } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize } from '../helpers/formatting.js';
