@@ -7,6 +7,7 @@ if (album) {
   // Track page view (background task)
   ctx.waitUntil(incrementPageView(env, 'album', albumId));
 }
+
 import { getAlbums, getArtists, getMetadata } from '../helpers/storage.js';
 
 import { getAggregatedStats } from '../helpers/db.js';
