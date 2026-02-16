@@ -4,7 +4,7 @@ compatibility_date = "2025-02-01"
 
 # Environment variables (non-sensitive)
 [vars]
-ENVIRONMENT = "production"
+ENVIRONMENT = "production" 
 SITE_NAME = "ZEDALBUMS.TOP"
 
 # Note: ADMIN_USERNAME and ADMIN_PASSWORD are set as secrets in Cloudflare Dashboard
