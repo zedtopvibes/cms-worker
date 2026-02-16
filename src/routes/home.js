@@ -1,4 +1,4 @@
-// ==================== HOMEPAGE ROUTE ====================
+// ==================== HOMEPAGE  ROUTE ====================
 import { incrementPageView } from '../helpers/pageViews.js';
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../helpers/storage.js';
 
