@@ -1,4 +1,4 @@
-// ==================== PLAYLISTS ROUTES ====================
+// ==================== PLAYLISTS  ROUTES ====================
 // ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
 import { getPlaylists, getAlbums, getArtists, getMetadata, savePlaylists } from '../helpers/storage.js';
