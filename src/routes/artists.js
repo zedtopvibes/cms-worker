@@ -1,13 +1,16 @@
 // ==================== ARTISTS ROUTES ====================
+// ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
-
-// Inside artist detail handler:
-if (artist) {
-  ctx.waitUntil(incrementPageView(env, 'artist', artistId));
-}
-import { getArtists, getAlbums, getPlaylists, getMetadata, saveArtists } from '../helpers/storage.js';
+import { 
+  getArtists, 
+  getAlbums, 
+  getPlaylists, 
+  getMetadata, 
+  saveArtists,
+  getArtistAlbumsAndSingles 
+} from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
-import { sanitize } from '../helpers/formatting.js';
+import { sanitize, formatDuration } from '../helpers/formatting.js';
 
 export async function handleArtists(req, env, ctx) {
   const url = new URL(req.url);
@@ -212,6 +215,9 @@ export async function handleArtists(req, env, ctx) {
     const artists = await getArtists(env);
     const artist = artists[artistId];
     if (!artist) return new Response("Artist not found", { status: 404 });
+
+    // ✅ TRACK PAGE VIEW
+    ctx.waitUntil(incrementPageView(env, 'artist', artistId));
 
     const albums = await getAlbums(env);
     const playlists = await getPlaylists(env);
@@ -789,7 +795,3 @@ export async function handleArtists(req, env, ctx) {
 
   return new Response("Not found", { status: 404 });
 }
- 
-// Helper function for artist albums and singles
-import { getArtistAlbumsAndSingles } from '../helpers/storage.js';
-import { formatDuration } from '../helpers/formatting.js';
