@@ -1,10 +1,6 @@
 // ==================== PLAYLISTS ROUTES ====================
+// ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
-
-// Inside playlist detail handler:
-if (playlist) {
-  ctx.waitUntil(incrementPageView(env, 'playlist', playlistId));
-}
 import { getPlaylists, getAlbums, getArtists, getMetadata, savePlaylists } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
@@ -348,6 +344,9 @@ export async function handlePlaylists(req, env, ctx) {
     const playlists = await getPlaylists(env);
     const playlist = playlists[playlistId];
     if (!playlist) return new Response("Playlist not found", { status: 404 });
+
+    // ✅ TRACK PAGE VIEW
+    ctx.waitUntil(incrementPageView(env, 'playlist', playlistId));
 
     const playlistStats = await getAggregatedStats(playlist.songs || [], env);
 
