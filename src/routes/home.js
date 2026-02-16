@@ -1,4 +1,5 @@
 // ==================== HOMEPAGE ROUTE ====================
+import { incrementPageView } from '../helpers/pageViews.js';
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../helpers/storage.js';
 
 // Cache for homepage
@@ -9,6 +10,9 @@ const CACHE_DURATION = 30000;
 export async function handleHomepage(req, env, ctx) {
   const url = new URL(req.url);
   const now = Date.now();
+
+// Track homepage view
+ctx.waitUntil(incrementPageView(env, 'page', 'homepage'));
   
   // Return cached version if available
   if (homepageCache && (now - cacheTimestamp < CACHE_DURATION)) {
