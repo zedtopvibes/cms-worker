@@ -1,6 +1,15 @@
 name = "cms"
-main = "src/index.js"  # Changed to point to new modular structure
+main = "src/index.js"
 compatibility_date = "2025-02-01"
+
+# Environment variables (non-sensitive)
+[vars]
+ENVIRONMENT = "production"
+SITE_NAME = "ZEDALBUMS.TOP"
+
+# Note: ADMIN_USERNAME and ADMIN_PASSWORD are set as secrets in Cloudflare Dashboard
+# They are NOT stored in this file for security reasons
+# Go to Cloudflare Dashboard → Your Worker → Settings → Variables → Add secret
 
 [[r2_buckets]]
 binding = "media"
