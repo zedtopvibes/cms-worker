@@ -1,6 +1,7 @@
-// ==================== ADMIN STATISTICS - MOBILE OPTIMIZED ====================
+// ==================== ADMIN STATISTICS - MOBILE OPTIMIZED WITH PAGE VIEWS ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats, getSongStats } from '../../helpers/db.js';
+import { getPopularPages, getTotalPageViews, getViewsByType } from '../../helpers/pageViews.js';
 import { formatNumber, formatDuration } from '../../helpers/formatting.js';
 
 export async function handleAdminStats(req, env, ctx, auth) {
@@ -28,6 +29,11 @@ export async function handleAdminStats(req, env, ctx, auth) {
   
   // Get total stats
   const totalStats = await getAggregatedStats(allSongKeys, env);
+  
+  // Get page views stats
+  const popularPages = await getPopularPages(env, 5);
+  const totalPageViews = await getTotalPageViews(env);
+  const viewsByType = await getViewsByType(env);
   
   // Get top items
   const topSongs = await getTopSongs(env, 10);
@@ -66,7 +72,9 @@ export async function handleAdminStats(req, env, ctx, auth) {
       break;
     case 'overview':
     default:
-      content = renderOverview(totalSongs, albums, artists, playlists, totalStats, totalStorage, topSongs, topAlbums, topArtists, topPlaylists, recentSongs);
+      content = renderOverview(totalSongs, albums, artists, playlists, totalStats, totalStorage, 
+                              topSongs, topAlbums, topArtists, topPlaylists, recentSongs,
+                              popularPages, totalPageViews, viewsByType);
       break;
   }
   
@@ -201,10 +209,12 @@ async function getTopPlaylists(env, limit = 10) {
   return playlistData.sort((a, b) => b.plays - a.plays).slice(0, limit);
 }
 
-// Render overview stats - MOBILE OPTIMIZED
-function renderOverview(totalSongs, albums, artists, playlists, totalStats, totalStorage, topSongs, topAlbums, topArtists, topPlaylists, recentSongs) {
+// Render overview stats - WITH PAGE VIEWS
+function renderOverview(totalSongs, albums, artists, playlists, totalStats, totalStorage, 
+                       topSongs, topAlbums, topArtists, topPlaylists, recentSongs,
+                       popularPages, totalPageViews, viewsByType) {
   return `
-    <!-- Stats Grid - MOBILE FIRST -->
+    <!-- Stats Grid -->
     <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr); gap: 10px;">
         <div class="stat-card" style="padding: 12px;">
             <h3 style="font-size: 0.7rem;"><i class="fas fa-music"></i> Songs</h3>
@@ -240,7 +250,59 @@ function renderOverview(totalSongs, albums, artists, playlists, totalStats, tota
         </div>
     </div>
     
-    <!-- Top Charts - STACKED ON MOBILE -->
+    <!-- PAGE VIEWS SECTION - NEW -->
+    <div style="background: white; border-radius: 12px; padding: 15px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h4 style="font-size: 1rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> Page Views</h4>
+            <span style="background: #ff5500; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">
+                Total: ${formatNumber(totalPageViews)}
+            </span>
+        </div>
+        
+        <!-- Views by Type -->
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 15px;">
+            ${viewsByType.map(type => `
+                <div style="background: #f8f9fa; padding: 8px; border-radius: 8px; text-align: center;">
+                    <div style="font-size: 0.7rem; color: #666;">${getPageIcon(type.page_type)} ${type.page_type}s</div>
+                    <div style="font-weight: 700; color: #ff5500;">${formatNumber(type.total)}</div>
+                    <div style="font-size: 0.6rem; color: #999;">${type.count} items</div>
+                </div>
+            `).join('')}
+            ${viewsByType.length === 0 ? `
+                <div style="grid-column: span 2; text-align: center; padding: 20px; color: #666;">
+                    <i class="fas fa-eye-slash"></i> No page views yet
+                </div>
+            ` : ''}
+        </div>
+        
+        <!-- Most Viewed Pages -->
+        <h5 style="margin: 10px 0 8px; font-size: 0.9rem;">Most Viewed Pages</h5>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${popularPages.map(page => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0;">
+                    <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
+                        <span>${getPageIcon(page.page_type)}</span>
+                        <span style="font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">
+                            ${page.page_id}
+                        </span>
+                        <span style="font-size: 0.6rem; color: #666; background: #f0f0f0; padding: 2px 6px; border-radius: 20px; white-space: nowrap;">
+                            ${page.page_type}
+                        </span>
+                    </div>
+                    <span style="font-weight: 600; color: #ff5500; font-size: 0.8rem; white-space: nowrap; margin-left: 8px;">
+                        ${formatNumber(page.views)}
+                    </span>
+                </div>
+            `).join('')}
+            ${popularPages.length === 0 ? `
+                <div style="text-align: center; padding: 20px; color: #666;">
+                    No page views recorded yet. Visit some pages to generate views.
+                </div>
+            ` : ''}
+        </div>
+    </div>
+    
+    <!-- Top Charts -->
     <h3 style="margin: 20px 0 10px; font-size: 1.1rem;"><i class="fas fa-fire" style="color: #ff5500;"></i> Top Charts</h3>
     
     <!-- Top Songs -->
@@ -360,7 +422,18 @@ function generateTopListMobile(items, type) {
   }).join('');
 }
 
-// Render song stats - MOBILE OPTIMIZED (Cards instead of table)
+// Helper function for page icons
+function getPageIcon(type) {
+  const icons = {
+    'album': '💿',
+    'artist': '🎤',
+    'playlist': '📋',
+    'song': '🎵'
+  };
+  return icons[type] || '📄';
+}
+
+// Render song stats
 async function renderSongStats(env, songs) {
   const artists = await getArtists(env);
   
@@ -370,12 +443,14 @@ async function renderSongStats(env, songs) {
       const baseName = fileName.replace('.mp3', '');
       const stats = await getSongStats(baseName, env);
       const meta = await getMetadata(env, baseName);
+      const pageViews = await getPageViews(env, 'song', baseName);
       
       return {
         name: meta?.title || baseName,
         artist: meta?.primaryArtist ? (artists[meta.primaryArtist]?.name || meta.primaryArtist) : baseName.split('_')[0],
         plays: stats.plays,
         downloads: stats.downloads,
+        views: pageViews,
         uploaded: new Date(song.uploaded).toLocaleDateString()
       };
     })
@@ -385,6 +460,7 @@ async function renderSongStats(env, songs) {
   
   const totalPlays = songData.reduce((acc, s) => acc + s.plays, 0);
   const totalDownloads = songData.reduce((acc, s) => acc + s.downloads, 0);
+  const totalViews = songData.reduce((acc, s) => acc + s.views, 0);
   
   return `
     <!-- Stats Cards -->
@@ -402,12 +478,12 @@ async function renderSongStats(env, songs) {
             <div class="number" style="font-size: 1.5rem;">${formatNumber(totalDownloads)}</div>
         </div>
         <div class="stat-card" style="padding: 12px;">
-            <h3 style="font-size: 0.7rem;">Avg Plays</h3>
-            <div class="number" style="font-size: 1.5rem;">${songs.length ? Math.round(totalPlays / songs.length) : 0}</div>
+            <h3 style="font-size: 0.7rem;">Page Views</h3>
+            <div class="number" style="font-size: 1.5rem;">${formatNumber(totalViews)}</div>
         </div>
     </div>
     
-    <!-- Song Cards (Mobile Friendly) -->
+    <!-- Song Cards -->
     <h3 style="margin: 15px 0 10px; font-size: 1rem;">All Songs</h3>
     <div style="display: flex; flex-direction: column; gap: 10px;">
         ${songData.map(song => `
@@ -417,9 +493,10 @@ async function renderSongStats(env, songs) {
                     <span style="font-size: 0.7rem; color: #666; background: #f5f5f5; padding: 2px 6px; border-radius: 20px;">${song.uploaded}</span>
                 </div>
                 <div style="color: #ff5500; font-size: 0.85rem; margin-bottom: 8px;">${song.artist}</div>
-                <div style="display: flex; gap: 15px;">
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                     <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(song.plays)}</span>
                     <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(song.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(song.views)}</span>
                 </div>
             </div>
         `).join('')}
@@ -428,7 +505,7 @@ async function renderSongStats(env, songs) {
   `;
 }
 
-// Render album stats - MOBILE OPTIMIZED
+// Render album stats
 async function renderAlbumStats(env, albums) {
   const artists = await getArtists(env);
   
@@ -436,6 +513,7 @@ async function renderAlbumStats(env, albums) {
     Object.entries(albums).map(async ([id, album]) => {
       const stats = await getAggregatedStats(album.songs || [], env);
       const primaryArtist = album.artists?.length ? (artists[album.artists[0]]?.name || album.artists[0]) : 'Various';
+      const pageViews = await getPageViews(env, 'album', id);
       
       return {
         title: album.title,
@@ -443,6 +521,7 @@ async function renderAlbumStats(env, albums) {
         songs: album.songs?.length || 0,
         plays: stats.plays,
         downloads: stats.downloads,
+        views: pageViews,
         created: new Date(album.created).toLocaleDateString()
       };
     })
@@ -452,6 +531,7 @@ async function renderAlbumStats(env, albums) {
   
   const totalPlays = albumData.reduce((acc, a) => acc + a.plays, 0);
   const totalDownloads = albumData.reduce((acc, a) => acc + a.downloads, 0);
+  const totalViews = albumData.reduce((acc, a) => acc + a.views, 0);
   
   return `
     <!-- Stats Cards -->
@@ -469,8 +549,8 @@ async function renderAlbumStats(env, albums) {
             <div class="number" style="font-size: 1.5rem;">${formatNumber(totalDownloads)}</div>
         </div>
         <div class="stat-card" style="padding: 12px;">
-            <h3 style="font-size: 0.7rem;">Avg Plays</h3>
-            <div class="number" style="font-size: 1.5rem;">${Object.keys(albums).length ? Math.round(totalPlays / Object.keys(albums).length) : 0}</div>
+            <h3 style="font-size: 0.7rem;">Page Views</h3>
+            <div class="number" style="font-size: 1.5rem;">${formatNumber(totalViews)}</div>
         </div>
     </div>
     
@@ -488,6 +568,7 @@ async function renderAlbumStats(env, albums) {
                     <span style="font-size: 0.8rem;"><i class="fas fa-music"></i> ${album.songs} songs</span>
                     <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(album.plays)}</span>
                     <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(album.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(album.views)}</span>
                 </div>
             </div>
         `).join('')}
@@ -496,12 +577,13 @@ async function renderAlbumStats(env, albums) {
   `;
 }
 
-// Render artist stats - MOBILE OPTIMIZED
+// Render artist stats
 async function renderArtistStats(env, artists) {
   const artistData = await Promise.all(
     Object.entries(artists).map(async ([id, artist]) => {
       const stats = await getAggregatedStats(artist.songs || [], env);
       const monthlyListeners = Math.floor(stats.plays * 0.3);
+      const pageViews = await getPageViews(env, 'artist', id);
       
       return {
         name: artist.name,
@@ -509,6 +591,7 @@ async function renderArtistStats(env, artists) {
         albums: artist.albums?.length || 0,
         plays: stats.plays,
         downloads: stats.downloads,
+        views: pageViews,
         monthlyListeners
       };
     })
@@ -518,6 +601,7 @@ async function renderArtistStats(env, artists) {
   
   const totalPlays = artistData.reduce((acc, a) => acc + a.plays, 0);
   const totalDownloads = artistData.reduce((acc, a) => acc + a.downloads, 0);
+  const totalViews = artistData.reduce((acc, a) => acc + a.views, 0);
   
   return `
     <!-- Stats Cards -->
@@ -535,8 +619,8 @@ async function renderArtistStats(env, artists) {
             <div class="number" style="font-size: 1.5rem;">${formatNumber(totalDownloads)}</div>
         </div>
         <div class="stat-card" style="padding: 12px;">
-            <h3 style="font-size: 0.7rem;">Monthly</h3>
-            <div class="number" style="font-size: 1.5rem;">${formatNumber(artistData.reduce((acc, a) => acc + a.monthlyListeners, 0))}</div>
+            <h3 style="font-size: 0.7rem;">Page Views</h3>
+            <div class="number" style="font-size: 1.5rem;">${formatNumber(totalViews)}</div>
         </div>
     </div>
     
@@ -553,6 +637,7 @@ async function renderArtistStats(env, artists) {
                 <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 8px; border-radius: 8px;">
                     <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(artist.plays)}</span>
                     <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(artist.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(artist.views)}</span>
                     <span style="font-size: 0.8rem; background: #9b59b6; color: white; padding: 2px 8px; border-radius: 20px;">${formatNumber(artist.monthlyListeners)} monthly</span>
                 </div>
             </div>
@@ -562,11 +647,12 @@ async function renderArtistStats(env, artists) {
   `;
 }
 
-// Render playlist stats - MOBILE OPTIMIZED
+// Render playlist stats
 async function renderPlaylistStats(env, playlists) {
   const playlistData = await Promise.all(
     Object.entries(playlists).map(async ([id, playlist]) => {
       const stats = await getAggregatedStats(playlist.songs || [], env);
+      const pageViews = await getPageViews(env, 'playlist', id);
       
       return {
         title: playlist.title,
@@ -574,6 +660,7 @@ async function renderPlaylistStats(env, playlists) {
         songs: playlist.songs?.length || 0,
         plays: stats.plays,
         downloads: stats.downloads,
+        views: pageViews,
         updated: new Date(playlist.updated || playlist.created).toLocaleDateString()
       };
     })
@@ -583,6 +670,7 @@ async function renderPlaylistStats(env, playlists) {
   
   const totalPlays = playlistData.reduce((acc, p) => acc + p.plays, 0);
   const totalDownloads = playlistData.reduce((acc, p) => acc + p.downloads, 0);
+  const totalViews = playlistData.reduce((acc, p) => acc + p.views, 0);
   
   return `
     <!-- Stats Cards -->
@@ -600,8 +688,8 @@ async function renderPlaylistStats(env, playlists) {
             <div class="number" style="font-size: 1.5rem;">${formatNumber(totalDownloads)}</div>
         </div>
         <div class="stat-card" style="padding: 12px;">
-            <h3 style="font-size: 0.7rem;">Avg Plays</h3>
-            <div class="number" style="font-size: 1.5rem;">${Object.keys(playlists).length ? Math.round(totalPlays / Object.keys(playlists).length) : 0}</div>
+            <h3 style="font-size: 0.7rem;">Page Views</h3>
+            <div class="number" style="font-size: 1.5rem;">${formatNumber(totalViews)}</div>
         </div>
     </div>
     
@@ -619,6 +707,7 @@ async function renderPlaylistStats(env, playlists) {
                     <span style="font-size: 0.8rem;"><i class="fas fa-music"></i> ${playlist.songs} songs</span>
                     <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(playlist.plays)}</span>
                     <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(playlist.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(playlist.views)}</span>
                 </div>
             </div>
         `).join('')}
@@ -626,3 +715,6 @@ async function renderPlaylistStats(env, playlists) {
     </div>
   `;
 }
+
+// Import getPageViews for use in other render functions
+import { getPageViews } from '../../helpers/pageViews.js';
