@@ -8,12 +8,14 @@ import {
   getTopPlaylists, 
   getNewReleases 
 } from '../helpers/charts.js';
+
 import { 
   getAlbumThumbnailUrl,
   getSongThumbnailUrl,
   getArtistThumbnailUrl,
   getPlaylistThumbnailUrl
 } from '../helpers/thumbnails.js';
+
 import {
   generateAlbumChartItem,
   generateSongChartItem,
