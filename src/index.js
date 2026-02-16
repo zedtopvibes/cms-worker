@@ -1,4 +1,4 @@
-// ==================== MAIN ENTRY POINT ==================== 
+// ==================== MAIN ENTRY POINT ====================
 import { CORS_HEADERS } from './middleware/cors.js';
 import { handleHomepage } from './routes/home.js';
 import { handleAlbums } from './routes/albums.js';
@@ -8,26 +8,25 @@ import { handleSongs } from './routes/songs.js';
 import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
-import { handleAdmin } from './routes/admin/index.js';  // <-- ADD THIS LINE
+import { handleAdmin } from './routes/admin/index.js';  // <-- ADD THIS
 
-export default { 
+export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Handle OPTIONS requests for CORS
+    // Handle OPTIONS requests
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
     try {
-      // Route to appropriate handler
-      
-      // ADMIN ROUTES - Add this FIRST before other routes
+      // ===== ADMIN ROUTES (Highest priority) =====
       if (path.startsWith("/admin")) {
         return await handleAdmin(req, env, ctx);
       }
       
+      // ===== PUBLIC ROUTES =====
       if (path === "/") {
         return await handleHomepage(req, env, ctx);
       }
@@ -60,7 +59,7 @@ export default {
         return await handleUpload(req, env, ctx);
       }
 
-      // Serve static files from R2
+      // ===== STATIC FILES =====
       if (path.startsWith("/images/") || 
           path.startsWith("/songs/") || 
           path.startsWith("/albums/thumbnails/") || 
@@ -88,24 +87,13 @@ export default {
         });
       }
 
-      // Handle old route redirects
-      if (path === "/album") {
-        return Response.redirect("/albums", 301);
-      }
-      
-      if (path === "/artist") {
-        return Response.redirect("/artists", 301);
-      }
+      // ===== REDIRECTS =====
+      if (path === "/album") return Response.redirect("/albums", 301);
+      if (path === "/artist") return Response.redirect("/artists", 301);
+      if (path === "/playlist") return Response.redirect("/playlists", 301);
+      if (path === "/new-design") return Response.redirect("/", 301);
 
-      if (path === "/playlist") {
-        return Response.redirect("/playlists", 301);
-      }
-
-      if (path === "/new-design") {
-        return Response.redirect("/", 301);
-      }
-
-      // 404 for everything else
+      // ===== 404 =====
       return new Response("Not found", { 
         status: 404,
         headers: CORS_HEADERS 
