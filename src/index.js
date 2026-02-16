@@ -10,7 +10,7 @@ import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
 import { handleAdmin } from './routes/admin/index.js';  // <-- ADD THIS LINE
 
-export default {
+export default { 
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
