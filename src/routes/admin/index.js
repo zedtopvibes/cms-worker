@@ -225,32 +225,7 @@ export async function handleAdmin(req, env, ctx) {
       });
     }
   }
-
-  // ===== MANAGE SONGS (Placeholder) =====
-  if (path === '/songs') {
-    const content = `
-        <div class="empty-state">
-            <i class="fas fa-music"></i>
-            <h3>Songs Management</h3>
-            <p>This feature is coming soon. You'll be able to:</p>
-            <ul style="list-style: none; margin-top: 15px; color: #666;">
-                <li style="margin-bottom: 8px;">✓ View all songs</li>
-                <li style="margin-bottom: 8px;">✓ Edit song details</li>
-                <li style="margin-bottom: 8px;">✓ Delete songs</li>
-                <li style="margin-bottom: 8px;">✓ Bulk operations</li>
-            </ul>
-            <div style="margin-top: 30px;">
-                <a href="/admin/upload" class="btn btn-primary">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload a Song
-                </a>
-            </div>
-        </div>
-    `;
-    return new Response(adminLayout('Manage Songs', content, auth, 'songs'), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-
+  
   // ===== MANAGE ALBUMS (Placeholder) =====
   if (path === '/albums') {
     const content = `
@@ -346,6 +321,55 @@ export async function handleAdmin(req, env, ctx) {
     });
   }
 
+// ===== SONGS MANAGEMENT =====
+if (path === '/songs') {
+  const content = await handleAdminSongs(req, env, ctx, auth);
+  return new Response(adminLayout('Manage Songs', content, auth, 'songs'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+if (path === '/songs/delete') {
+  const result = await handleAdminSongDelete(req, env, ctx, auth);
+  if (result.success) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/admin/songs?deleted=1' }
+    });
+  } else {
+    const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+    return new Response(adminLayout('Error', content, auth, 'songs'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+if (path === '/songs/edit') {
+  if (req.method === 'GET') {
+    const result = await handleAdminSongEdit(req, env, ctx, auth);
+    if (result.redirect) {
+      return new Response(null, { status: 302, headers: { Location: result.redirect } });
+    }
+    return new Response(adminLayout('Edit Song', result.content, auth, 'songs'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  if (req.method === 'POST') {
+    const result = await handleAdminSongEditPost(req, env, ctx, auth);
+    if (result.success) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: result.redirect || '/admin/songs?updated=1' }
+      });
+    } else {
+      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+      return new Response(adminLayout('Error', content, auth, 'songs'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+}
   // ===== 404 - Page Not Found =====
   return new Response(`
     <!DOCTYPE html>
