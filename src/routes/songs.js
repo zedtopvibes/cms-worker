@@ -1,4 +1,10 @@
 // ==================== SONGS ROUTES ====================
+import { incrementPageView } from '../helpers/pageViews.js';
+
+// Inside song detail handler, after finding the song:
+if (audioObj) {
+  ctx.waitUntil(incrementPageView(env, 'song', baseName));
+}
 import { getArtists, getAlbums, getPlaylists, getMetadata } from '../helpers/storage.js';
 import { getSongStats, incrementPlay, incrementDownload } from '../helpers/db.js';
 import { formatDuration } from '../helpers/formatting.js';
