@@ -390,6 +390,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 padding: 4px 10px;
             }
         }
+
     </style>
     
     <script>
