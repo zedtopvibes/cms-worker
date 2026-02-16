@@ -18,6 +18,14 @@ import {
   handleAdminAlbumSongs,
   handleAdminAlbumSongsPost
 } from './albums.js';
+import { 
+  handleAdminArtists,
+  handleAdminArtistEdit,
+  handleAdminArtistEditPost,
+  handleAdminArtistDelete,
+  handleAdminArtistMerge,
+  handleAdminArtistMergePost
+} from './artists.js';
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
