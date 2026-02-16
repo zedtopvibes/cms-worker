@@ -1,140 +1,149 @@
 // ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
+import { adminLayout } from './layout.js';
 
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
 
-  // ===== PUBLIC ADMIN ROUTES (No login required) =====
-  
-  // Admin login page - /admin/login
+  // ===== PUBLIC ADMIN ROUTES =====
   if (path === '/login') {
     if (req.method === 'GET') return await handleAdminLogin(req, env, ctx);
     if (req.method === 'POST') return await handleAdminLoginPost(req, env, ctx);
   }
 
-  // Admin logout - /admin/logout
   if (path === '/logout') {
     return await handleAdminLogout(req, env, ctx);
   }
 
-  // ===== PROTECTED ADMIN ROUTES (Login required) =====
+  // ===== PROTECTED ADMIN ROUTES =====
   const auth = await requireAdmin(req, env);
   if (!auth.authenticated) return auth.response;
 
-  // Admin dashboard - /admin or /admin/dashboard
+  // Dashboard
   if (path === '/' || path === '/dashboard') {
-    // Define the HTML variable HERE
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Admin Dashboard - ZEDALBUMS</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f0f2f5;
-      padding: 20px;
-    }
-    .container { max-width: 1200px; margin: 0 auto; }
-    .header {
-      background: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 30px;
-      display: flex; justify-content: space-between; align-items: center;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .header h1 { color: #ff5500; font-size: 24px; }
-    .logout-btn {
-      background: #f0f0f0; padding: 10px 20px; border-radius: 6px; color: #666;
-      text-decoration: none; transition: all 0.3s;
-    }
-    .logout-btn:hover { background: #ff5500; color: white; }
-    .admin-message {
-      background: #e8f4fd; padding: 20px; border-radius: 8px; color: #0369a1;
-      margin-bottom: 20px; border-left: 4px solid #ff5500;
-    }
-    .stats-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px; margin-bottom: 30px;
-    }
-    .stat-card {
-      background: white; padding: 25px; border-radius: 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .stat-card h3 { color: #666; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
-    .stat-card .number { color: #ff5500; font-size: 32px; font-weight: 700; }
-    .quick-actions {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;
-    }
-    .action-btn {
-      background: white; padding: 20px; border-radius: 8px; text-decoration: none;
-      color: #333; text-align: center; transition: all 0.3s;
-      border: 1px solid #e0e0e0;
-    }
-    .action-btn:hover {
-      border-color: #ff5500; transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(255,85,0,0.1);
-    }
-    .action-btn i { font-size: 24px; color: #ff5500; margin-bottom: 10px; }
-  </style>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1><i class="fas fa-cog"></i> Admin Dashboard</h1>
-      <a href="/admin/logout" class="logout-btn">
-        <i class="fas fa-sign-out-alt"></i> Logout
-      </a>
-    </div>
+    const content = `
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Session Status</h3>
+                <div class="number">Active</div>
+                <div class="label">7 day expiry</div>
+            </div>
+            <div class="stat-card">
+                <h3>Login Time</h3>
+                <div class="number">${new Date().toLocaleTimeString()}</div>
+                <div class="label">${new Date().toLocaleDateString()}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Admin</h3>
+                <div class="number">${auth.session.username}</div>
+                <div class="label">Administrator</div>
+            </div>
+        </div>
+        
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            Welcome to the admin panel. Use the tabs above to manage content.
+        </div>
+        
+        <h2 style="margin: 20px 0 15px; font-size: 1.1rem;">Quick Actions</h2>
+        
+        <!-- Mobile Cards -->
+        <div class="mobile-cards">
+            <div class="mobile-card" onclick="window.location='/admin/upload'" style="cursor: pointer;">
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label"><i class="fas fa-cloud-upload-alt" style="color: #ff5500;"></i> Upload Song</span>
+                    <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
+                </div>
+            </div>
+            <div class="mobile-card" onclick="window.location='/admin/songs'" style="cursor: pointer;">
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label"><i class="fas fa-music" style="color: #ff5500;"></i> Manage Songs</span>
+                    <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
+                </div>
+            </div>
+            <div class="mobile-card" onclick="window.location='/admin/albums'" style="cursor: pointer;">
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label"><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Manage Albums</span>
+                    <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Desktop Grid -->
+        <div style="display: none;" class="desktop-actions">
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <a href="/admin/upload" class="btn btn-primary">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload Song
+                </a>
+                <a href="/admin/songs" class="btn btn-secondary">
+                    <i class="fas fa-music"></i> Songs
+                </a>
+                <a href="/admin/albums" class="btn btn-secondary">
+                    <i class="fas fa-compact-disc"></i> Albums
+                </a>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-microphone"></i> Artists
+                </a>
+            </div>
+        </div>
+        
+        <style>
+            @media (min-width: 768px) {
+                .mobile-cards { display: none; }
+                .desktop-actions { display: block !important; }
+            }
+        </style>
+    `;
     
-    <div class="admin-message">
-      <i class="fas fa-check-circle"></i>
-      You are successfully logged in as <strong>${auth.session.username}</strong>
-    </div>
-    
-    <div class="stats-grid">
-      <div class="stat-card">
-        <h3>Session Status</h3>
-        <div class="number">Active</div>
-        <div style="margin-top: 10px; color: #666;">7 day expiry</div>
-      </div>
-      <div class="stat-card">
-        <h3>Login Time</h3>
-        <div class="number">${new Date().toLocaleTimeString()}</div>
-      </div>
-    </div>
-    
-    <h2 style="margin: 30px 0 20px;">Quick Actions</h2>
-    <div class="quick-actions">
-      <a href="/upload" class="action-btn">
-        <i class="fas fa-cloud-upload-alt"></i>
-        <div>Upload Song</div>
-      </a>
-      <a href="/admin/dashboard" class="action-btn">
-        <i class="fas fa-chart-line"></i>
-        <div>View Stats</div>
-      </a>
-      <a href="/admin/settings" class="action-btn">
-        <i class="fas fa-cog"></i>
-        <div>Settings</div>
-      </a>
-    </div>
-  </div>
-</body>
-</html>`;
-    
-    return new Response(html, { 
-      headers: { 'Content-Type': 'text/html' } 
+    return new Response(adminLayout('Dashboard', content, auth, 'dashboard'), {
+      headers: { 'Content-Type': 'text/html' }
     });
   }
 
-  // Add more admin routes here
-  // if (path === '/upload') return await handleAdminUpload(req, env, ctx);
-  // if (path === '/songs') return await handleAdminSongs(req, env, ctx);
-  // if (path === '/albums') return await handleAdminAlbums(req, env, ctx);
+  // Placeholder for other routes (will implement next)
+  if (path === '/upload') {
+    const content = `<div class="empty-state"><i class="fas fa-cloud-upload-alt"></i><h3>Upload Page</h3><p>Coming soon...</p></div>`;
+    return new Response(adminLayout('Upload Song', content, auth, 'upload'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  if (path === '/songs') {
+    const content = `<div class="empty-state"><i class="fas fa-music"></i><h3>Songs Management</h3><p>Coming soon...</p></div>`;
+    return new Response(adminLayout('Manage Songs', content, auth, 'songs'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  if (path === '/albums') {
+    const content = `<div class="empty-state"><i class="fas fa-compact-disc"></i><h3>Albums Management</h3><p>Coming soon...</p></div>`;
+    return new Response(adminLayout('Manage Albums', content, auth, 'albums'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  if (path === '/artists') {
+    const content = `<div class="empty-state"><i class="fas fa-microphone"></i><h3>Artists Management</h3><p>Coming soon...</p></div>`;
+    return new Response(adminLayout('Manage Artists', content, auth, 'artists'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  if (path === '/playlists') {
+    const content = `<div class="empty-state"><i class="fas fa-list"></i><h3>Playlists Management</h3><p>Coming soon...</p></div>`;
+    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  if (path === '/stats') {
+    const content = `<div class="empty-state"><i class="fas fa-chart-line"></i><h3>Statistics</h3><p>Coming soon...</p></div>`;
+    return new Response(adminLayout('Statistics', content, auth, 'stats'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
 
   return new Response('Admin page not found', { 
     status: 404, 
