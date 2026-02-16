@@ -1,10 +1,6 @@
 // ==================== SONGS ROUTES ====================
+// ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
-
-// Inside song detail handler, after finding the song:
-if (audioObj) {
-  ctx.waitUntil(incrementPageView(env, 'song', baseName));
-}
 import { getArtists, getAlbums, getPlaylists, getMetadata } from '../helpers/storage.js';
 import { getSongStats, incrementPlay, incrementDownload } from '../helpers/db.js';
 import { formatDuration } from '../helpers/formatting.js';
@@ -22,6 +18,9 @@ export async function handleSongs(req, env, ctx) {
     if (!audioObj) {
       return new Response("Song not found", { status: 404 });
     }
+
+    // ✅ TRACK PAGE VIEW
+    ctx.waitUntil(incrementPageView(env, 'song', baseName));
 
     const stats = await getSongStats(baseName, env);
 
