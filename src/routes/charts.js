@@ -1,4 +1,4 @@
-// ==================== CHARTS ROUTES ====================
+// ==================== CHARTS  ROUTES ====================
 import { incrementPageView } from '../helpers/pageViews.js';
 import { getArtists } from '../helpers/storage.js';
 import { 
