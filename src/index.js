@@ -1,4 +1,5 @@
 // ==================== MAIN ENTRY POINT ====================
+import { handleSearch } from './routes/search.js';
 import { CORS_HEADERS } from './middleware/cors.js';
 import { handleHomepage } from './routes/home.js';
 import { handleAlbums } from './routes/albums.js';
