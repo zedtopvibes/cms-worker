@@ -514,4 +514,205 @@ export async function handleAlbums(req, env, ctx) {
     if (album.artists && album.artists.length > 1) {
       const featuredArtistsList = await Promise.all(album.artists.slice(1).map(async artistId => {
         const artist = artists[artistId];
-        
+        if (artist) {
+          const trackCountOnAlbum = album.songs.filter(song => song.startsWith(artistId)).length;
+          let thumbUrl = "/images/placeholder.jpg";
+          let hasImage = false;
+          if (artist.thumbnail) {
+            try {
+              const thumbObj = await env.media.get(artist.thumbnail);
+              if (thumbObj) {
+                const ext = artist.thumbnail.split(".").pop();
+                thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+                hasImage = true;
+              }
+            } catch (e) {}
+          }
+          const bgStyle = hasImage 
+            ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
+            : '';
+          return `
+            <div class="album-item" onclick="window.location='/artist/${artistId}'">
+              <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
+              <div class="album-info">
+                <span class="album-title">${artist.name}</span>
+                <div class="album-meta">
+                  <span class="album-artist">Featured Artist</span>
+                  <span class="album-genre">${trackCountOnAlbum} track${trackCountOnAlbum !== 1 ? 's' : ''}</span>
+                </div>
+                <span class="album-date">${trackCountOnAlbum} tracks</span>
+              </div>
+            </div>
+          `;
+        }
+        return '';
+      }));
+      featuredArtistsHtml = featuredArtistsList.join('') || `<div style="padding: 20px; text-align: center; color: #666;">No featured artists</div>`;
+    } else {
+      featuredArtistsHtml = `<div style="padding: 20px; text-align: center; color: #666;">No featured artists</div>`;
+    }
+
+    // Replace all placeholders
+    html = html.replace(/<title>.*?<\/title>/, `<title>${primaryArtist} - ${album.title} - ZEDALBUMS</title>`);
+    html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
+    html = html.replace(/<a href="albums\.html" class="breadcrumb-link">/g, '<a href="/albums" class="breadcrumb-link">');
+    html = html.replace(/<!-- ARTIST_BREADCRUMB_START -->[\s\S]*?<!-- ARTIST_BREADCRUMB_END -->/g, 
+      primaryArtistId 
+        ? `<!-- ARTIST_BREADCRUMB_START --><a href="/artist/${primaryArtistId}" class="breadcrumb-link"><i class="fas fa-user"></i>${primaryArtist}</a><!-- ARTIST_BREADCRUMB_END -->`
+        : `<!-- ARTIST_BREADCRUMB_START --><a href="/artists" class="breadcrumb-link"><i class="fas fa-user"></i>Artists</a><!-- ARTIST_BREADCRUMB_END -->`
+    );
+    html = html.replace(/<!-- ALBUM_BREADCRUMB_START -->[\s\S]*?<!-- ALBUM_BREADCRUMB_END -->/g, 
+      `<!-- ALBUM_BREADCRUMB_START --><span class="breadcrumb-current"><i class="fas fa-compact-disc"></i>${album.title}</span><!-- ALBUM_BREADCRUMB_END -->`
+    );
+    html = html.replace(/<!-- ALBUM_COVER_START -->[\s\S]*?<!-- ALBUM_COVER_END -->/g, 
+      `<!-- ALBUM_COVER_START --><div class="album-cover-large">${albumCoverHtml}</div><!-- ALBUM_COVER_END -->`
+    );
+    html = html.replace(/<!-- ALBUM_TITLE_START -->[\s\S]*?<!-- ALBUM_TITLE_END -->/g, 
+      `<!-- ALBUM_TITLE_START --><h1 class="album-title-detail">${primaryArtist} - ${album.title}</h1><!-- ALBUM_TITLE_END -->`
+    );
+    html = html.replace(/<!-- ARTIST_NAME_START -->[\s\S]*?<!-- ARTIST_NAME_END -->/g, 
+      `<!-- ARTIST_NAME_START --><div class="album-artist-detail">${primaryArtist}</div><!-- ARTIST_NAME_END -->`
+    );
+    html = html.replace(/<!-- TRACK_COUNT_START -->[\s\S]*?<!-- TRACK_COUNT_END -->/g, 
+      `<!-- TRACK_COUNT_START --><div class="album-stats"><i class="fas fa-music"></i>${trackCount} Songs</div><!-- TRACK_COUNT_END -->`
+    );
+    html = html.replace(/<!-- DURATION_START -->[\s\S]*?<!-- DURATION_END -->/g, 
+      `<!-- DURATION_START --><div class="album-stats"><i class="fas fa-clock"></i>${totalDuration}</div><!-- DURATION_END -->`
+    );
+    html = html.replace(/<!-- RELEASE_DATE_START -->[\s\S]*?<!-- RELEASE_DATE_END -->/g, 
+      `<!-- RELEASE_DATE_START --><div class="album-stats"><i class="fas fa-calendar"></i>Released: ${formattedDate}</div><!-- RELEASE_DATE_END -->`
+    );
+    html = html.replace('<!-- ALBUM_PLAYS -->', albumStats.plays.toLocaleString());
+    html = html.replace('<!-- ALBUM_DOWNLOADS -->', albumStats.downloads.toLocaleString());
+    html = html.replace(/<!-- ALBUM_DESCRIPTION_START -->[\s\S]*?<!-- ALBUM_DESCRIPTION_END -->/g, 
+      `<!-- ALBUM_DESCRIPTION_START --><p class="album-description">${album.description || 'No description available.'}</p><!-- ALBUM_DESCRIPTION_END -->`
+    );
+    html = html.replace(/<!-- TRACKS_START -->[\s\S]*?<!-- TRACKS_END -->/g, 
+      `<!-- TRACKS_START -->${tracksHtml}<!-- TRACKS_END -->`
+    );
+    html = html.replace(/<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g, 
+      `<!-- MORE_BY_ARTIST_START -->${moreByArtistHtml}<!-- MORE_BY_ARTIST_END -->`
+    );
+    html = html.replace(/<!-- SIMILAR_ALBUMS_START -->[\s\S]*?<!-- SIMILAR_ALBUMS_END -->/g, 
+      `<!-- SIMILAR_ALBUMS_START -->${similarAlbumsHtml}<!-- SIMILAR_ALBUMS_END -->`
+    );
+    html = html.replace(/<!-- ALBUM_INFO_START -->[\s\S]*?<!-- ALBUM_INFO_END -->/g, 
+      `<!-- ALBUM_INFO_START -->${albumInfoHtml}<!-- ALBUM_INFO_END -->`
+    );
+    html = html.replace(/<!-- FEATURED_ARTISTS_START -->[\s\S]*?<!-- FEATURED_ARTISTS_END -->/g, 
+      `<!-- FEATURED_ARTISTS_START -->${featuredArtistsHtml}<!-- FEATURED_ARTISTS_END -->`
+    );
+
+    return new Response(html, { 
+      headers: { 
+        "Content-Type": "text/html",
+        "Cache-Control": "public, max-age=300"
+      } 
+    });
+  }
+  
+  // Album create page
+  if (path === "/album/create" && req.method === "GET") {
+    const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Create Album - ZEDALBUMS</title>
+      <style>
+        body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; }
+        .container { max-width:500px; margin:0 auto; background:white; padding:30px; border-radius:8px; }
+        h1 { color:#333; border-left:4px solid #28a745; padding-left:15px; }
+        label { display:block; margin-top:15px; font-weight:bold; }
+        input, textarea { width:100%; padding:12px; margin-top:5px; border:1px solid #ddd; border-radius:4px; }
+        button { margin-top:25px; padding:14px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer; width:100%; font-size:16px; }
+        button:hover { background:#218838; }
+        .back-link { margin-top:20px; text-align:center; }
+        .back-link a { color:#666; text-decoration:none; }
+        .back-link a:hover { color:#28a745; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Create New Album</h1>
+        <form action="/album/create" method="POST" enctype="multipart/form-data">
+          <label>Album Title</label>
+          <input type="text" name="title" required>
+          <label>Album Description</label>
+          <textarea name="description" rows="3" required></textarea>
+          <label>Album Thumbnail (.jpg, .png)</label>
+          <input type="file" name="thumbnail" accept="image/*" required>
+          <button type="submit">Create Album</button>
+        </form>
+        <div class="back-link">
+          <a href="/upload">← Back to Upload</a>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+    return new Response(html, { headers: { "Content-Type": "text/html" } });
+  }
+
+  if (path === "/album/create" && req.method === "POST") {
+    const formData = await req.formData();
+    const title = formData.get("title");
+    const description = formData.get("description");
+    const thumbnailFile = formData.get("thumbnail");
+
+    if (!title || !thumbnailFile) {
+      return new Response("Missing fields", { status: 400 });
+    }
+
+    const sanitize = (str) => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
+    const albumId = sanitize(title) + "_" + Date.now();
+    const albums = await getAlbums(env);
+
+    const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
+    const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
+    await env.media.put(thumbnailKey, thumbnailFile.stream());
+
+    albums[albumId] = {
+      id: albumId,
+      title: title,
+      description: description || "",
+      thumbnail: thumbnailKey,
+      created: Date.now(),
+      songs: [],
+      artists: []
+    };
+
+    await saveAlbums(env, albums);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Album Created - ZEDALBUMS</title>
+        <style>
+          body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; text-align:center; }
+          .success { background:white; padding:30px; border-radius:8px; max-width:500px; margin:0 auto; }
+          h1 { color:#28a745; }
+          .btn { display:inline-block; margin:10px; padding:12px 24px; background:#28a745; color:white; text-decoration:none; border-radius:4px; }
+          .btn:hover { background:#218838; }
+        </style>
+      </head>
+      <body>
+        <div class="success">
+          <h1>✅ Album Created Successfully!</h1>
+          <p style="font-size:1.2rem;">${title}</p>
+          <a href="/album/${albumId}" class="btn">View Album</a>
+          <a href="/upload" class="btn" style="background:#ff5500;">Upload Songs</a>
+          <p style="margin-top:20px;"><a href="/album/create">Create Another Album</a></p>
+        </div>
+      </body>
+      </html>
+    `;
+    return new Response(html, { headers: { "Content-Type": "text/html" } });
+  }
+
+  return new Response("Not found", { status: 404 });
+}
+
+// Need to import saveAlbums
+import { saveAlbums } from '../helpers/storage.js';
