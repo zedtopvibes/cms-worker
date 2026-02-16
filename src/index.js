@@ -8,7 +8,7 @@ import { handleSongs } from './routes/songs.js';
 import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
-import { handleAdmin } from './routes/admin/index.js';  // <-- ADD THIS
+import { handleAdmin } from './routes/admin/index.js';
 
 export default {
   async fetch(req, env, ctx) {
@@ -21,9 +21,27 @@ export default {
     }
 
     try {
-      // ===== ADMIN ROUTES (Highest priority) =====
+      // ===== ADMIN ROUTES (Reserved for administrators) =====
       if (path.startsWith("/admin")) {
         return await handleAdmin(req, env, ctx);
+      }
+      
+      // ===== USER ROUTES (Reserved for future user system) =====
+      // These routes are reserved and will be implemented later
+      if (path === "/login") {
+        return new Response("User login coming soon", { status: 501 });
+      }
+      
+      if (path === "/logout") {
+        return new Response("User logout coming soon", { status: 501 });
+      }
+      
+      if (path === "/signup") {
+        return new Response("User registration coming soon", { status: 501 });
+      }
+      
+      if (path === "/profile") {
+        return new Response("User profile coming soon", { status: 501 });
       }
       
       // ===== PUBLIC ROUTES =====
