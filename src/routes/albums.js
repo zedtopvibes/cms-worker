@@ -42,7 +42,7 @@ export async function handleAlbums(req, env, ctx) {
       return new Response("Album not found", { status: 404 });
     }
 
-    // ✅ TRACK PAGE VIEW - ADD THIS RIGHT HERE
+    // ✅ TRACK PAGE VIEW  - ADD THIS RIGHT HERE
     ctx.waitUntil(incrementPageView(env, 'album', albumId));
 
     const albumStats = await getAggregatedStats(album.songs || [], env);
