@@ -247,30 +247,46 @@ export async function handleAdminSongs(req, env, ctx, auth) {
 
 // Handle song deletion
 export async function handleAdminSongDelete(req, env, ctx, auth) {
+  console.log('🔍 ===== DELETE FUNCTION STARTED =====');
+  console.log('🔍 Request URL:', req.url);
+  
   const url = new URL(req.url);
   const baseName = url.searchParams.get('name');
+  console.log('🔍 Song baseName from URL:', baseName);
   
   if (!baseName) {
+    console.log('❌ No song specified');
     return { success: false, error: 'No song specified' };
   }
   
   try {
     // Get song title for logging
+    console.log('🔍 Fetching metadata for:', baseName);
     const meta = await getMetadata(env, baseName);
     const title = meta?.title || baseName;
+    console.log('🔍 Song title:', title);
     
     // Delete from R2
-    await env.media.delete(`songs/${baseName}.mp3`).catch(() => {});
-    await env.media.delete(`images/${baseName}.jpg`).catch(() => {});
-    await env.media.delete(`images/${baseName}.png`).catch(() => {});
-    await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
-    await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
+    console.log('🔍 Deleting files from R2...');
+    await env.media.delete(`songs/${baseName}.mp3`).catch(() => console.log('⚠️ Song file not found'));
+    await env.media.delete(`images/${baseName}.jpg`).catch(() => console.log('⚠️ JPG not found'));
+    await env.media.delete(`images/${baseName}.png`).catch(() => console.log('⚠️ PNG not found'));
+    await env.media.delete(`descriptions/${baseName}.txt`).catch(() => console.log('⚠️ Description not found'));
+    await env.media.delete(`metadata/${baseName}.json`).catch(() => console.log('⚠️ Metadata not found'));
+    console.log('✅ Files deleted from R2');
     
     // ✅ LOG ADMIN ACTIVITY
-    await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
+    console.log('🔍 About to log admin activity...');
+    console.log('🔍 Auth session ID:', auth?.session?.id);
+    console.log('🔍 Auth object:', JSON.stringify(auth));
     
+    const logResult = await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
+    console.log('🔍 logAdminActivity result:', logResult);
+    
+    console.log('✅ Delete function completed successfully');
     return { success: true };
   } catch (error) {
+    console.error('❌ Error in delete function:', error);
     return { success: false, error: error.message };
   }
 }
