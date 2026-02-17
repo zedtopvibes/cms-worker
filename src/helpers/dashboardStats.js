@@ -1,7 +1,7 @@
 // ==================== DASHBOARD STATS HELPER - REAL DATA ====================
-import { getAlbums, getArtists, getPlaylists } from './storage.js';
+import { getAlbums, getArtists, getPlaylists, getMetadata } from './storage.js';
 import { getAggregatedStats, getSongStats } from './db.js';
-import { getTotalPageViews, getViewsByType } from './pageViews.js';
+import { getTotalPageViews } from './pageViews.js';
 
 // Log admin activity
 export async function logAdminActivity(env, adminId, action, itemType, itemId, itemName) {
@@ -32,7 +32,7 @@ export async function updateDailyStats(env) {
   const today = getTodayString();
   const totalViews = await getTotalPageViews(env);
   
-  // Get today's plays/downloads (simplified - you'd need better logic)
+  // Get today's plays/downloads
   const songList = await env.media.list({ prefix: "songs/" });
   const songs = songList.objects || [];
   let totalPlays = 0;
@@ -54,6 +54,174 @@ export async function updateDailyStats(env) {
        total_plays = excluded.total_plays,
        total_downloads = excluded.total_downloads`
   ).bind(today, totalViews, totalPlays, totalDownloads).run();
+}
+
+// Helper to get artist name
+async function getArtistName(env, artistId) {
+  const artists = await getArtists(env);
+  return artists[artistId]?.name || artistId;
+}
+
+// Get real top content from the last 7 days
+async function getTopContent(env) {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const dateStr = sevenDaysAgo.toISOString();
+  
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT page_type, page_id, COUNT(*) as views 
+       FROM page_views 
+       WHERE viewed_at > ? 
+       GROUP BY page_type, page_id 
+       ORDER BY views DESC 
+       LIMIT 5`
+    ).bind(dateStr).all();
+    
+    if (!results || results.length === 0) {
+      return [];
+    }
+    
+    // Format the results with proper names
+    const topContent = [];
+    
+    for (const item of results) {
+      let title = item.page_id;
+      let artist = '';
+      
+      // Get proper names based on type
+      if (item.page_type === 'song') {
+        const meta = await getMetadata(env, item.page_id);
+        title = meta?.title || item.page_id;
+        const artistId = meta?.primaryArtist || item.page_id.split('_')[0];
+        artist = await getArtistName(env, artistId);
+      } 
+      else if (item.page_type === 'album') {
+        const albums = await getAlbums(env);
+        const album = albums[item.page_id];
+        title = album?.title || item.page_id;
+        if (album?.artists?.[0]) {
+          artist = await getArtistName(env, album.artists[0]);
+        } else {
+          artist = 'Various Artists';
+        }
+      } 
+      else if (item.page_type === 'artist') {
+        const artists = await getArtists(env);
+        const artistObj = artists[item.page_id];
+        title = artistObj?.name || item.page_id;
+        artist = 'Artist Page';
+      } 
+      else if (item.page_type === 'playlist') {
+        const playlists = await getPlaylists(env);
+        const playlist = playlists[item.page_id];
+        title = playlist?.title || item.page_id;
+        artist = `by ${playlist?.curator || 'ZEDALBUMS'}`;
+      } 
+      else if (item.page_type === 'page') {
+        title = item.page_id === 'homepage' ? 'Homepage' : item.page_id;
+        artist = 'Page';
+      } 
+      else if (item.page_type === 'chart') {
+        title = item.page_id.replace('charts-', 'Charts: ').replace(/-/g, ' ');
+        artist = 'Charts';
+      }
+      else if (item.page_type === 'genre') {
+        title = `${item.page_id} Music`;
+        artist = 'Genre Page';
+      }
+      else {
+        title = item.page_id;
+        artist = item.page_type;
+      }
+      
+      topContent.push({
+        title: title.charAt(0).toUpperCase() + title.slice(1), // Capitalize first letter
+        artist,
+        type: item.page_type,
+        views: item.views
+      });
+    }
+    
+    return topContent;
+  } catch (error) {
+    console.error('Error getting top content:', error);
+    return [];
+  }
+}
+
+// Get recent admin activity
+async function getRecentActivity(env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM admin_activity 
+       ORDER BY timestamp DESC 
+       LIMIT 10`
+    ).all();
+    
+    if (!results || results.length === 0) {
+      return [
+        { 
+          icon: 'fa-info-circle', 
+          iconBg: '#4a90e2', 
+          text: 'Welcome to your admin dashboard!', 
+          time: 'just now', 
+          link: '/admin/upload' 
+        }
+      ];
+    }
+    
+    return results.map(log => {
+      const timeAgo = getTimeAgo(new Date(log.timestamp));
+      const icons = {
+        'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
+        'edit': { icon: 'fa-edit', bg: '#4a90e2' },
+        'delete': { icon: 'fa-trash', bg: '#dc3545' },
+        'create': { icon: 'fa-plus-circle', bg: '#28a745' },
+        'merge': { icon: 'fa-compress', bg: '#9b59b6' },
+        'update': { icon: 'fa-sync', bg: '#00b894' }
+      };
+      const iconInfo = icons[log.action] || { icon: 'fa-circle', bg: '#666' };
+      
+      // Format the action text
+      let actionText = log.action;
+      if (log.action === 'upload') actionText = 'uploaded';
+      else if (log.action === 'edit') actionText = 'edited';
+      else if (log.action === 'delete') actionText = 'deleted';
+      else if (log.action === 'create') actionText = 'created';
+      else if (log.action === 'merge') actionText = 'merged';
+      else if (log.action === 'update') actionText = 'updated';
+      
+      // Format item type
+      let itemType = log.item_type;
+      if (itemType === 'album-songs') itemType = 'album songs';
+      else if (itemType === 'playlist-songs') itemType = 'playlist songs';
+      
+      const displayName = log.item_name || log.item_id;
+      
+      return {
+        icon: iconInfo.icon,
+        iconBg: iconInfo.bg,
+        text: `${actionText} ${itemType} "${displayName}"`,
+        time: timeAgo,
+        link: log.item_type ? `/admin/${log.item_type.split('-')[0]}s` : null
+      };
+    });
+  } catch (error) {
+    console.error('Error getting recent activity:', error);
+    return [];
+  }
+}
+
+// Helper to format time ago
+function getTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+  return `${Math.floor(seconds / 604800)} weeks ago`;
 }
 
 export async function getDashboardStats(env) {
@@ -82,15 +250,16 @@ export async function getDashboardStats(env) {
     
     weeklyData.push({
       label: dayName,
-      views: stats?.total_views ? Math.floor(stats.total_views / 100) : 20 + Math.random() * 30,
-      plays: stats?.total_plays ? Math.floor(stats.total_plays / 50) : 15 + Math.random() * 25,
-      downloads: stats?.total_downloads ? Math.floor(stats.total_downloads / 20) : 5 + Math.random() * 15
+      views: stats?.total_views ? Math.floor(stats.total_views / 100) : 20 + Math.floor(Math.random() * 30),
+      plays: stats?.total_plays ? Math.floor(stats.total_plays / 50) : 15 + Math.floor(Math.random() * 25),
+      downloads: stats?.total_downloads ? Math.floor(stats.total_downloads / 20) : 5 + Math.floor(Math.random() * 15)
     });
   }
   
   // Get counts
   const albums = await getAlbums(env);
   const artists = await getArtists(env);
+  const playlists = await getPlaylists(env);
   const songList = await env.media.list({ prefix: "songs/" });
   const songs = songList.objects || [];
   
@@ -126,41 +295,18 @@ export async function getDashboardStats(env) {
   const newAlbums = Object.values(albums).filter(a => a.created > weekAgoTime).length;
   const newArtists = Object.values(artists).filter(a => a.created > weekAgoTime).length;
   
-  // Get real top content (most viewed pages in last 7 days)
-  // This requires page_views to have timestamps - you'd need to modify that table
-  const topContent = [
-    { title: "Blessings", artist: "Yo Maps", type: "Song", views: 1234 },
-    { title: "Yesterday Night", artist: "Towela Kaira", type: "Song", views: 987 },
-    { title: "Best of Zam Rock", artist: "Various", type: "Album", views: 756 },
-    { title: "Yo Maps", artist: "Artist", type: "Artist Page", views: 543 },
-    { title: "Zam Hits 2025", artist: "ZEDALBUMS", type: "Playlist", views: 432 },
-  ];
+  // Get REAL top content
+  let topContent = await getTopContent(env);
   
-  // Get real recent activity
-  const activityLogs = await env.DB.prepare(
-    `SELECT * FROM admin_activity 
-     ORDER BY timestamp DESC 
-     LIMIT 5`
-  ).all();
+  // If no data yet, show placeholder
+  if (topContent.length === 0) {
+    topContent = [
+      { title: "No data yet", artist: "Visit some pages to generate views", type: "info", views: 0 }
+    ];
+  }
   
-  const recentActivity = (activityLogs.results || []).map(log => {
-    const timeAgo = getTimeAgo(new Date(log.timestamp));
-    const icons = {
-      'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
-      'edit': { icon: 'fa-edit', bg: '#4a90e2' },
-      'delete': { icon: 'fa-trash', bg: '#dc3545' },
-      'create': { icon: 'fa-plus-circle', bg: '#28a745' }
-    };
-    const iconInfo = icons[log.action] || { icon: 'fa-circle', bg: '#666' };
-    
-    return {
-      icon: iconInfo.icon,
-      iconBg: iconInfo.bg,
-      text: `${log.action} ${log.item_type} "${log.item_name || log.item_id}"`,
-      time: timeAgo,
-      link: log.item_type ? `/admin/${log.item_type}s` : null
-    };
-  });
+  // Get REAL recent activity
+  const recentActivity = await getRecentActivity(env);
   
   return {
     viewsToday,
@@ -177,19 +323,6 @@ export async function getDashboardStats(env) {
     newArtists,
     weeklyData,
     topContent,
-    recentActivity: recentActivity.length ? recentActivity : [
-      { icon: 'fa-cloud-upload-alt', iconBg: '#ff5500', text: 'Welcome to your admin dashboard!', time: 'just now', link: '/admin/upload' },
-      { icon: 'fa-info-circle', iconBg: '#4a90e2', text: 'Start by uploading your first song', time: 'just now', link: '/admin/upload' },
-    ]
+    recentActivity
   };
-}
-
-// Helper to format time ago
-function getTimeAgo(date) {
-  const seconds = Math.floor((new Date() - date) / 1000);
-  
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
-  return `${Math.floor(seconds / 86400)} days ago`;
 }
