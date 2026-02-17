@@ -1,31 +1,28 @@
 // ==================== ADMIN UPLOAD ====================
 import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSongToAlbum, addSongToPlaylist, addSongToArtist, addAlbumToArtist, addArtistToAlbum } from '../../helpers/storage.js';
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
   const artists = await getArtists(env);
   const playlists = await getPlaylists(env);
   
-  // Prepare albums data for JavaScript
-  const albumsData = Object.entries(albums).map(([id, album]) => {
-    return {
-      id,
-      title: album.title,
-      trackCount: album.songs?.length || 0,
-      artistCount: album.artists?.length || 0
-    };
-  });
+  const albumOptions = Object.keys(albums).map(id => {
+    const album = albums[id];
+    return `<option value="${id}">${album.title} (${album.songs?.length || 0} tracks)</option>`;
+  }).join("");
 
-  // Prepare playlists data for JavaScript
-  const playlistsData = Object.entries(playlists).map(([id, playlist]) => {
-    return {
-      id,
-      title: playlist.title,
-      songCount: playlist.songs?.length || 0,
-      curator: playlist.curator || 'ZEDALBUMS'
-    };
-  });
+  const artistOptions = Object.keys(artists).map(id => {
+    const artist = artists[id];
+    const songCount = artist.songs?.length || 0;
+    return `<option value="${id}">${artist.name} (${songCount} songs)</option>`;
+  }).join("");
+
+  const playlistOptions = Object.keys(playlists).map(id => {
+    const playlist = playlists[id];
+    return `<option value="${id}">${playlist.title} (${playlist.songs?.length || 0} songs)</option>`;
+  }).join("");
 
   const content = `
     <div style="max-width: 800px; margin: 0 auto;">
@@ -142,64 +139,30 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <textarea name="description" class="form-control" rows="3" placeholder="Song description..." required></textarea>
             </div>
             
-            <!-- Album Selection - Searchable -->
+            <!-- Album Selection -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-compact-disc" style="color: #ff5500; width: 20px;"></i>
                     Album (Optional)
                 </label>
-                
-                <div class="searchable-select-container">
-                    <div class="searchable-select" onclick="toggleDropdown('album')">
-                        <span id="albumSelectedDisplay">-- Select Album --</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    
-                    <div id="albumDropdown" class="searchable-dropdown" style="display: none;">
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="albumSearch" placeholder="Search albums..." onkeyup="filterAlbums()">
-                        </div>
-                        <div class="artist-list" id="albumList"></div>
-                        <div class="dropdown-footer">
-                            <button type="button" onclick="createNewAlbum()" class="btn btn-secondary btn-sm" style="width: 100%;">
-                                <i class="fas fa-plus-circle"></i> Create New Album
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                
-                <input type="hidden" name="album" id="albumInput" value="">
+                <select name="album" id="albumSelect" class="form-control">
+                    <option value="">-- Select Album --</option>
+                    ${albumOptions}
+                    <option value="__create_new__">➕ Create New Album</option>
+                </select>
             </div>
             
-            <!-- Playlist Selection - Searchable -->
+            <!-- Playlist Selection -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-list" style="color: #ff5500; width: 20px;"></i>
                     Add to Playlist (Optional)
                 </label>
-                
-                <div class="searchable-select-container">
-                    <div class="searchable-select" onclick="toggleDropdown('playlist')">
-                        <span id="playlistSelectedDisplay">-- Select Playlist --</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    
-                    <div id="playlistDropdown" class="searchable-dropdown" style="display: none;">
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="playlistSearch" placeholder="Search playlists..." onkeyup="filterPlaylists()">
-                        </div>
-                        <div class="artist-list" id="playlistList"></div>
-                        <div class="dropdown-footer">
-                            <button type="button" onclick="createNewPlaylist()" class="btn btn-secondary btn-sm" style="width: 100%;">
-                                <i class="fas fa-plus-circle"></i> Create New Playlist
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                
-                <input type="hidden" name="playlist" id="playlistInput" value="">
+                <select name="playlist" id="playlistSelect" class="form-control">
+                    <option value="">-- Select Playlist --</option>
+                    ${playlistOptions}
+                    <option value="__create_new__">➕ Create New Playlist</option>
+                </select>
             </div>
             
             <!-- Audio File -->
@@ -294,7 +257,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             background: #fff0e6; border-left: 3px solid #ff5500;
         }
         .artist-name { font-weight: 500; }
-        .artist-song-count, .item-meta {
+        .artist-song-count {
             font-size: 0.7rem; color: #999; background: #f0f0f0;
             padding: 2px 6px; border-radius: 12px;
         }
@@ -329,35 +292,19 @@ export async function handleAdminUpload(req, env, ctx, auth) {
     </style>
     
     <script>
-        // ===== DATA =====
+        // Artists data
         const artistsData = [
             ${Object.entries(artists).map(([id, artist]) => {
                 return `{ id: "${id}", name: "${artist.name.replace(/"/g, '\\"')}", songCount: ${artist.songs?.length || 0} }`;
             }).join(',')}
         ];
-        
-        const albumsData = [
-            ${albumsData.map(album => {
-                return `{ id: "${album.id}", title: "${album.title.replace(/"/g, '\\"')}", trackCount: ${album.trackCount} }`;
-            }).join(',')}
-        ];
-        
-        const playlistsData = [
-            ${playlistsData.map(playlist => {
-                return `{ id: "${playlist.id}", title: "${playlist.title.replace(/"/g, '\\"')}", songCount: ${playlist.songCount}, curator: "${playlist.curator.replace(/"/g, '\\"')}" }`;
-            }).join(',')}
-        ];
-        
-        // Sort data
         artistsData.sort((a, b) => a.name.localeCompare(b.name));
-        albumsData.sort((a, b) => a.title.localeCompare(b.title));
-        playlistsData.sort((a, b) => a.title.localeCompare(b.title));
         
-        // ===== STATE =====
+        // State
         let featuredArtists = [];
         let audioContext = null;
         
-        // ===== DOM ELEMENTS =====
+        // DOM Elements
         const audioFile = document.getElementById('audioFile');
         const durationContainer = document.getElementById('durationContainer');
         const durationText = document.getElementById('durationText');
@@ -368,22 +315,17 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const submitBtn = document.getElementById('submitBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
         
-        // ===== DROPDOWN FUNCTIONS =====
+        // Dropdown Functions
         function toggleDropdown(type) {
             document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
             const dropdown = document.getElementById(type + 'Dropdown');
             dropdown.style.display = 'block';
-            
-            if (type === 'album') renderAlbumList();
-            else if (type === 'playlist') renderPlaylistList();
-            else renderArtistList(type);
-            
+            renderArtistList(type);
             setTimeout(() => {
                 document.getElementById(type + 'Search').focus();
             }, 100);
         }
         
-        // ===== ARTIST FUNCTIONS =====
         function filterArtists(type) {
             renderArtistList(type);
         }
@@ -457,75 +399,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             document.getElementById(type + 'NewArtistName').value = '';
         }
         
-        // ===== ALBUM FUNCTIONS =====
-        function filterAlbums() {
-            renderAlbumList();
-        }
-        
-        function renderAlbumList() {
-            const searchTerm = document.getElementById('albumSearch').value.toLowerCase();
-            const listContainer = document.getElementById('albumList');
-            
-            const filtered = albumsData.filter(a => a.title.toLowerCase().includes(searchTerm));
-            
-            if (filtered.length === 0) {
-                listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No albums found</div>';
-                return;
-            }
-            
-            listContainer.innerHTML = filtered.map(album => \`
-                <div class="artist-item" onclick="selectAlbum('\${album.id}', '\${album.title.replace(/'/g, "\\\\'")}')">
-                    <span class="artist-name">\${album.title}</span>
-                    <span class="artist-song-count">\${album.trackCount} tracks</span>
-                </div>
-            \`).join('');
-        }
-        
-        function selectAlbum(id, title) {
-            document.getElementById('albumInput').value = id;
-            document.getElementById('albumSelectedDisplay').textContent = title;
-            document.getElementById('albumDropdown').style.display = 'none';
-        }
-        
-        function createNewAlbum() {
-            window.location.href = '/admin/album/create';
-        }
-        
-        // ===== PLAYLIST FUNCTIONS =====
-        function filterPlaylists() {
-            renderPlaylistList();
-        }
-        
-        function renderPlaylistList() {
-            const searchTerm = document.getElementById('playlistSearch').value.toLowerCase();
-            const listContainer = document.getElementById('playlistList');
-            
-            const filtered = playlistsData.filter(p => p.title.toLowerCase().includes(searchTerm));
-            
-            if (filtered.length === 0) {
-                listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No playlists found</div>';
-                return;
-            }
-            
-            listContainer.innerHTML = filtered.map(playlist => \`
-                <div class="artist-item" onclick="selectPlaylist('\${playlist.id}', '\${playlist.title.replace(/'/g, "\\\\'")}')">
-                    <span class="artist-name">\${playlist.title}</span>
-                    <span class="artist-song-count">\${playlist.songCount} songs • \${playlist.curator}</span>
-                </div>
-            \`).join('');
-        }
-        
-        function selectPlaylist(id, title) {
-            document.getElementById('playlistInput').value = id;
-            document.getElementById('playlistSelectedDisplay').textContent = title;
-            document.getElementById('playlistDropdown').style.display = 'none';
-        }
-        
-        function createNewPlaylist() {
-            window.location.href = '/admin/playlist/create';
-        }
-        
-        // ===== FEATURED TAGS =====
+        // Featured Tags
         function updateFeaturedTags() {
             const container = document.getElementById('selectedFeaturedContainer');
             const input = document.getElementById('featuredInput');
@@ -558,14 +432,23 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             updateFeaturedTags();
         };
         
-        // ===== CLOSE DROPDOWNS =====
+        // Close dropdown on outside click
         document.addEventListener('click', function(e) {
             if (!e.target.closest('.searchable-select-container')) {
                 document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
             }
         });
         
-        // ===== AUDIO DURATION =====
+        // Album/Playlist redirects
+        document.getElementById('albumSelect').addEventListener('change', function() {
+            if (this.value === '__create_new__') window.location.href = '/admin/album/create';
+        });
+        
+        document.getElementById('playlistSelect').addEventListener('change', function() {
+            if (this.value === '__create_new__') window.location.href = '/admin/playlist/create';
+        });
+        
+        // Audio duration detection
         audioFile.addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -611,7 +494,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             }
         });
         
-        // ===== FORM SUBMISSION =====
+        // Form submission
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             if (!durationInput.value || durationInput.value === '0' || durationInput.value === '0.000') {
                 if (!confirm('⚠️ No exact duration. Continue with estimate?')) {
@@ -622,7 +505,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             loadingOverlay.style.display = 'flex';
         });
         
-        // ===== INITIALIZE =====
+        // Initialize
         updateFeaturedTags();
     </script>
   `;
@@ -630,7 +513,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
   return content;
 }
 
-export async function handleAdminUploadPost(req, env, ctx) {
+export async function handleAdminUploadPost(req, env, ctx, auth) {
   try {
     const formData = await req.formData();
     const title = formData.get('title');
@@ -640,6 +523,7 @@ export async function handleAdminUploadPost(req, env, ctx) {
     const imageFile = formData.get('image');
     const albumId = formData.get('album');
     const playlistId = formData.get('playlist');
+    const artistNameInput = formData.get('artist_name');
     const featuredJson = formData.get('featured');
     const browserDuration = formData.get('duration');
 
@@ -655,17 +539,18 @@ export async function handleAdminUploadPost(req, env, ctx) {
       console.error('Error parsing featured artists:', e);
     }
 
-    // Process new featured artists
+    // Process any new featured artists (those starting with 'new_')
     const processedFeatured = [];
     for (const feat of featuredArtists) {
       if (feat.startsWith('new_')) {
-        const newName = feat.replace('new_', '');
-        const newId = sanitize(newName);
+        const newArtistName = feat.replace('new_', '');
+        const newArtistId = sanitize(newArtistName);
+        
         const artists = await getArtists(env);
-        if (!artists[newId]) {
-          artists[newId] = {
-            id: newId,
-            name: newName,
+        if (!artists[newArtistId]) {
+          artists[newArtistId] = {
+            id: newArtistId,
+            name: newArtistName,
             description: '',
             thumbnail: '',
             created: Date.now(),
@@ -674,7 +559,7 @@ export async function handleAdminUploadPost(req, env, ctx) {
           };
           await saveArtists(env, artists);
         }
-        processedFeatured.push(newId);
+        processedFeatured.push(newArtistId);
       } else {
         processedFeatured.push(feat);
       }
@@ -747,6 +632,9 @@ export async function handleAdminUploadPost(req, env, ctx) {
     for (const fid of processedFeatured) {
       await addSongToArtist(env, fid, baseName);
     }
+
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'upload', 'song', baseName, title);
 
     return {
       success: true,
