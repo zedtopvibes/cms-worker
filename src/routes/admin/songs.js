@@ -1,8 +1,9 @@
-// ==================== ADMIN  SONGS MANAGEMENT ====================
+// ==================== ADMIN SONGS MANAGEMENT ====================
 import { getArtists, getAlbums, getMetadata, saveMetadata } from '../../helpers/storage.js';
 import { getSongStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 export async function handleAdminSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -242,7 +243,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   return content;
 }
 
-// ===== ADD THESE MISSING FUNCTIONS =====
+// ===== EDIT/DELETE FUNCTIONS WITH ACTIVITY LOGGING =====
 
 // Handle song deletion
 export async function handleAdminSongDelete(req, env, ctx, auth) {
@@ -254,12 +255,19 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
   }
   
   try {
+    // Get song title for logging
+    const meta = await getMetadata(env, baseName);
+    const title = meta?.title || baseName;
+    
     // Delete from R2
     await env.media.delete(`songs/${baseName}.mp3`).catch(() => {});
     await env.media.delete(`images/${baseName}.jpg`).catch(() => {});
     await env.media.delete(`images/${baseName}.png`).catch(() => {});
     await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
     await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
     
     return { success: true };
   } catch (error) {
@@ -386,7 +394,10 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
     
-    return { success: true, redirect: '/admin/songs' };
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
+    
+    return { success: true, redirect: '/admin/songs?updated=1' };
   } catch (error) {
     return { success: false, error: error.message };
   }
