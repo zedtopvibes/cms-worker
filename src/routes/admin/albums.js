@@ -5,6 +5,7 @@ import { getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
+// ===== LIST ALL ALBUMS =====
 export async function handleAdminAlbums(req, env, ctx, auth) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
@@ -265,9 +266,85 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
   return content;
 }
 
-// ===== CREATE/EDIT/DELETE/SONGS FUNCTIONS WITH ACTIVITY LOGGING =====
+// ===== CREATE NEW ALBUM PAGE =====
+export async function handleAdminAlbumCreate(req, env, ctx, auth) {
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #ff5500;"></i> Create New Album</h2>
+        
+        <form action="/admin/album/create" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Album Title</label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. My Awesome Album" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Album description..." required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Album Thumbnail</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" required>
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Create Album
+                </button>
+                <a href="/admin/albums" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+  `;
+  
+  return content;
+}
 
-// Edit album page
+// ===== HANDLE ALBUM CREATION POST =====
+export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const title = formData.get('title');
+  const description = formData.get('description');
+  const thumbnailFile = formData.get('thumbnail');
+
+  if (!title || !thumbnailFile) {
+    return { success: false, error: 'Missing required fields' };
+  }
+
+  const sanitize = (str) => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
+  const albumId = sanitize(title) + "_" + Date.now();
+  const albums = await getAlbums(env);
+
+  const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+  const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
+  await env.media.put(thumbnailKey, thumbnailFile.stream());
+
+  albums[albumId] = {
+    id: albumId,
+    title: title,
+    description: description || "",
+    thumbnail: thumbnailKey,
+    created: Date.now(),
+    songs: [],
+    artists: []
+  };
+
+  await saveAlbums(env, albums);
+  
+  // Log activity
+  await logAdminActivity(env, auth.session.id, 'create', 'album', albumId, title);
+
+  return { 
+    success: true, 
+    redirect: `/admin/albums?created=1` 
+  };
+}
+
+// ===== EDIT ALBUM PAGE =====
 export async function handleAdminAlbumEdit(req, env, ctx, auth) {
   const url = new URL(req.url);
   const albumId = url.searchParams.get('id');
@@ -350,7 +427,7 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle album edit submission
+// ===== HANDLE ALBUM EDIT POST =====
 export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const albumId = formData.get('albumId');
@@ -394,7 +471,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   }
 }
 
-// Handle album deletion
+// ===== HANDLE ALBUM DELETION =====
 export async function handleAdminAlbumDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const albumId = url.searchParams.get('id');
@@ -425,7 +502,7 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
   }
 }
 
-// Manage album songs page
+// ===== MANAGE ALBUM SONGS PAGE =====
 export async function handleAdminAlbumSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
   const albumId = url.searchParams.get('id');
@@ -454,11 +531,13 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
       const inAlbum = album.songs?.includes(baseName);
       const artistId = baseName.split('_')[0];
       const artistName = artists[artistId]?.name || artistId;
+      const meta = await getMetadata(env, baseName);
+      const title = meta?.title || baseName;
       
       return `
         <tr>
             <td><input type="checkbox" name="songs" value="${baseName}" ${inAlbum ? 'checked' : ''}></td>
-            <td>${baseName}</td>
+            <td>${title}</td>
             <td>${artistName}</td>
             <td>${inAlbum ? '<span class="badge badge-success">In Album</span>' : '-'}</td>
         </tr>
@@ -476,6 +555,7 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
             <div style="margin-bottom: 20px;">
                 <button type="button" onclick="checkAll()" class="btn btn-secondary btn-sm">Select All</button>
                 <button type="button" onclick="uncheckAll()" class="btn btn-secondary btn-sm">Deselect All</button>
+                <span style="margin-left: 15px;">Total Songs: ${album.songs?.length || 0}</span>
             </div>
             
             <div class="table-responsive">
@@ -490,6 +570,14 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
                     </thead>
                     <tbody>
                         ${songOptions.join('')}
+                        ${songOptions.length === 0 ? `
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i><br>
+                                    No songs found
+                                </td>
+                            </tr>
+                        ` : ''}
                     </tbody>
                 </table>
             </div>
@@ -532,7 +620,7 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle album songs update
+// ===== HANDLE ALBUM SONGS UPDATE =====
 export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const albumId = formData.get('albumId');
@@ -562,6 +650,8 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
     return { success: false, error: error.message };
   }
 }
+
+// ===== HELPER FUNCTIONS =====
 
 // Mobile card with views
 function generateMobileCard(album) {
@@ -639,3 +729,6 @@ function generatePagination(currentPage, totalPages, search, sort) {
   html += '</div>';
   return html;
 }
+
+// Import getMetadata for songs page
+import { getMetadata } from '../../helpers/storage.js';
