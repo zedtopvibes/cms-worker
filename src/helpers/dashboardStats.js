@@ -27,7 +27,7 @@ function getDateString(daysAgo) {
   return date.toISOString().split('T')[0];
 }
 
-// Update daily stats - FIXED to use daily totals
+// Update daily stats - runs at midnight
 export async function updateDailyStats(env) {
   const today = getTodayString();
   
@@ -256,16 +256,53 @@ export async function getDashboardStats(env) {
   const today = getTodayString();
   const yesterday = getDateString(1);
   
-  // Get today's stats from daily_stats table
-  const todayStats = await env.DB.prepare(
-    `SELECT * FROM daily_stats WHERE date = ?`
-  ).bind(today).first();
+  // ===== LIVE DATA FOR TODAY (real-time) =====
+  const { results: liveViews } = await env.DB.prepare(
+    `SELECT COUNT(*) as total FROM page_views 
+     WHERE date(last_viewed) = date('now')`
+  ).all();
   
+  const { results: livePlays } = await env.DB.prepare(
+    `SELECT COUNT(*) as total FROM song_stats 
+     WHERE date(last_played) = date('now')`
+  ).all();
+  
+  const { results: liveDownloads } = await env.DB.prepare(
+    `SELECT COUNT(*) as total FROM song_stats 
+     WHERE date(last_downloaded_date) = date('now')`
+  ).all();
+  
+  const viewsToday = liveViews?.[0]?.total || 0;
+  const playsToday = livePlays?.[0]?.total || 0;
+  const downloadsToday = liveDownloads?.[0]?.total || 0;
+  
+  // ===== HISTORICAL DATA FOR COMPARISON =====
   const yesterdayStats = await env.DB.prepare(
     `SELECT * FROM daily_stats WHERE date = ?`
   ).bind(yesterday).first();
   
-  // Get weekly data for chart (last 7 days)
+  const viewsYesterday = yesterdayStats?.total_views || 0;
+  const playsYesterday = yesterdayStats?.total_plays || 0;
+  const downloadsYesterday = yesterdayStats?.total_downloads || 0;
+  
+  // Calculate trends
+  const viewsTrend = viewsToday > viewsYesterday ? '↑' : viewsToday < viewsYesterday ? '↓' : '→';
+  const playsTrend = playsToday > playsYesterday ? '↑' : playsToday < playsYesterday ? '↓' : '→';
+  const downloadsTrend = downloadsToday > downloadsYesterday ? '↑' : downloadsToday < downloadsYesterday ? '↓' : '→';
+  
+  const viewsTrendValue = viewsYesterday > 0 
+    ? `${viewsToday > viewsYesterday ? '+' : ''}${Math.round((viewsToday - viewsYesterday) / viewsYesterday * 100)}%`
+    : viewsToday > 0 ? 'new' : '0';
+  
+  const playsTrendValue = playsYesterday > 0
+    ? `${playsToday > playsYesterday ? '+' : ''}${Math.round((playsToday - playsYesterday) / playsYesterday * 100)}%`
+    : playsToday > 0 ? 'new' : '0';
+  
+  const downloadsTrendValue = downloadsYesterday > 0
+    ? `${downloadsToday > downloadsYesterday ? '+' : ''}${Math.round((downloadsToday - downloadsYesterday) / downloadsYesterday * 100)}%`
+    : downloadsToday > 0 ? 'new' : '0';
+  
+  // Get weekly data for chart (last 7 days from daily_stats)
   const weeklyData = [];
   for (let i = 6; i >= 0; i--) {
     const date = getDateString(i);
@@ -291,32 +328,6 @@ export async function getDashboardStats(env) {
   const songs = songList.objects || [];
   const totalSongs = songs.length;
   
-  // Calculate today's values from daily_stats (not all-time)
-  const viewsToday = todayStats?.total_views || 0;
-  const playsToday = todayStats?.total_plays || 0;
-  const downloadsToday = todayStats?.total_downloads || 0;
-  
-  const viewsYesterday = yesterdayStats?.total_views || 0;
-  const playsYesterday = yesterdayStats?.total_plays || 0;
-  const downloadsYesterday = yesterdayStats?.total_downloads || 0;
-  
-  // Calculate trends
-  const viewsTrend = viewsToday > viewsYesterday ? '↑' : viewsToday < viewsYesterday ? '↓' : '→';
-  const playsTrend = playsToday > playsYesterday ? '↑' : playsToday < playsYesterday ? '↓' : '→';
-  const downloadsTrend = downloadsToday > downloadsYesterday ? '↑' : downloadsToday < downloadsYesterday ? '↓' : '→';
-  
-  const viewsTrendValue = viewsYesterday > 0 
-    ? `${viewsToday > viewsYesterday ? '+' : ''}${Math.round((viewsToday - viewsYesterday) / viewsYesterday * 100)}%`
-    : viewsToday > 0 ? 'new' : '0';
-  
-  const playsTrendValue = playsYesterday > 0
-    ? `${playsToday > playsYesterday ? '+' : ''}${Math.round((playsToday - playsYesterday) / playsYesterday * 100)}%`
-    : playsToday > 0 ? 'new' : '0';
-  
-  const downloadsTrendValue = downloadsYesterday > 0
-    ? `${downloadsToday > downloadsYesterday ? '+' : ''}${Math.round((downloadsToday - downloadsYesterday) / downloadsYesterday * 100)}%`
-    : downloadsToday > 0 ? 'new' : '0';
-  
   // Get new items this week
   const weekAgoTime = Date.now() - (7 * 24 * 60 * 60 * 1000);
   const newSongs = songs.filter(s => new Date(s.uploaded).getTime() > weekAgoTime).length;
@@ -328,7 +339,6 @@ export async function getDashboardStats(env) {
   
   // If no data yet, show placeholder
   if (topContent.length === 0) {
-    // Try to get any data at all
     const { results } = await env.DB.prepare(
       `SELECT page_type, page_id, SUM(views) as views 
        FROM page_views 
