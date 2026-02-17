@@ -1,8 +1,9 @@
-// ==================== ADMIN  ALBUMS MANAGEMENT ====================
+// ==================== ADMIN ALBUMS MANAGEMENT ====================
 import { getAlbums, getArtists, saveAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 export async function handleAdminAlbums(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -264,7 +265,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
   return content;
 }
 
-// ===== ADD THESE MISSING FUNCTIONS =====
+// ===== CREATE/EDIT/DELETE/SONGS FUNCTIONS WITH ACTIVITY LOGGING =====
 
 // Edit album page
 export async function handleAdminAlbumEdit(req, env, ctx, auth) {
@@ -372,7 +373,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     // Update album details
     albums[albumId].title = title;
     albums[albumId].description = description;
-    albums[albumId].artists = artists.filter(a => a); // Remove empty values
+    albums[albumId].artists = artists.filter(a => a);
     
     // Upload new thumbnail if provided
     if (thumbnailFile && thumbnailFile.size > 0) {
@@ -383,6 +384,9 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     }
     
     await saveAlbums(env, albums);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'edit', 'album', albumId, title);
     
     return { success: true, redirect: '/admin/albums?updated=1' };
   } catch (error) {
@@ -401,6 +405,7 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
   
   try {
     const albums = await getAlbums(env);
+    const albumTitle = albums[albumId]?.title || 'Unknown album';
     
     // Delete thumbnail if exists
     if (albums[albumId]?.thumbnail) {
@@ -410,6 +415,9 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
     // Remove album from index
     delete albums[albumId];
     await saveAlbums(env, albums);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'delete', 'album', albumId, albumTitle);
     
     return { success: true };
   } catch (error) {
@@ -536,6 +544,7 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
   
   try {
     const albums = await getAlbums(env);
+    const albumTitle = albums[albumId]?.title || 'Unknown album';
     
     if (!albums[albumId]) {
       return { success: false, error: 'Album not found' };
@@ -544,6 +553,9 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
     // Update album songs
     albums[albumId].songs = selectedSongs;
     await saveAlbums(env, albums);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'update', 'album-songs', albumId, `Updated songs for ${albumTitle}`);
     
     return { success: true, redirect: '/admin/albums?updated=1' };
   } catch (error) {
