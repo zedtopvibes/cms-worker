@@ -4,39 +4,55 @@ import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
 import { handleAdminUpload, handleAdminUploadPost } from './upload.js';
 import { formatDuration } from '../../helpers/formatting.js';
+
+// ===== SONGS IMPORTS =====
 import { 
   handleAdminSongs, 
   handleAdminSongDelete, 
   handleAdminSongEdit, 
   handleAdminSongEditPost 
 } from './songs.js';
+
+// ===== ALBUMS IMPORTS =====
 import { 
   handleAdminAlbums,
+  handleAdminAlbumCreate,
+  handleAdminAlbumCreatePost,
   handleAdminAlbumEdit,
   handleAdminAlbumEditPost,
   handleAdminAlbumDelete,
   handleAdminAlbumSongs,
   handleAdminAlbumSongsPost
 } from './albums.js';
+
+// ===== ARTISTS IMPORTS =====
 import { 
   handleAdminArtists,
+  handleAdminArtistCreate,
+  handleAdminArtistCreatePost,
   handleAdminArtistEdit,
   handleAdminArtistEditPost,
   handleAdminArtistDelete,
   handleAdminArtistMerge,
   handleAdminArtistMergePost
 } from './artists.js';
+
+// ===== PLAYLISTS IMPORTS =====
 import { 
   handleAdminPlaylists,
+  handleAdminPlaylistCreate,
+  handleAdminPlaylistCreatePost,
   handleAdminPlaylistEdit,
   handleAdminPlaylistEditPost,
   handleAdminPlaylistDelete,
   handleAdminPlaylistSongs,
   handleAdminPlaylistSongsPost
 } from './playlists.js';
+
+// ===== STATISTICS IMPORTS =====
 import { handleAdminStats } from './stats.js';
 
-// ===== IMPORTS FOR DASHBOARD WIDGETS =====
+// ===== DASHBOARD IMPORTS =====
 import { getDashboardStats } from '../../helpers/dashboardStats.js';
 import { formatNumber } from '../../helpers/formatting.js';
 
@@ -327,6 +343,81 @@ export async function handleAdmin(req, env, ctx) {
       return new Response(adminLayout('Dashboard', content, auth, 'dashboard'), {
         headers: { 'Content-Type': 'text/html' }
       });
+  }
+
+  // ===== CREATE ALBUM PAGE =====
+  if (path === '/album/create') {
+    if (req.method === 'GET') {
+      const content = await handleAdminAlbumCreate(req, env, ctx, auth);
+      return new Response(adminLayout('Create Album', content, auth, 'albums'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+    
+    if (req.method === 'POST') {
+      const result = await handleAdminAlbumCreatePost(req, env, ctx, auth);
+      if (result.success) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: result.redirect || '/admin/albums?created=1' }
+        });
+      } else {
+        const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+        return new Response(adminLayout('Error', content, auth, 'albums'), {
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+    }
+  }
+
+  // ===== CREATE ARTIST PAGE =====
+  if (path === '/artist/create') {
+    if (req.method === 'GET') {
+      const content = await handleAdminArtistCreate(req, env, ctx, auth);
+      return new Response(adminLayout('Create Artist', content, auth, 'artists'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+    
+    if (req.method === 'POST') {
+      const result = await handleAdminArtistCreatePost(req, env, ctx, auth);
+      if (result.success) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: result.redirect || '/admin/artists?created=1' }
+        });
+      } else {
+        const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+        return new Response(adminLayout('Error', content, auth, 'artists'), {
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+    }
+  }
+
+  // ===== CREATE PLAYLIST PAGE =====
+  if (path === '/playlist/create') {
+    if (req.method === 'GET') {
+      const content = await handleAdminPlaylistCreate(req, env, ctx, auth);
+      return new Response(adminLayout('Create Playlist', content, auth, 'playlists'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+    
+    if (req.method === 'POST') {
+      const result = await handleAdminPlaylistCreatePost(req, env, ctx, auth);
+      if (result.success) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: result.redirect || '/admin/playlists?created=1' }
+        });
+      } else {
+        const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+        return new Response(adminLayout('Error', content, auth, 'playlists'), {
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+    }
   }
 
   // ===== UPLOAD SONG =====
@@ -686,6 +777,26 @@ export async function handleAdmin(req, env, ctx) {
         });
       }
     }
+  }
+
+  // ===== SEARCH PAGE (placeholder) =====
+  if (path === '/search') {
+    const content = `
+      <div style="text-align: center; padding: 50px 20px;">
+          <i class="fas fa-search" style="font-size: 4rem; color: #ccc; margin-bottom: 20px;"></i>
+          <h2>Search Admin Content</h2>
+          <p style="color: #666; margin-bottom: 30px;">Search functionality coming soon...</p>
+          <div style="max-width: 500px; margin: 0 auto;">
+              <div style="display: flex; gap: 10px;">
+                  <input type="text" class="form-control" placeholder="Search..." disabled>
+                  <button class="btn btn-primary" disabled>Search</button>
+              </div>
+          </div>
+      </div>
+    `;
+    return new Response(adminLayout('Search', content, auth, 'search'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
   }
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
