@@ -1,7 +1,7 @@
-// ==================== ADMIN STATISTICS  - MOBILE OPTIMIZED WITH PAGE VIEWS ====================
+// ==================== ADMIN STATISTICS - MOBILE OPTIMIZED WITH PAGE VIEWS ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats, getSongStats } from '../../helpers/db.js';
-import { getPopularPages, getTotalPageViews, getViewsByType } from '../../helpers/pageViews.js';
+import { getPopularPages, getTotalPageViews, getViewsByType, getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber, formatDuration } from '../../helpers/formatting.js';
 
 export async function handleAdminStats(req, env, ctx, auth) {
@@ -250,7 +250,7 @@ function renderOverview(totalSongs, albums, artists, playlists, totalStats, tota
         </div>
     </div>
     
-    <!-- PAGE VIEWS SECTION - NEW -->
+    <!-- PAGE VIEWS SECTION -->
     <div style="background: white; border-radius: 12px; padding: 15px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h4 style="font-size: 1rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> Page Views</h4>
@@ -715,6 +715,3 @@ async function renderPlaylistStats(env, playlists) {
     </div>
   `;
 }
-
-// Import getPageViews for use in other render functions
-import { getPageViews } from '../../helpers/pageViews.js';
