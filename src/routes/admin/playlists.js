@@ -1,8 +1,9 @@
-// ==================== ADMIN  PLAYLISTS MANAGEMENT ====================
+// ==================== ADMIN PLAYLISTS MANAGEMENT ====================
 import { getPlaylists, savePlaylists, getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 export async function handleAdminPlaylists(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -267,7 +268,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
   return content;
 }
 
-// ===== ADD THESE MISSING FUNCTIONS =====
+// ===== CREATE/EDIT/DELETE/SONGS FUNCTIONS WITH ACTIVITY LOGGING =====
 
 // Edit playlist page
 export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
@@ -378,6 +379,9 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
     
     await savePlaylists(env, playlists);
     
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'edit', 'playlist', playlistId, title);
+    
     return { success: true, redirect: '/admin/playlists?updated=1' };
   } catch (error) {
     return { success: false, error: error.message };
@@ -395,6 +399,7 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
   
   try {
     const playlists = await getPlaylists(env);
+    const playlistTitle = playlists[playlistId]?.title || 'Unknown playlist';
     
     // Delete thumbnail if exists
     if (playlists[playlistId]?.thumbnail) {
@@ -404,6 +409,9 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
     // Remove playlist from index
     delete playlists[playlistId];
     await savePlaylists(env, playlists);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'delete', 'playlist', playlistId, playlistTitle);
     
     return { success: true };
   } catch (error) {
@@ -546,6 +554,7 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
   
   try {
     const playlists = await getPlaylists(env);
+    const playlistTitle = playlists[playlistId]?.title || 'Unknown playlist';
     
     if (!playlists[playlistId]) {
       return { success: false, error: 'Playlist not found' };
@@ -555,6 +564,10 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
     playlists[playlistId].songs = selectedSongs;
     playlists[playlistId].updated = Date.now();
     await savePlaylists(env, playlists);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'update', 'playlist-songs', playlistId, 
+      `Updated songs for ${playlistTitle}`);
     
     return { success: true, redirect: '/admin/playlists?updated=1' };
   } catch (error) {
