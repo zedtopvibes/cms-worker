@@ -1,4 +1,4 @@
-// ==================== D1 DATABASE FUNCTIONS ====================
+// ==================== D1 DATABASE FUNCTIONS ==================== 
 // Handles all database operations for stats
 
 export async function incrementPlay(songKey, env) {
