@@ -1,4 +1,4 @@
-// ==================== ADMIN MAIN  ROUTER ====================
+// ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
@@ -51,6 +51,7 @@ import {
 
 // ===== STATISTICS IMPORTS =====
 import { handleAdminStats } from './stats.js';
+import { handleAdminSearch } from './search.js';
 
 // ===== DASHBOARD IMPORTS =====
 import { getDashboardStats } from '../../helpers/dashboardStats.js';
@@ -61,14 +62,11 @@ export async function handleAdmin(req, env, ctx) {
   const path = url.pathname.replace('/admin', '') || '/';
 
   // ===== PUBLIC ADMIN ROUTES (No login required) =====
-  
-  // Admin login page - /admin/login
   if (path === '/login') {
     if (req.method === 'GET') return await handleAdminLogin(req, env, ctx);
     if (req.method === 'POST') return await handleAdminLoginPost(req, env, ctx);
   }
 
-  // Admin logout - /admin/logout
   if (path === '/logout') {
     return await handleAdminLogout(req, env, ctx);
   }
@@ -79,7 +77,6 @@ export async function handleAdmin(req, env, ctx) {
 
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
-    // Get real-time stats
     const stats = await getDashboardStats(env);
     
     const content = `
@@ -153,27 +150,22 @@ export async function handleAdmin(req, env, ctx) {
                       <i class="fas fa-cloud-upload-alt" style="font-size: 1.5rem; color: #ff5500;"></i>
                       <span>Upload Song</span>
                   </a>
-                  
                   <a href="/admin/album/create" class="quick-action-btn">
                       <i class="fas fa-compact-disc" style="font-size: 1.5rem; color: #28a745;"></i>
                       <span>New Album</span>
                   </a>
-                  
                   <a href="/admin/artist/create" class="quick-action-btn">
                       <i class="fas fa-microphone" style="font-size: 1.5rem; color: #9b59b6;"></i>
                       <span>New Artist</span>
                   </a>
-                  
                   <a href="/admin/playlist/create" class="quick-action-btn">
                       <i class="fas fa-list" style="font-size: 1.5rem; color: #4a90e2;"></i>
                       <span>New Playlist</span>
                   </a>
-                  
                   <a href="/admin/stats" class="quick-action-btn">
                       <i class="fas fa-chart-line" style="font-size: 1.5rem; color: #e67e22;"></i>
                       <span>View Stats</span>
                   </a>
-                  
                   <a href="/admin/search" class="quick-action-btn">
                       <i class="fas fa-search" style="font-size: 1.5rem; color: #e74c3c;"></i>
                       <span>Search</span>
@@ -192,7 +184,6 @@ export async function handleAdmin(req, env, ctx) {
                   </div>
               </div>
               
-              <!-- Simple Bar Chart -->
               <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 150px; margin-bottom: 10px;">
                   ${stats.weeklyData.map(day => `
                       <div style="display: flex; flex-direction: column; align-items: center; width: 12%;">
@@ -353,7 +344,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminAlbumCreatePost(req, env, ctx, auth);
       if (result.success) {
@@ -378,7 +368,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminArtistCreatePost(req, env, ctx, auth);
       if (result.success) {
@@ -403,7 +392,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminPlaylistCreatePost(req, env, ctx, auth);
       if (result.success) {
@@ -428,10 +416,8 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminUploadPost(req, env, ctx, auth);
-      
       if (!result.success) {
         const content = `
           <div class="alert alert-danger" style="margin-bottom: 20px;">
@@ -446,7 +432,6 @@ export async function handleAdmin(req, env, ctx) {
           headers: { 'Content-Type': 'text/html' }
         });
       }
-      
       const content = `
         <div style="text-align: center; padding: 20px 10px;">
             <div style="background: #d4edda; color: #155724; padding: 25px 20px; border-radius: 12px; margin-bottom: 30px;">
@@ -459,7 +444,6 @@ export async function handleAdmin(req, env, ctx) {
                     <strong>Duration:</strong> ${formatDuration(result.duration)}
                 </div>
             </div>
-            
             <div style="display: flex; flex-direction: column; gap: 12px; max-width: 320px; margin: 0 auto;">
                 <a href="/song/${encodeURIComponent(result.baseName + '.mp3')}" class="btn btn-primary" target="_blank" style="padding: 16px;">
                     <i class="fas fa-play"></i> View Song
@@ -483,7 +467,6 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
       `;
-      
       return new Response(adminLayout('Upload Successful', content, auth, 'upload'), {
         headers: { 'Content-Type': 'text/html' }
       });
@@ -508,7 +491,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminAlbumEditPost(req, env, ctx, auth);
       if (result.success) {
@@ -550,7 +532,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminAlbumSongsPost(req, env, ctx, auth);
       if (result.success) {
@@ -585,7 +566,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminArtistEditPost(req, env, ctx, auth);
       if (result.success) {
@@ -627,7 +607,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminArtistMergePost(req, env, ctx, auth);
       if (result.success) {
@@ -662,7 +641,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminPlaylistEditPost(req, env, ctx, auth);
       if (result.success) {
@@ -704,7 +682,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminPlaylistSongsPost(req, env, ctx, auth);
       if (result.success) {
@@ -762,7 +739,6 @@ export async function handleAdmin(req, env, ctx) {
         headers: { 'Content-Type': 'text/html' }
       });
     }
-    
     if (req.method === 'POST') {
       const result = await handleAdminSongEditPost(req, env, ctx, auth);
       if (result.success) {
@@ -779,21 +755,9 @@ export async function handleAdmin(req, env, ctx) {
     }
   }
 
-  // ===== SEARCH PAGE (placeholder) =====
+  // ===== SEARCH =====
   if (path === '/search') {
-    const content = `
-      <div style="text-align: center; padding: 50px 20px;">
-          <i class="fas fa-search" style="font-size: 4rem; color: #ccc; margin-bottom: 20px;"></i>
-          <h2>Search Admin Content</h2>
-          <p style="color: #666; margin-bottom: 30px;">Search functionality coming soon...</p>
-          <div style="max-width: 500px; margin: 0 auto;">
-              <div style="display: flex; gap: 10px;">
-                  <input type="text" class="form-control" placeholder="Search..." disabled>
-                  <button class="btn btn-primary" disabled>Search</button>
-              </div>
-          </div>
-      </div>
-    `;
+    const content = await handleAdminSearch(req, env, ctx, auth);
     return new Response(adminLayout('Search', content, auth, 'search'), {
       headers: { 'Content-Type': 'text/html' }
     });
