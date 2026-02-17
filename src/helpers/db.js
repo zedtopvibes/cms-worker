@@ -18,6 +18,7 @@ export async function incrementDownload(songKey, env) {
      ON CONFLICT(song_key) DO UPDATE SET 
        downloads = downloads + 1,
        last_downloaded = CURRENT_TIMESTAMP`
+last_downloaded_date = date('now')`  // This line fixes it!
   ).bind(songKey).run();
 }
 
