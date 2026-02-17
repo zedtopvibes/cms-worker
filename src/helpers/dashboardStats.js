@@ -27,33 +27,47 @@ function getDateString(daysAgo) {
   return date.toISOString().split('T')[0];
 }
 
-// Update daily stats (call this daily via cron)
+// Update daily stats - FIXED to use daily totals
 export async function updateDailyStats(env) {
   const today = getTodayString();
-  const totalViews = await getTotalPageViews(env);
   
-  // Get today's plays/downloads
-  const songList = await env.media.list({ prefix: "songs/" });
-  const songs = songList.objects || [];
-  let totalPlays = 0;
-  let totalDownloads = 0;
-  
-  for (const song of songs) {
-    const fileName = song.key.split('/')[1];
-    const baseName = fileName.replace('.mp3', '');
-    const stats = await getSongStats(baseName, env);
-    totalPlays += stats.plays;
-    totalDownloads += stats.downloads;
+  try {
+    // Get TODAY'S views only
+    const { results: viewsToday } = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM page_views 
+       WHERE date(viewed_at) = date('now')`
+    ).all();
+    
+    // Get TODAY'S plays
+    const { results: playsToday } = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM song_stats 
+       WHERE date(last_played) = date('now')`
+    ).all();
+    
+    // Get TODAY'S downloads
+    const { results: downloadsToday } = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM song_stats 
+       WHERE date(last_downloaded) = date('now')`
+    ).all();
+    
+    const todayViews = viewsToday?.[0]?.total || 0;
+    const todayPlays = playsToday?.[0]?.total || 0;
+    const todayDownloads = downloadsToday?.[0]?.total || 0;
+    
+    // Insert or update daily stats
+    await env.DB.prepare(
+      `INSERT INTO daily_stats (date, total_views, total_plays, total_downloads)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(date) DO UPDATE SET
+         total_views = excluded.total_views,
+         total_plays = excluded.total_plays,
+         total_downloads = excluded.total_downloads`
+    ).bind(today, todayViews, todayPlays, todayDownloads).run();
+    
+    console.log(`✅ Daily stats updated: ${todayViews} views, ${todayPlays} plays, ${todayDownloads} downloads`);
+  } catch (error) {
+    console.error('❌ Error updating daily stats:', error);
   }
-  
-  await env.DB.prepare(
-    `INSERT INTO daily_stats (date, total_views, total_plays, total_downloads)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(date) DO UPDATE SET
-       total_views = excluded.total_views,
-       total_plays = excluded.total_plays,
-       total_downloads = excluded.total_downloads`
-  ).bind(today, totalViews, totalPlays, totalDownloads).run();
 }
 
 // Helper to get artist name
@@ -241,7 +255,6 @@ function getTimeAgo(date) {
 export async function getDashboardStats(env) {
   const today = getTodayString();
   const yesterday = getDateString(1);
-  const weekAgo = getDateString(7);
   
   // Get today's stats from daily_stats table
   const todayStats = await env.DB.prepare(
@@ -252,7 +265,7 @@ export async function getDashboardStats(env) {
     `SELECT * FROM daily_stats WHERE date = ?`
   ).bind(yesterday).first();
   
-  // Get weekly data for chart
+  // Get weekly data for chart (last 7 days)
   const weeklyData = [];
   for (let i = 6; i >= 0; i--) {
     const date = getDateString(i);
@@ -262,14 +275,11 @@ export async function getDashboardStats(env) {
     
     const dayName = new Date(date).toLocaleDateString('en-GB', { weekday: 'short' });
     
-    // Use actual data if available, otherwise use scaled values
-    const maxViews = Math.max(...(await getDailyMax(env)));
-    
     weeklyData.push({
       label: dayName,
-      views: stats?.total_views ? Math.floor(stats.total_views / 100) : 0,
-      plays: stats?.total_plays ? Math.floor(stats.total_plays / 50) : 0,
-      downloads: stats?.total_downloads ? Math.floor(stats.total_downloads / 20) : 0
+      views: stats?.total_views || 0,
+      plays: stats?.total_plays || 0,
+      downloads: stats?.total_downloads || 0
     });
   }
   
@@ -281,7 +291,7 @@ export async function getDashboardStats(env) {
   const songs = songList.objects || [];
   const totalSongs = songs.length;
   
-  // Calculate today's values
+  // Calculate today's values from daily_stats (not all-time)
   const viewsToday = todayStats?.total_views || 0;
   const playsToday = todayStats?.total_plays || 0;
   const downloadsToday = todayStats?.total_downloads || 0;
@@ -297,15 +307,15 @@ export async function getDashboardStats(env) {
   
   const viewsTrendValue = viewsYesterday > 0 
     ? `${viewsToday > viewsYesterday ? '+' : ''}${Math.round((viewsToday - viewsYesterday) / viewsYesterday * 100)}%`
-    : 'new';
+    : viewsToday > 0 ? 'new' : '0';
   
   const playsTrendValue = playsYesterday > 0
     ? `${playsToday > playsYesterday ? '+' : ''}${Math.round((playsToday - playsYesterday) / playsYesterday * 100)}%`
-    : 'new';
+    : playsToday > 0 ? 'new' : '0';
   
   const downloadsTrendValue = downloadsYesterday > 0
     ? `${downloadsToday > downloadsYesterday ? '+' : ''}${Math.round((downloadsToday - downloadsYesterday) / downloadsYesterday * 100)}%`
-    : 'new';
+    : downloadsToday > 0 ? 'new' : '0';
   
   // Get new items this week
   const weekAgoTime = Date.now() - (7 * 24 * 60 * 60 * 1000);
@@ -316,7 +326,7 @@ export async function getDashboardStats(env) {
   // Get REAL top content
   let topContent = await getTopContent(env);
   
-  // If no data yet, show placeholder with sample from your data
+  // If no data yet, show placeholder
   if (topContent.length === 0) {
     // Try to get any data at all
     const { results } = await env.DB.prepare(
@@ -356,12 +366,4 @@ export async function getDashboardStats(env) {
     topContent,
     recentActivity
   };
-}
-
-// Helper to get max values for scaling
-async function getDailyMax(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT MAX(total_views) as max_views FROM daily_stats`
-  ).all();
-  return [results[0]?.max_views || 100];
 }
