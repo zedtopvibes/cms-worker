@@ -72,7 +72,8 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             plays: stats.plays,
             downloads: stats.downloads,
             uploaded: file.uploaded,
-            url: `/song/${encodeURIComponent(fileName)}`,
+            adminUrl: `/admin/songs/edit?name=${encodeURIComponent(baseName)}`,
+            viewUrl: `/song/${encodeURIComponent(fileName)}`,
             score: calculateRelevance(title, artistName, lowercaseQuery)
           };
         })
@@ -109,7 +110,8 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             thumbnail: thumbUrl,
             songCount: album.songs?.length || 0,
             created: album.created,
-            url: `/album/${album.id}`,
+            adminUrl: `/admin/albums/edit?id=${encodeURIComponent(album.id)}`,
+            viewUrl: `/album/${album.id}`,
             score: calculateRelevance(album.title, albumArtist, lowercaseQuery)
           };
         })
@@ -143,7 +145,8 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             songCount: artist.songs?.length || 0,
             albumCount: artist.albums?.length || 0,
             created: artist.created,
-            url: `/artist/${artist.id}`,
+            adminUrl: `/admin/artists/edit?id=${encodeURIComponent(artist.id)}`,
+            viewUrl: `/artist/${artist.id}`,
             score: calculateRelevance(artist.name, artist.genre || '', lowercaseQuery)
           };
         })
@@ -176,7 +179,8 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             thumbnail: thumbUrl,
             songCount: playlist.songs?.length || 0,
             created: playlist.created,
-            url: `/playlist/${playlist.id}`,
+            adminUrl: `/admin/playlists/edit?id=${encodeURIComponent(playlist.id)}`,
+            viewUrl: `/playlist/${playlist.id}`,
             score: calculateRelevance(playlist.title, playlist.curator || '', lowercaseQuery)
           };
         })
@@ -240,7 +244,7 @@ export async function handleAdminSearch(req, env, ctx, auth) {
                     <div style="position: relative;">
                         <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #999;"></i>
                         <input type="text" id="searchInput" class="form-control" placeholder="Search songs, albums, artists, playlists..." 
-                               value="${query}" style="padding-left: 40px;" autofocus>
+                               value="${escapeHtml(query)}" style="padding-left: 40px;" autofocus>
                     </div>
                 </div>
                 <button onclick="performSearch()" class="btn btn-primary">
@@ -256,7 +260,7 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             <!-- Results Summary -->
             ${query ? `
                 <div style="background: #f8f9fa; padding: 10px 15px; border-radius: 8px;">
-                    Found <strong>${totalResults}</strong> result${totalResults !== 1 ? 's' : ''} for "${query}"
+                    Found <strong>${totalResults}</strong> result${totalResults !== 1 ? 's' : ''} for "${escapeHtml(query)}"
                 </div>
             ` : ''}
         </div>
@@ -382,6 +386,28 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             align-items: center;
             gap: 3px;
         }
+        .result-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .admin-action-btn {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: white;
+            background: #ff5500;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .admin-action-btn.view {
+            background: #4a90e2;
+        }
         .result-type-badge {
             font-size: 0.7rem;
             padding: 2px 8px;
@@ -409,6 +435,9 @@ export async function handleAdminSearch(req, env, ctx, auth) {
                 flex-direction: column;
                 gap: 5px;
             }
+            .result-actions {
+                flex-direction: column;
+            }
         }
     </style>
     
@@ -430,6 +459,10 @@ export async function handleAdminSearch(req, env, ctx, auth) {
             const url = new URL(window.location.href);
             url.searchParams.set('type', type);
             window.location.href = url.toString();
+        }
+        
+        function handleItemClick(url, isAdmin = true) {
+            window.location.href = url;
         }
     </script>
   `;
@@ -467,7 +500,7 @@ function generateSongResult(item) {
   });
   
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
+    <div class="search-result-item">
         <div class="result-thumbnail song">
             ${item.thumbnail !== '/images/placeholder.jpg' ? 
                 `<img src="${item.thumbnail}" alt="${item.title}">` : 
@@ -482,6 +515,14 @@ function generateSongResult(item) {
                 <span class="result-type-badge">Song</span>
             </div>
             <div style="font-size:0.7rem; color:#999; margin-top:5px;">${date}</div>
+            <div class="result-actions">
+                <button class="admin-action-btn" onclick="window.location='${item.adminUrl}'">
+                    <i class="fas fa-edit"></i> Edit in Admin
+                </button>
+                <button class="admin-action-btn view" onclick="window.open('${item.viewUrl}', '_blank')">
+                    <i class="fas fa-eye"></i> View Public
+                </button>
+            </div>
         </div>
     </div>
   `;
@@ -494,7 +535,7 @@ function generateAlbumResult(item) {
   });
   
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
+    <div class="search-result-item">
         <div class="result-thumbnail album">
             ${item.thumbnail !== '/images/placeholder.jpg' ? 
                 `<img src="${item.thumbnail}" alt="${item.title}">` : 
@@ -508,6 +549,14 @@ function generateAlbumResult(item) {
                 <span class="result-type-badge">Album</span>
             </div>
             <div style="font-size:0.7rem; color:#999; margin-top:5px;">${date}</div>
+            <div class="result-actions">
+                <button class="admin-action-btn" onclick="window.location='${item.adminUrl}'">
+                    <i class="fas fa-edit"></i> Edit in Admin
+                </button>
+                <button class="admin-action-btn view" onclick="window.open('${item.viewUrl}', '_blank')">
+                    <i class="fas fa-eye"></i> View Public
+                </button>
+            </div>
         </div>
     </div>
   `;
@@ -516,7 +565,7 @@ function generateAlbumResult(item) {
 // Generate HTML for artist result
 function generateArtistResult(item) {
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
+    <div class="search-result-item">
         <div class="result-thumbnail artist">
             ${item.thumbnail !== '/images/placeholder.jpg' ? 
                 `<img src="${item.thumbnail}" alt="${item.name}">` : 
@@ -530,6 +579,14 @@ function generateArtistResult(item) {
                 <span><i class="fas fa-compact-disc"></i> ${item.albumCount} albums</span>
                 <span class="result-type-badge">Artist</span>
             </div>
+            <div class="result-actions">
+                <button class="admin-action-btn" onclick="window.location='${item.adminUrl}'">
+                    <i class="fas fa-edit"></i> Edit in Admin
+                </button>
+                <button class="admin-action-btn view" onclick="window.open('${item.viewUrl}', '_blank')">
+                    <i class="fas fa-eye"></i> View Public
+                </button>
+            </div>
         </div>
     </div>
   `;
@@ -542,7 +599,7 @@ function generatePlaylistResult(item) {
   });
   
   return `
-    <div class="search-result-item" onclick="window.location='${item.url}'">
+    <div class="search-result-item">
         <div class="result-thumbnail playlist">
             ${item.thumbnail !== '/images/placeholder.jpg' ? 
                 `<img src="${item.thumbnail}" alt="${item.title}">` : 
@@ -556,6 +613,14 @@ function generatePlaylistResult(item) {
                 <span class="result-type-badge">Playlist</span>
             </div>
             <div style="font-size:0.7rem; color:#999; margin-top:5px;">${date}</div>
+            <div class="result-actions">
+                <button class="admin-action-btn" onclick="window.location='${item.adminUrl}'">
+                    <i class="fas fa-edit"></i> Edit in Admin
+                </button>
+                <button class="admin-action-btn view" onclick="window.open('${item.viewUrl}', '_blank')">
+                    <i class="fas fa-eye"></i> View Public
+                </button>
+            </div>
         </div>
     </div>
   `;
@@ -634,7 +699,11 @@ function getNoResultsHtml(query) {
 
 // Escape HTML for safety
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
