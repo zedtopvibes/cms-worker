@@ -62,6 +62,68 @@ async function getArtistName(env, artistId) {
   return artists[artistId]?.name || artistId;
 }
 
+// Format top content results
+async function formatTopContent(env, results) {
+  const topContent = [];
+  
+  for (const item of results) {
+    let title = item.page_id;
+    let artist = '';
+    let displayViews = item.views;
+    
+    // Get proper names based on type
+    if (item.page_type === 'song') {
+      const meta = await getMetadata(env, item.page_id);
+      title = meta?.title || item.page_id.split('_').slice(1).join(' ') || item.page_id;
+      const artistId = meta?.primaryArtist || item.page_id.split('_')[0];
+      artist = await getArtistName(env, artistId);
+    } 
+    else if (item.page_type === 'album') {
+      const albums = await getAlbums(env);
+      const album = albums[item.page_id];
+      title = album?.title || item.page_id;
+      if (album?.artists?.[0]) {
+        artist = await getArtistName(env, album.artists[0]);
+      } else {
+        artist = 'Various Artists';
+      }
+    } 
+    else if (item.page_type === 'artist') {
+      const artists = await getArtists(env);
+      const artistObj = artists[item.page_id];
+      title = artistObj?.name || item.page_id;
+      artist = 'Artist Page';
+    } 
+    else if (item.page_type === 'playlist') {
+      const playlists = await getPlaylists(env);
+      const playlist = playlists[item.page_id];
+      title = playlist?.title || item.page_id;
+      artist = `by ${playlist?.curator || 'ZEDALBUMS'}`;
+    } 
+    else if (item.page_type === 'page') {
+      title = item.page_id === 'homepage' ? 'Homepage' : item.page_id;
+      artist = 'Page';
+    } 
+    else if (item.page_type === 'chart') {
+      title = item.page_id.replace('charts-', 'Charts: ').replace(/-/g, ' ');
+      artist = 'Charts';
+    }
+    else {
+      title = item.page_id;
+      artist = item.page_type;
+    }
+    
+    topContent.push({
+      title: title.charAt(0).toUpperCase() + title.slice(1),
+      artist,
+      type: item.page_type,
+      views: displayViews
+    });
+  }
+  
+  return topContent;
+}
+
 // Get real top content from the last 7 days
 async function getTopContent(env) {
   const sevenDaysAgo = new Date();
@@ -69,8 +131,9 @@ async function getTopContent(env) {
   const dateStr = sevenDaysAgo.toISOString();
   
   try {
+    // Try to get recent data first
     const { results } = await env.DB.prepare(
-      `SELECT page_type, page_id, COUNT(*) as views 
+      `SELECT page_type, page_id, SUM(views) as views 
        FROM page_views 
        WHERE viewed_at > ? 
        GROUP BY page_type, page_id 
@@ -78,72 +141,23 @@ async function getTopContent(env) {
        LIMIT 5`
     ).bind(dateStr).all();
     
+    // If no recent data, get all-time data
     if (!results || results.length === 0) {
+      const { results: allTimeResults } = await env.DB.prepare(
+        `SELECT page_type, page_id, SUM(views) as views 
+         FROM page_views 
+         GROUP BY page_type, page_id 
+         ORDER BY views DESC 
+         LIMIT 5`
+      ).all();
+      
+      if (allTimeResults && allTimeResults.length > 0) {
+        return await formatTopContent(env, allTimeResults);
+      }
       return [];
     }
     
-    // Format the results with proper names
-    const topContent = [];
-    
-    for (const item of results) {
-      let title = item.page_id;
-      let artist = '';
-      
-      // Get proper names based on type
-      if (item.page_type === 'song') {
-        const meta = await getMetadata(env, item.page_id);
-        title = meta?.title || item.page_id;
-        const artistId = meta?.primaryArtist || item.page_id.split('_')[0];
-        artist = await getArtistName(env, artistId);
-      } 
-      else if (item.page_type === 'album') {
-        const albums = await getAlbums(env);
-        const album = albums[item.page_id];
-        title = album?.title || item.page_id;
-        if (album?.artists?.[0]) {
-          artist = await getArtistName(env, album.artists[0]);
-        } else {
-          artist = 'Various Artists';
-        }
-      } 
-      else if (item.page_type === 'artist') {
-        const artists = await getArtists(env);
-        const artistObj = artists[item.page_id];
-        title = artistObj?.name || item.page_id;
-        artist = 'Artist Page';
-      } 
-      else if (item.page_type === 'playlist') {
-        const playlists = await getPlaylists(env);
-        const playlist = playlists[item.page_id];
-        title = playlist?.title || item.page_id;
-        artist = `by ${playlist?.curator || 'ZEDALBUMS'}`;
-      } 
-      else if (item.page_type === 'page') {
-        title = item.page_id === 'homepage' ? 'Homepage' : item.page_id;
-        artist = 'Page';
-      } 
-      else if (item.page_type === 'chart') {
-        title = item.page_id.replace('charts-', 'Charts: ').replace(/-/g, ' ');
-        artist = 'Charts';
-      }
-      else if (item.page_type === 'genre') {
-        title = `${item.page_id} Music`;
-        artist = 'Genre Page';
-      }
-      else {
-        title = item.page_id;
-        artist = item.page_type;
-      }
-      
-      topContent.push({
-        title: title.charAt(0).toUpperCase() + title.slice(1), // Capitalize first letter
-        artist,
-        type: item.page_type,
-        views: item.views
-      });
-    }
-    
-    return topContent;
+    return await formatTopContent(env, results);
   } catch (error) {
     console.error('Error getting top content:', error);
     return [];
@@ -248,11 +262,14 @@ export async function getDashboardStats(env) {
     
     const dayName = new Date(date).toLocaleDateString('en-GB', { weekday: 'short' });
     
+    // Use actual data if available, otherwise use scaled values
+    const maxViews = Math.max(...(await getDailyMax(env)));
+    
     weeklyData.push({
       label: dayName,
-      views: stats?.total_views ? Math.floor(stats.total_views / 100) : 20 + Math.floor(Math.random() * 30),
-      plays: stats?.total_plays ? Math.floor(stats.total_plays / 50) : 15 + Math.floor(Math.random() * 25),
-      downloads: stats?.total_downloads ? Math.floor(stats.total_downloads / 20) : 5 + Math.floor(Math.random() * 15)
+      views: stats?.total_views ? Math.floor(stats.total_views / 100) : 0,
+      plays: stats?.total_plays ? Math.floor(stats.total_plays / 50) : 0,
+      downloads: stats?.total_downloads ? Math.floor(stats.total_downloads / 20) : 0
     });
   }
   
@@ -262,6 +279,7 @@ export async function getDashboardStats(env) {
   const playlists = await getPlaylists(env);
   const songList = await env.media.list({ prefix: "songs/" });
   const songs = songList.objects || [];
+  const totalSongs = songs.length;
   
   // Calculate today's values
   const viewsToday = todayStats?.total_views || 0;
@@ -298,11 +316,24 @@ export async function getDashboardStats(env) {
   // Get REAL top content
   let topContent = await getTopContent(env);
   
-  // If no data yet, show placeholder
+  // If no data yet, show placeholder with sample from your data
   if (topContent.length === 0) {
-    topContent = [
-      { title: "No data yet", artist: "Visit some pages to generate views", type: "info", views: 0 }
-    ];
+    // Try to get any data at all
+    const { results } = await env.DB.prepare(
+      `SELECT page_type, page_id, SUM(views) as views 
+       FROM page_views 
+       GROUP BY page_type, page_id 
+       ORDER BY views DESC 
+       LIMIT 5`
+    ).all();
+    
+    if (results && results.length > 0) {
+      topContent = await formatTopContent(env, results);
+    } else {
+      topContent = [
+        { title: "No data yet", artist: "Visit some pages to generate views", type: "info", views: 0 }
+      ];
+    }
   }
   
   // Get REAL recent activity
@@ -325,4 +356,12 @@ export async function getDashboardStats(env) {
     topContent,
     recentActivity
   };
+}
+
+// Helper to get max values for scaling
+async function getDailyMax(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT MAX(total_views) as max_views FROM daily_stats`
+  ).all();
+  return [results[0]?.max_views || 100];
 }
