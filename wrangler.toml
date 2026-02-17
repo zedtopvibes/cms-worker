@@ -1,0 +1,26 @@
+name = "cms"
+main = "src/index.js"
+compatibility_date = "2025-02-01"
+
+# Environment variables (non-sensitive)
+[vars]
+ENVIRONMENT = "production" 
+SITE_NAME = "ZEDALBUMS.TOP"
+
+# Note: ADMIN_USERNAME and  ADMIN_PASSWORD are set as secrets in Cloudflare Dashboard
+# They are NOT stored in this file for security reasons
+# Go to Cloudflare Dashboard → Your Worker → Settings → Variables → Add secret
+
+[[r2_buckets]]
+binding = "media"
+bucket_name = "media"
+ 
+[[d1_databases]] 
+binding = "DB"
+database_name = "music-stats"
+database_id = "c1f2a231-d2aa-474d-9181-210a9fb11e7e"
+
+# ------------------ KV BINDING ------------------
+[[kv_namespaces]]
+binding = "ADMIN_SESSIONS"
+id = "c05b34847d3b4d2c8102e60740e0f6d3"
