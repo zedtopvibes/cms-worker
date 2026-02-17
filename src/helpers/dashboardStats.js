@@ -1,4 +1,4 @@
-// ==================== DASHBOARD STATS HELPER - REAL DATA ====================
+// ==================== DASHBOARD STATS HELPER - REAL DATA ==================== 
 import { getAlbums, getArtists, getPlaylists, getMetadata } from './storage.js';
 import { getAggregatedStats, getSongStats } from './db.js';
 import { getTotalPageViews } from './pageViews.js';
