@@ -1,4 +1,4 @@
-// ==================== ADMIN MAIN ROUTER ====================
+// ==================== ADMIN MAIN  ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
