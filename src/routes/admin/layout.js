@@ -523,7 +523,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
                 <a href="/admin/stats" class="tab-btn ${activePage === 'stats' ? 'active' : ''}">
                     <i class="fas fa-chart-line"></i> Stats
                 </a>
-               <a href="/admin/bulk?key=${key}" class="tab-btn ${activePage === 'bulk' ? 'active' : ''}">
+               <a href="/admin/bulk" class="tab-btn ${activePage === 'bulk' ? 'active' : ''}">
     <i class="fas fa-tasks"></i> Bulk Ops
 </a>
             </div>
