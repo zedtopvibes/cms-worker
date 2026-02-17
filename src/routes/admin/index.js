@@ -56,6 +56,9 @@ import { handleAdminSearch } from './search.js';
 // ===== BULK OPERATIONS IMPORTS =====
 import { handleAdminBulk, executeBulkAction } from './bulk.js';
 
+// ===== ACTIVITY LOG IMPORTS =====
+import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
+
 // ===== DASHBOARD IMPORTS =====
 import { getDashboardStats } from '../../helpers/dashboardStats.js';
 import { formatNumber } from '../../helpers/formatting.js';
@@ -776,6 +779,18 @@ if (path === '/bulk') {
   } else if (req.method === 'POST') {
     return await executeBulkAction(req, env, ctx, auth);
   }
+}
+
+// ===== ACTIVITY LOG =====
+if (path === '/activity') {
+  const result = await handleAdminActivity(req, env, ctx, auth);
+  return new Response(adminLayout(result.title, result.content, auth, 'activity'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+if (path === '/activity/export') {
+  return await handleAdminActivityExport(req, env, ctx, auth);
 }
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
