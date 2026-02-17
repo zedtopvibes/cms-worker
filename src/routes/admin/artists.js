@@ -262,6 +262,318 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   return content;
 }
 
+// ===== ADD THESE MISSING FUNCTIONS =====
+
+// Edit artist page
+export async function handleAdminArtistEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const artistId = url.searchParams.get('id');
+  
+  if (!artistId) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  const artists = await getArtists(env);
+  const artist = artists[artistId];
+  
+  if (!artist) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Artist: ${artist.name}</h2>
+        
+        <form id="editForm" action="/admin/artists/edit" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="artistId" value="${artistId}">
+            
+            <div class="form-group">
+                <label>Artist Name</label>
+                <input type="text" name="name" class="form-control" value="${artist.name}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Genre</label>
+                <input type="text" name="genre" class="form-control" value="${artist.genre || ''}" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+            </div>
+            
+            <div class="form-group">
+                <label>Bio</label>
+                <textarea name="description" class="form-control" rows="4">${artist.description || ''}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Origin/Location</label>
+                <input type="text" name="origin" class="form-control" value="${artist.origin || ''}" placeholder="e.g. Lusaka, Zambia">
+            </div>
+            
+            <div class="form-group">
+                <label>Current Image</label>
+                ${artist.thumbnail ? 
+                    `<div style="margin-bottom:10px;">
+                        <img src="/artists/thumbnails/${artistId}.jpg" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #9b59b6;">
+                    </div>` : 
+                    '<p>No image</p>'
+                }
+                <label>New Image (optional)</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this artist?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// Handle artist edit submission
+export async function handleAdminArtistEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const artistId = formData.get('artistId');
+  const name = formData.get('name');
+  const genre = formData.get('genre');
+  const description = formData.get('description');
+  const origin = formData.get('origin');
+  const thumbnailFile = formData.get('thumbnail');
+  
+  if (!artistId || !name) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  try {
+    const artists = await getArtists(env);
+    
+    if (!artists[artistId]) {
+      return { success: false, error: 'Artist not found' };
+    }
+    
+    // Update artist details
+    artists[artistId].name = name;
+    artists[artistId].genre = genre;
+    artists[artistId].description = description;
+    artists[artistId].origin = origin;
+    
+    // Upload new thumbnail if provided
+    if (thumbnailFile && thumbnailFile.size > 0) {
+      const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+      const thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+      await env.media.put(thumbnailKey, thumbnailFile.stream());
+      artists[artistId].thumbnail = thumbnailKey;
+    }
+    
+    await saveArtists(env, artists);
+    
+    return { success: true, redirect: '/admin/artists?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle artist deletion
+export async function handleAdminArtistDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const artistId = url.searchParams.get('id');
+  
+  if (!artistId) {
+    return { success: false, error: 'No artist specified' };
+  }
+  
+  try {
+    const artists = await getArtists(env);
+    
+    // Delete thumbnail if exists
+    if (artists[artistId]?.thumbnail) {
+      await env.media.delete(artists[artistId].thumbnail).catch(() => {});
+    }
+    
+    // Remove artist from index
+    delete artists[artistId];
+    await saveArtists(env, artists);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Merge artists page
+export async function handleAdminArtistMerge(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const artistId = url.searchParams.get('id');
+  
+  if (!artistId) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  const artists = await getArtists(env);
+  const mainArtist = artists[artistId];
+  
+  if (!mainArtist) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  // Get all other artists for merging
+  const otherArtists = Object.entries(artists)
+    .filter(([id]) => id !== artistId)
+    .map(([id, artist]) => ({
+      id,
+      name: artist.name,
+      songCount: artist.songs?.length || 0,
+      albumCount: artist.albums?.length || 0
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  
+  const artistOptions = otherArtists.map(artist => 
+    `<option value="${artist.id}">${artist.name} (${artist.songCount} songs, ${artist.albumCount} albums)</option>`
+  ).join('');
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-compress"></i> Merge Artists</h2>
+        
+        <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #9b59b6;">
+            <p><strong>Main Artist:</strong> ${mainArtist.name}</p>
+            <p><i class="fas fa-info-circle"></i> This artist will receive all songs and albums from the merged artist.</p>
+        </div>
+        
+        <form id="mergeForm" action="/admin/artists/merge" method="POST">
+            <input type="hidden" name="mainArtistId" value="${artistId}">
+            
+            <div class="form-group">
+                <label>Select Artist to Merge into ${mainArtist.name}</label>
+                <select name="mergeArtistId" class="form-control" required>
+                    <option value="">-- Select Artist --</option>
+                    ${artistOptions}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Action after merge</label>
+                <div style="display: flex; gap: 20px; margin-top: 10px;">
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="deleteAfter" value="yes" checked> Delete merged artist
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="deleteAfter" value="no"> Keep merged artist
+                    </label>
+                </div>
+            </div>
+            
+            <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Warning:</strong> This action cannot be undone. All songs and albums from the merged artist will be transferred to ${mainArtist.name}.
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" onclick="return confirm('Are you sure you want to merge these artists?')">
+                    <i class="fas fa-compress"></i> Merge Artists
+                </button>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+  `;
+  
+  return { content };
+}
+
+// Handle artist merge
+export async function handleAdminArtistMergePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const mainArtistId = formData.get('mainArtistId');
+  const mergeArtistId = formData.get('mergeArtistId');
+  const deleteAfter = formData.get('deleteAfter');
+  
+  if (!mainArtistId || !mergeArtistId) {
+    return { success: false, error: 'Missing artist IDs' };
+  }
+  
+  if (mainArtistId === mergeArtistId) {
+    return { success: false, error: 'Cannot merge an artist with itself' };
+  }
+  
+  try {
+    const artists = await getArtists(env);
+    const albums = await getAlbums(env);
+    
+    const mainArtist = artists[mainArtistId];
+    const mergeArtist = artists[mergeArtistId];
+    
+    if (!mainArtist || !mergeArtist) {
+      return { success: false, error: 'Artist not found' };
+    }
+    
+    // Transfer songs
+    if (mergeArtist.songs) {
+      for (const songKey of mergeArtist.songs) {
+        if (!mainArtist.songs.includes(songKey)) {
+          mainArtist.songs.push(songKey);
+        }
+      }
+    }
+    
+    // Transfer albums
+    if (mergeArtist.albums) {
+      for (const albumId of mergeArtist.albums) {
+        if (!mainArtist.albums.includes(albumId)) {
+          mainArtist.albums.push(albumId);
+        }
+        
+        // Update album's artists array
+        if (albums[albumId]) {
+          if (!albums[albumId].artists) albums[albumId].artists = [];
+          if (!albums[albumId].artists.includes(mainArtistId)) {
+            // Replace mergeArtistId with mainArtistId
+            const index = albums[albumId].artists.indexOf(mergeArtistId);
+            if (index !== -1) {
+              albums[albumId].artists[index] = mainArtistId;
+            } else {
+              albums[albumId].artists.push(mainArtistId);
+            }
+          }
+        }
+      }
+    }
+    
+    // Save updated albums
+    await saveAlbums(env, albums);
+    
+    // Delete merged artist if requested
+    if (deleteAfter === 'yes') {
+      // Delete thumbnail if exists
+      if (mergeArtist.thumbnail) {
+        await env.media.delete(mergeArtist.thumbnail).catch(() => {});
+      }
+      delete artists[mergeArtistId];
+    }
+    
+    // Save main artist
+    await saveArtists(env, artists);
+    
+    return { success: true, redirect: '/admin/artists?merged=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Mobile card with views
 function generateMobileCard(artist) {
   const date = new Date(artist.created).toLocaleDateString('en-GB', {
@@ -314,7 +626,7 @@ function generateGridCard(artist) {
   `;
 }
 
-// Pagination helper (same as songs.js)
+// Pagination helper
 function generatePagination(currentPage, totalPages, search, sort) {
   if (totalPages <= 1) return '';
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
