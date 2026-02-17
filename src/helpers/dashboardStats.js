@@ -35,7 +35,7 @@ export async function updateDailyStats(env) {
     // Get TODAY'S views only
     const { results: viewsToday } = await env.DB.prepare(
       `SELECT COUNT(*) as total FROM page_views 
-       WHERE date(viewed_at) = date('now')`
+       WHERE date(last_viewed) = date('now')`
     ).all();
     
     // Get TODAY'S plays
