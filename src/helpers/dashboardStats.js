@@ -47,7 +47,7 @@ export async function updateDailyStats(env) {
     // Get TODAY'S downloads
     const { results: downloadsToday } = await env.DB.prepare(
       `SELECT COUNT(*) as total FROM song_stats 
-       WHERE date(last_downloaded) = date('now')`
+       WHERE date(last_downloaded_date) = date('now')`
     ).all();
     
     const todayViews = viewsToday?.[0]?.total || 0;
