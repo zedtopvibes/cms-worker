@@ -264,6 +264,293 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
   return content;
 }
 
+// ===== ADD THESE MISSING FUNCTIONS =====
+
+// Edit album page
+export async function handleAdminAlbumEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const albumId = url.searchParams.get('id');
+  
+  if (!albumId) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  const albums = await getAlbums(env);
+  const album = albums[albumId];
+  const artists = await getArtists(env);
+  
+  if (!album) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  // Artist options for dropdown
+  const artistOptions = Object.entries(artists).map(([id, artist]) => {
+    const selected = album.artists?.includes(id) ? 'selected' : '';
+    return `<option value="${id}" ${selected}>${artist.name}</option>`;
+  }).join('');
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Album: ${album.title}</h2>
+        
+        <form id="editForm" action="/admin/albums/edit" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="albumId" value="${albumId}">
+            
+            <div class="form-group">
+                <label>Album Title</label>
+                <input type="text" name="title" class="form-control" value="${album.title}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4">${album.description || ''}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Artists (select multiple)</label>
+                <select name="artists" multiple class="form-control" size="5">
+                    ${artistOptions}
+                </select>
+                <p style="font-size:0.8rem; color:#666;">Hold Ctrl/Cmd to select multiple artists</p>
+            </div>
+            
+            <div class="form-group">
+                <label>Current Thumbnail</label>
+                ${album.thumbnail ? 
+                    `<div style="margin-bottom:10px;">
+                        <img src="/albums/thumbnails/${albumId}.jpg" style="max-width:200px; max-height:200px; border-radius:8px; border:1px solid #e0e0e0;">
+                    </div>` : 
+                    '<p>No thumbnail</p>'
+                }
+                <label>New Thumbnail (optional)</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/albums" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this album?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// Handle album edit submission
+export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const albumId = formData.get('albumId');
+  const title = formData.get('title');
+  const description = formData.get('description');
+  const artists = formData.getAll('artists');
+  const thumbnailFile = formData.get('thumbnail');
+  
+  if (!albumId || !title) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  try {
+    const albums = await getAlbums(env);
+    
+    if (!albums[albumId]) {
+      return { success: false, error: 'Album not found' };
+    }
+    
+    // Update album details
+    albums[albumId].title = title;
+    albums[albumId].description = description;
+    albums[albumId].artists = artists.filter(a => a); // Remove empty values
+    
+    // Upload new thumbnail if provided
+    if (thumbnailFile && thumbnailFile.size > 0) {
+      const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+      const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
+      await env.media.put(thumbnailKey, thumbnailFile.stream());
+      albums[albumId].thumbnail = thumbnailKey;
+    }
+    
+    await saveAlbums(env, albums);
+    
+    return { success: true, redirect: '/admin/albums?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle album deletion
+export async function handleAdminAlbumDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const albumId = url.searchParams.get('id');
+  
+  if (!albumId) {
+    return { success: false, error: 'No album specified' };
+  }
+  
+  try {
+    const albums = await getAlbums(env);
+    
+    // Delete thumbnail if exists
+    if (albums[albumId]?.thumbnail) {
+      await env.media.delete(albums[albumId].thumbnail).catch(() => {});
+    }
+    
+    // Remove album from index
+    delete albums[albumId];
+    await saveAlbums(env, albums);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Manage album songs page
+export async function handleAdminAlbumSongs(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const albumId = url.searchParams.get('id');
+  
+  if (!albumId) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  const albums = await getAlbums(env);
+  const album = albums[albumId];
+  const artists = await getArtists(env);
+  
+  if (!album) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  // Get all songs
+  const songList = await env.media.list({ prefix: "songs/" });
+  const songs = songList.objects || [];
+  
+  // Build song options
+  const songOptions = await Promise.all(
+    songs.map(async (song) => {
+      const fileName = song.key.split('/')[1];
+      const baseName = fileName.replace('.mp3', '');
+      const inAlbum = album.songs?.includes(baseName);
+      const artistId = baseName.split('_')[0];
+      const artistName = artists[artistId]?.name || artistId;
+      
+      return `
+        <tr>
+            <td><input type="checkbox" name="songs" value="${baseName}" ${inAlbum ? 'checked' : ''}></td>
+            <td>${baseName}</td>
+            <td>${artistName}</td>
+            <td>${inAlbum ? '<span class="badge badge-success">In Album</span>' : '-'}</td>
+        </tr>
+      `;
+    })
+  );
+  
+  const content = `
+    <div style="max-width: 800px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-music"></i> Manage Songs: ${album.title}</h2>
+        
+        <form id="songsForm" action="/admin/albums/songs" method="POST">
+            <input type="hidden" name="albumId" value="${albumId}">
+            
+            <div style="margin-bottom: 20px;">
+                <button type="button" onclick="checkAll()" class="btn btn-secondary btn-sm">Select All</button>
+                <button type="button" onclick="uncheckAll()" class="btn btn-secondary btn-sm">Deselect All</button>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
+                            <th>Song</th>
+                            <th>Artist</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${songOptions.join('')}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/albums" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        function checkAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = true);
+            document.getElementById('selectAll').checked = true;
+        }
+        
+        function uncheckAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
+        }
+        
+        function toggleAll() {
+            const selectAll = document.getElementById('selectAll').checked;
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = selectAll);
+        }
+        
+        document.getElementById('songsForm').addEventListener('submit', function(e) {
+            if (!confirm('Update album songs?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// Handle album songs update
+export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const albumId = formData.get('albumId');
+  const selectedSongs = formData.getAll('songs');
+  
+  if (!albumId) {
+    return { success: false, error: 'No album specified' };
+  }
+  
+  try {
+    const albums = await getAlbums(env);
+    
+    if (!albums[albumId]) {
+      return { success: false, error: 'Album not found' };
+    }
+    
+    // Update album songs
+    albums[albumId].songs = selectedSongs;
+    await saveAlbums(env, albums);
+    
+    return { success: true, redirect: '/admin/albums?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Mobile card with views
 function generateMobileCard(album) {
   const date = new Date(album.created).toLocaleDateString('en-GB', {
@@ -316,7 +603,7 @@ function generateGridCard(album) {
   `;
 }
 
-// Pagination helper (same as songs.js)
+// Pagination helper
 function generatePagination(currentPage, totalPages, search, sort) {
   if (totalPages <= 1) return '';
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
