@@ -5,6 +5,7 @@ import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
+// ===== LIST ALL ARTISTS =====
 export async function handleAdminArtists(req, env, ctx, auth) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
@@ -263,9 +264,106 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   return content;
 }
 
-// ===== CREATE/EDIT/DELETE/MERGE FUNCTIONS WITH ACTIVITY LOGGING =====
+// ===== CREATE NEW ARTIST PAGE =====
+export async function handleAdminArtistCreate(req, env, ctx, auth) {
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #9b59b6;"></i> Create New Artist</h2>
+        
+        <form action="/admin/artist/create" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Artist Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Yo Maps" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Genre</label>
+                <input type="text" name="genre" class="form-control" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+            </div>
+            
+            <div class="form-group">
+                <label>Bio</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Artist biography..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Origin/Location</label>
+                <input type="text" name="origin" class="form-control" placeholder="e.g. Lusaka, Zambia">
+            </div>
+            
+            <div class="form-group">
+                <label>Artist Image</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" style="background: #9b59b6;">
+                    <i class="fas fa-save"></i> Create Artist
+                </button>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+  `;
+  
+  return content;
+}
 
-// Edit artist page
+// ===== HANDLE ARTIST CREATION POST =====
+export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const name = formData.get('name');
+  const genre = formData.get('genre') || '';
+  const description = formData.get('description') || '';
+  const origin = formData.get('origin') || '';
+  const thumbnailFile = formData.get('thumbnail');
+
+  if (!name) {
+    return { success: false, error: 'Artist name is required' };
+  }
+
+  const artistId = sanitize(name);
+  const artists = await getArtists(env);
+
+  // Check if artist already exists
+  if (artists[artistId]) {
+    return { success: false, error: 'Artist with this name already exists' };
+  }
+
+  let thumbnailKey = null;
+  if (thumbnailFile && thumbnailFile.size > 0) {
+    const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+    thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+    await env.media.put(thumbnailKey, thumbnailFile.stream());
+  }
+
+  artists[artistId] = {
+    id: artistId,
+    name: name,
+    description: description,
+    genre: genre,
+    origin: origin,
+    thumbnail: thumbnailKey,
+    created: Date.now(),
+    songs: [],
+    albums: []
+  };
+
+  await saveArtists(env, artists);
+  
+  // Log activity
+  await logAdminActivity(env, auth.session.id, 'create', 'artist', artistId, name);
+
+  return { 
+    success: true, 
+    redirect: `/admin/artists?created=1` 
+  };
+}
+
+// ===== EDIT ARTIST PAGE =====
 export async function handleAdminArtistEdit(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -343,7 +441,7 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle artist edit submission
+// ===== HANDLE ARTIST EDIT POST =====
 export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const artistId = formData.get('artistId');
@@ -389,7 +487,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   }
 }
 
-// Handle artist deletion
+// ===== HANDLE ARTIST DELETION =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -420,7 +518,7 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
   }
 }
 
-// Merge artists page
+// ===== MERGE ARTISTS PAGE =====
 export async function handleAdminArtistMerge(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -503,7 +601,7 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle artist merge
+// ===== HANDLE ARTIST MERGE POST =====
 export async function handleAdminArtistMergePost(req, env, ctx, auth) {
   const formData = await req.formData();
   const mainArtistId = formData.get('mainArtistId');
@@ -586,6 +684,8 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     return { success: false, error: error.message };
   }
 }
+
+// ===== HELPER FUNCTIONS =====
 
 // Mobile card with views
 function generateMobileCard(artist) {
