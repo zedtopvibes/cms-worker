@@ -1,17 +1,34 @@
-// ==================== DASHBOARD STATS HELPER - REAL DATA ==================== 
+// ==================== DASHBOARD STATS HELPER - REAL DATA ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from './storage.js';
 import { getAggregatedStats, getSongStats } from './db.js';
 import { getTotalPageViews } from './pageViews.js';
 
-// Log admin activity
+// ===== LOG ADMIN ACTIVITY - FIXED WITH COMPLETE NULL CHECKS =====
 export async function logAdminActivity(env, adminId, action, itemType, itemId, itemName) {
+  // Guard against undefined values
+  if (!adminId) {
+    console.error('❌ Cannot log activity: adminId is undefined');
+    console.log('📝 Parameters:', { adminId, action, itemType, itemId, itemName });
+    return false;
+  }
+  
+  // Check if DB connection exists
+  if (!env || !env.DB) {
+    console.error('❌ Cannot log activity: DB connection missing');
+    return false;
+  }
+  
   try {
     await env.DB.prepare(
       `INSERT INTO admin_activity (admin_id, action, item_type, item_id, item_name)
        VALUES (?, ?, ?, ?, ?)`
-    ).bind(adminId, action, itemType, itemId, itemName).run();
+    ).bind(adminId, action, itemType, itemId, itemName || '').run(); // Ensure itemName is never undefined
+    
+    console.log(`✅ Activity logged: ${action} ${itemType} - ${itemName || itemId}`);
+    return true;
   } catch (error) {
-    console.error('Error logging activity:', error);
+    console.error('❌ Error logging activity:', error);
+    return false;
   }
 }
 
