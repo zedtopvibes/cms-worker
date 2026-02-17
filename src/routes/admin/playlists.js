@@ -5,6 +5,7 @@ import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
+// ===== LIST ALL PLAYLISTS =====
 export async function handleAdminPlaylists(req, env, ctx, auth) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
@@ -268,9 +269,101 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
   return content;
 }
 
-// ===== CREATE/EDIT/DELETE/SONGS FUNCTIONS WITH ACTIVITY LOGGING =====
+// ===== CREATE NEW PLAYLIST PAGE =====
+export async function handleAdminPlaylistCreate(req, env, ctx, auth) {
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #4a90e2;"></i> Create New Playlist</h2>
+        
+        <form action="/admin/playlist/create" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Playlist Title</label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. Zambian Hits 2025" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Playlist description..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Curator Name</label>
+                <input type="text" name="curator" class="form-control" placeholder="e.g. ZEDALBUMS" value="ZEDALBUMS">
+            </div>
+            
+            <div class="form-group">
+                <label>Cover Image</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" style="background: #4a90e2;">
+                    <i class="fas fa-save"></i> Create Playlist
+                </button>
+                <a href="/admin/playlists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+        
+        <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #4a90e2;">
+            <p style="margin:0; font-size:0.9rem; color:#666;">
+                <i class="fas fa-info-circle" style="color:#4a90e2;"></i>
+                After creating your playlist, you can add songs to it from the Songs Management page.
+            </p>
+        </div>
+    </div>
+  `;
+  
+  return content;
+}
 
-// Edit playlist page
+// ===== HANDLE PLAYLIST CREATION POST =====
+export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const title = formData.get('title');
+  const description = formData.get('description') || '';
+  const curator = formData.get('curator') || 'ZEDALBUMS';
+  const thumbnailFile = formData.get('thumbnail');
+
+  if (!title) {
+    return { success: false, error: 'Playlist title is required' };
+  }
+
+  const playlistId = sanitize(title) + "_" + Date.now();
+  const playlists = await getPlaylists(env);
+
+  let thumbnailKey = null;
+  if (thumbnailFile && thumbnailFile.size > 0) {
+    const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+    thumbnailKey = `playlists/thumbnails/${playlistId}.${imgType}`;
+    await env.media.put(thumbnailKey, thumbnailFile.stream());
+  }
+
+  playlists[playlistId] = {
+    id: playlistId,
+    title: title,
+    description: description,
+    curator: curator,
+    thumbnail: thumbnailKey,
+    created: Date.now(),
+    updated: Date.now(),
+    songs: []
+  };
+
+  await savePlaylists(env, playlists);
+  
+  // Log activity
+  await logAdminActivity(env, auth.session.id, 'create', 'playlist', playlistId, title);
+
+  return { 
+    success: true, 
+    redirect: `/admin/playlists?created=1` 
+  };
+}
+
+// ===== EDIT PLAYLIST PAGE =====
 export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
   const url = new URL(req.url);
   const playlistId = url.searchParams.get('id');
@@ -343,7 +436,7 @@ export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle playlist edit submission
+// ===== HANDLE PLAYLIST EDIT POST =====
 export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const playlistId = formData.get('playlistId');
@@ -388,7 +481,7 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   }
 }
 
-// Handle playlist deletion
+// ===== HANDLE PLAYLIST DELETION =====
 export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const playlistId = url.searchParams.get('id');
@@ -419,7 +512,7 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
   }
 }
 
-// Manage playlist songs page
+// ===== MANAGE PLAYLIST SONGS PAGE =====
 export async function handleAdminPlaylistSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
   const playlistId = url.searchParams.get('id');
@@ -453,7 +546,7 @@ export async function handleAdminPlaylistSongs(req, env, ctx, auth) {
         artistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
       }
       
-      const title = meta?.title || baseName.split('_').slice(1).join(' ');
+      const title = meta?.title || baseName.split('_').slice(1).join(' ') || baseName;
       
       return `
         <tr>
@@ -542,7 +635,7 @@ export async function handleAdminPlaylistSongs(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle playlist songs update
+// ===== HANDLE PLAYLIST SONGS UPDATE =====
 export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const playlistId = formData.get('playlistId');
@@ -574,6 +667,8 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
     return { success: false, error: error.message };
   }
 }
+
+// ===== HELPER FUNCTIONS =====
 
 // Mobile card with views
 function generateMobileCard(playlist) {
