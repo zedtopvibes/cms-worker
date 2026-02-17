@@ -56,89 +56,158 @@ export async function handleAdmin(req, env, ctx) {
   const auth = await requireAdmin(req, env);
   if (!auth.authenticated) return auth.response;
 
-  // ===== DASHBOARD =====
-  if (path === '/' || path === '/dashboard') {
-    const content = `
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3><i class="fas fa-check-circle" style="color: #ff5500;"></i> Session Status</h3>
-                <div class="number">Active</div>
-                <div class="label">7 day expiry</div>
+// ===== DASHBOARD =====
+if (path === '/' || path === '/dashboard') {
+  // Get real-time stats
+  const stats = await getDashboardStats(env);
+  
+  const content = `
+    <div style="margin-bottom: 20px;">
+        <!-- Welcome Header -->
+        <div style="margin-bottom: 25px;">
+            <h2 style="font-size: 1.5rem; margin-bottom: 5px;">Welcome back, ${auth.session.username}!</h2>
+            <p style="color: #666;">${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
+        
+        <!-- Real-time Stats Grid -->
+        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+            <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">👁️ Views Today</h3>
+                    <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.viewsTrend}</span>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 5px;">${formatNumber(stats.viewsToday)}</div>
+                <div style="font-size: 0.75rem; opacity: 0.9;">${stats.viewsTrendValue} from yesterday</div>
             </div>
-            <div class="stat-card">
-                <h3><i class="fas fa-clock" style="color: #ff5500;"></i> Login Time</h3>
-                <div class="number">${new Date().toLocaleTimeString()}</div>
-                <div class="label">${new Date().toLocaleDateString()}</div>
+            
+            <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; border: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">▶️ Plays Today</h3>
+                    <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.playsTrend}</span>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 5px;">${formatNumber(stats.playsToday)}</div>
+                <div style="font-size: 0.75rem; opacity: 0.9;">${stats.playsTrendValue} from yesterday</div>
             </div>
-            <div class="stat-card">
-                <h3><i class="fas fa-user" style="color: #ff5500;"></i> Admin</h3>
-                <div class="number">${auth.session.username}</div>
-                <div class="label">Administrator</div>
+            
+            <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #28a745, #20c997); color: white; border: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">⬇️ Downloads Today</h3>
+                    <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.downloadsTrend}</span>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 5px;">${formatNumber(stats.downloadsToday)}</div>
+                <div style="font-size: 0.75rem; opacity: 0.9;">${stats.downloadsTrendValue} from yesterday</div>
             </div>
         </div>
         
-        <div class="alert alert-info" style="margin-bottom: 25px;">
-            <i class="fas fa-info-circle"></i>
-            Welcome to the admin panel. Use the tabs above or quick actions below to manage content.
+        <!-- Second Row Stats -->
+        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px;">
+            <div class="stat-card" style="padding: 12px;">
+                <h3 style="font-size: 0.7rem; color: #666;">🎵 New Songs</h3>
+                <div style="font-size: 1.8rem; font-weight: 700; color: #ff5500;">${stats.newSongs}</div>
+                <div style="font-size: 0.7rem; color: #999;">this week</div>
+            </div>
+            
+            <div class="stat-card" style="padding: 12px;">
+                <h3 style="font-size: 0.7rem; color: #666;">💿 New Albums</h3>
+                <div style="font-size: 1.8rem; font-weight: 700; color: #ff5500;">${stats.newAlbums}</div>
+                <div style="font-size: 0.7rem; color: #999;">this week</div>
+            </div>
+            
+            <div class="stat-card" style="padding: 12px;">
+                <h3 style="font-size: 0.7rem; color: #666;">🎤 New Artists</h3>
+                <div style="font-size: 1.8rem; font-weight: 700; color: #ff5500;">${stats.newArtists}</div>
+                <div style="font-size: 0.7rem; color: #999;">this week</div>
+            </div>
         </div>
         
-        <h2 style="margin: 0 0 15px; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-            <i class="fas fa-bolt" style="color: #ff5500;"></i> Quick Actions
-        </h2>
+        <!-- 7-Day Trend Chart (ASCII-style for now) -->
+        <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h4 style="font-size: 1rem;"><i class="fas fa-chart-line" style="color: #ff5500;"></i> 7-Day Activity</h4>
+                <div style="display: flex; gap: 15px; font-size: 0.7rem;">
+                    <span><span style="color: #ff5500;">■</span> Views</span>
+                    <span><span style="color: #4a90e2;">■</span> Plays</span>
+                    <span><span style="color: #28a745;">■</span> Downloads</span>
+                </div>
+            </div>
+            
+            <!-- Simple Bar Chart -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 150px; margin-bottom: 10px;">
+                ${stats.weeklyData.map(day => `
+                    <div style="display: flex; flex-direction: column; align-items: center; width: 12%;">
+                        <div style="display: flex; gap: 2px; width: 100%; justify-content: center;">
+                            <div style="width: 8px; height: ${day.views}px; background: #ff5500; border-radius: 4px 4px 0 0;"></div>
+                            <div style="width: 8px; height: ${day.plays}px; background: #4a90e2; border-radius: 4px 4px 0 0;"></div>
+                            <div style="width: 8px; height: ${day.downloads}px; background: #28a745; border-radius: 4px 4px 0 0;"></div>
+                        </div>
+                        <div style="font-size: 0.6rem; margin-top: 5px; color: #666;">${day.label}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        
+        <!-- Top Content This Week -->
+        <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <h4 style="margin-bottom: 15px; font-size: 1rem;"><i class="fas fa-fire" style="color: #ff5500;"></i> Top Content This Week</h4>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                ${stats.topContent.map((item, index) => `
+                    <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+                        <span style="width: 24px; height: 24px; background: ${index === 0 ? '#ff5500' : index === 1 ? '#4a90e2' : index === 2 ? '#28a745' : '#f0f0f0'}; color: ${index < 3 ? 'white' : '#666'}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700;">${index + 1}</span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 0.9rem;">${item.title}</div>
+                            <div style="font-size: 0.7rem; color: #666;">${item.type} • ${item.artist}</div>
+                        </div>
+                        <span style="font-weight: 600; color: #ff5500;">${formatNumber(item.views)} 👁️</span>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div style="margin-top: 15px; text-align: center;">
+                <a href="/admin/stats" class="btn btn-secondary btn-sm">View All Stats →</a>
+            </div>
+        </div>
+        
+        <!-- Recent Activity Feed -->
+        <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <h4 style="margin-bottom: 15px; font-size: 1rem;"><i class="fas fa-clock" style="color: #ff5500;"></i> Recent Activity</h4>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                ${stats.recentActivity.map(activity => `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="width: 28px; height: 28px; background: ${activity.iconBg}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;">
+                            <i class="fas ${activity.icon}"></i>
+                        </span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.85rem;">${activity.text}</div>
+                            <div style="font-size: 0.65rem; color: #999;">${activity.time}</div>
+                        </div>
+                        ${activity.link ? `<a href="${activity.link}" style="color: #ff5500; font-size: 0.8rem;">View →</a>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <h2 style="margin: 20px 0 15px; font-size: 1.1rem;"><i class="fas fa-bolt" style="color: #ff5500;"></i> Quick Actions</h2>
         
         <!-- Mobile Cards -->
         <div class="mobile-cards">
             <div class="mobile-card" onclick="window.location='/admin/upload'" style="cursor: pointer;">
                 <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        <i class="fas fa-cloud-upload-alt" style="color: #ff5500; width: 24px;"></i> 
-                        Upload Song
-                    </span>
+                    <span class="mobile-card-label"><i class="fas fa-cloud-upload-alt" style="color: #ff5500;"></i> Upload Song</span>
                     <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
                 </div>
             </div>
             <div class="mobile-card" onclick="window.location='/admin/songs'" style="cursor: pointer;">
                 <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        <i class="fas fa-music" style="color: #ff5500; width: 24px;"></i> 
-                        Manage Songs
-                    </span>
+                    <span class="mobile-card-label"><i class="fas fa-music" style="color: #ff5500;"></i> Manage Songs</span>
                     <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
                 </div>
             </div>
             <div class="mobile-card" onclick="window.location='/admin/albums'" style="cursor: pointer;">
                 <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        <i class="fas fa-compact-disc" style="color: #ff5500; width: 24px;"></i> 
-                        Manage Albums
-                    </span>
-                    <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
-                </div>
-            </div>
-            <div class="mobile-card" onclick="window.location='/admin/artists'" style="cursor: pointer;">
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        <i class="fas fa-microphone" style="color: #ff5500; width: 24px;"></i> 
-                        Manage Artists
-                    </span>
-                    <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
-                </div>
-            </div>
-            <div class="mobile-card" onclick="window.location='/admin/playlists'" style="cursor: pointer;">
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        <i class="fas fa-list" style="color: #ff5500; width: 24px;"></i> 
-                        Manage Playlists
-                    </span>
-                    <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
-                </div>
-            </div>
-            <div class="mobile-card" onclick="window.location='/admin/stats'" style="cursor: pointer;">
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        <i class="fas fa-chart-line" style="color: #ff5500; width: 24px;"></i> 
-                        View Statistics
-                    </span>
+                    <span class="mobile-card-label"><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Manage Albums</span>
                     <span class="mobile-card-value"><i class="fas fa-chevron-right"></i></span>
                 </div>
             </div>
@@ -147,24 +216,12 @@ export async function handleAdmin(req, env, ctx) {
         <!-- Desktop Grid -->
         <div class="desktop-actions" style="display: none;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
-                <a href="/admin/upload" class="btn btn-primary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload Song
-                </a>
-                <a href="/admin/songs" class="btn btn-secondary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-music"></i> Songs
-                </a>
-                <a href="/admin/albums" class="btn btn-secondary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-compact-disc"></i> Albums
-                </a>
-                <a href="/admin/artists" class="btn btn-secondary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-microphone"></i> Artists
-                </a>
-                <a href="/admin/playlists" class="btn btn-secondary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-list"></i> Playlists
-                </a>
-                <a href="/admin/stats" class="btn btn-secondary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-chart-line"></i> Stats
-                </a>
+                <a href="/admin/upload" class="btn btn-primary">Upload Song</a>
+                <a href="/admin/songs" class="btn btn-secondary">Songs</a>
+                <a href="/admin/albums" class="btn btn-secondary">Albums</a>
+                <a href="/admin/artists" class="btn btn-secondary">Artists</a>
+                <a href="/admin/playlists" class="btn btn-secondary">Playlists</a>
+                <a href="/admin/stats" class="btn btn-secondary">Stats</a>
             </div>
         </div>
         
@@ -174,12 +231,13 @@ export async function handleAdmin(req, env, ctx) {
                 .desktop-actions { display: block !important; }
             }
         </style>
-    `;
+    </div>
+  `;
     
     return new Response(adminLayout('Dashboard', content, auth, 'dashboard'), {
       headers: { 'Content-Type': 'text/html' }
     });
-  }
+}
 
   // ===== UPLOAD SONG =====
   if (path === '/upload') {
