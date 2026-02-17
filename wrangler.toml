@@ -15,7 +15,7 @@ SITE_NAME = "ZEDALBUMS.TOP"
 binding = "media"
 bucket_name = "media"
  
-[[d1_databases]]
+[[d1_databases]] 
 binding = "DB"
 database_name = "music-stats"
 database_id = "c1f2a231-d2aa-474d-9181-210a9fb11e7e"
