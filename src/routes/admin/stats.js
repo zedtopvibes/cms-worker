@@ -1,4 +1,4 @@
-// ==================== ADMIN STATISTICS  - MOBILE OPTIMIZED WITH PAGE VIEWS ====================
+// ==================== ADMIN STATISTICS - MOBILE OPTIMIZED WITH PAGE VIEWS ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats, getSongStats } from '../../helpers/db.js';
 import { getPopularPages, getTotalPageViews, getViewsByType } from '../../helpers/pageViews.js';
