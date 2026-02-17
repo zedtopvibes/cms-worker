@@ -53,6 +53,9 @@ import {
 import { handleAdminStats } from './stats.js';
 import { handleAdminSearch } from './search.js';
 
+// ===== BULK OPERATIONS IMPORTS =====
+import { handleAdminBulk, executeBulkAction } from './bulk.js';
+
 // ===== DASHBOARD IMPORTS =====
 import { getDashboardStats } from '../../helpers/dashboardStats.js';
 import { formatNumber } from '../../helpers/formatting.js';
@@ -762,6 +765,18 @@ export async function handleAdmin(req, env, ctx) {
       headers: { 'Content-Type': 'text/html' }
     });
   }
+
+   // ===== BULK OPERATIONS =====
+if (path === '/bulk') {
+  if (req.method === 'GET') {
+    const result = await handleAdminBulk(req, env, ctx, auth);
+    return new Response(adminLayout(result.title, result.content, auth, 'bulk'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  } else if (req.method === 'POST') {
+    return await executeBulkAction(req, env, ctx, auth);
+  }
+}
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
   return new Response(`
