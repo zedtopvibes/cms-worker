@@ -1,8 +1,9 @@
-// ==================== ADMIN  ARTISTS MANAGEMENT ====================
+// ==================== ADMIN ARTISTS MANAGEMENT ====================
 import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 export async function handleAdminArtists(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -262,7 +263,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   return content;
 }
 
-// ===== ADD THESE MISSING FUNCTIONS =====
+// ===== CREATE/EDIT/DELETE/MERGE FUNCTIONS WITH ACTIVITY LOGGING =====
 
 // Edit artist page
 export async function handleAdminArtistEdit(req, env, ctx, auth) {
@@ -379,6 +380,9 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
     
     await saveArtists(env, artists);
     
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
+    
     return { success: true, redirect: '/admin/artists?updated=1' };
   } catch (error) {
     return { success: false, error: error.message };
@@ -396,6 +400,7 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
   
   try {
     const artists = await getArtists(env);
+    const artistName = artists[artistId]?.name || 'Unknown artist';
     
     // Delete thumbnail if exists
     if (artists[artistId]?.thumbnail) {
@@ -405,6 +410,9 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
     // Remove artist from index
     delete artists[artistId];
     await saveArtists(env, artists);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'delete', 'artist', artistId, artistName);
     
     return { success: true };
   } catch (error) {
@@ -516,6 +524,7 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     
     const mainArtist = artists[mainArtistId];
     const mergeArtist = artists[mergeArtistId];
+    const mergeArtistName = mergeArtist?.name || 'Unknown artist';
     
     if (!mainArtist || !mergeArtist) {
       return { success: false, error: 'Artist not found' };
@@ -567,6 +576,10 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     
     // Save main artist
     await saveArtists(env, artists);
+    
+    // ✅ LOG ADMIN ACTIVITY
+    await logAdminActivity(env, auth.session.id, 'merge', 'artist', mainArtistId, 
+      `Merged ${mergeArtistName} into ${mainArtist.name}`);
     
     return { success: true, redirect: '/admin/artists?merged=1' };
   } catch (error) {
