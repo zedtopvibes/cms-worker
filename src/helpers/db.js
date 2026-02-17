@@ -13,12 +13,12 @@ export async function incrementPlay(songKey, env) {
 
 export async function incrementDownload(songKey, env) {
   await env.DB.prepare(
-    `INSERT INTO song_stats (song_key, plays, downloads, last_downloaded)
-     VALUES (?, 0, 1, CURRENT_TIMESTAMP)
+    `INSERT INTO song_stats (song_key, plays, downloads, last_downloaded, last_downloaded_date)
+     VALUES (?, 0, 1, CURRENT_TIMESTAMP, date('now'))
      ON CONFLICT(song_key) DO UPDATE SET 
        downloads = downloads + 1,
-       last_downloaded = CURRENT_TIMESTAMP`
-last_downloaded_date = date('now')`  // This line fixes it!
+       last_downloaded = CURRENT_TIMESTAMP,
+       last_downloaded_date = date('now')`  // This line fixes it!
   ).bind(songKey).run();
 }
 
