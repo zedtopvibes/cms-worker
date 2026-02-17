@@ -9,25 +9,25 @@ import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
 import { handleAdmin } from './routes/admin/index.js';
+import { handleCron } from './helpers/cron.js';  // Add this line
 
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Handle OPTIONS requests
+    // Handle OPTIONS requests for CORS
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
     try {
-      // ===== ADMIN ROUTES (Reserved for administrators) =====
+      // ===== ADMIN ROUTES (Highest priority) =====
       if (path.startsWith("/admin")) {
         return await handleAdmin(req, env, ctx);
       }
       
       // ===== USER ROUTES (Reserved for future user system) =====
-      // These routes are reserved and will be implemented later
       if (path === "/login") {
         return new Response("User login coming soon", { status: 501 });
       }
@@ -124,5 +124,10 @@ export default {
         headers: CORS_HEADERS
       });
     }
+  },
+
+  // ===== CRON JOB HANDLER =====
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(handleCron(event, env, ctx));
   }
 };
