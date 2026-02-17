@@ -13,7 +13,7 @@ SITE_NAME = "ZEDALBUMS.TOP"
 
 [[r2_buckets]]
 binding = "media"
-bucket_name = "media" 
+bucket_name = "media"
  
 [[d1_databases]]
 binding = "DB"
