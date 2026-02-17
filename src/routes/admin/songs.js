@@ -1,5 +1,5 @@
 // ==================== ADMIN SONGS MANAGEMENT ====================
-import { getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
+import { getArtists, getAlbums, getMetadata, saveMetadata } from '../../helpers/storage.js';
 import { getSongStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
@@ -240,6 +240,156 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   `;
 
   return content;
+}
+
+// ===== ADD THESE MISSING FUNCTIONS =====
+
+// Handle song deletion
+export async function handleAdminSongDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const baseName = url.searchParams.get('name');
+  
+  if (!baseName) {
+    return { success: false, error: 'No song specified' };
+  }
+  
+  try {
+    // Delete from R2
+    await env.media.delete(`songs/${baseName}.mp3`).catch(() => {});
+    await env.media.delete(`images/${baseName}.jpg`).catch(() => {});
+    await env.media.delete(`images/${baseName}.png`).catch(() => {});
+    await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
+    await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Edit song page
+export async function handleAdminSongEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const baseName = url.searchParams.get('name');
+  
+  if (!baseName) {
+    return { redirect: '/admin/songs' };
+  }
+  
+  // Get song data
+  const meta = await getMetadata(env, baseName);
+  const artists = await getArtists(env);
+  const albums = await getAlbums(env);
+  
+  // Find current album
+  let currentAlbum = null;
+  for (const [id, album] of Object.entries(albums)) {
+    if (album.songs?.includes(baseName)) {
+      currentAlbum = { id, title: album.title };
+      break;
+    }
+  }
+  
+  // Get description
+  let description = '';
+  try {
+    const descObj = await env.media.get(`descriptions/${baseName}.txt`);
+    if (descObj) description = await descObj.text();
+  } catch (e) {}
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Song</h2>
+        
+        <form id="editForm" action="/admin/songs/edit" method="POST">
+            <input type="hidden" name="baseName" value="${baseName}">
+            
+            <div class="form-group">
+                <label>Title</label>
+                <input type="text" name="title" class="form-control" value="${meta?.title || baseName.split('_').slice(1).join(' ')}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Primary Artist ID</label>
+                <input type="text" name="primaryArtist" class="form-control" value="${meta?.primaryArtist || baseName.split('_')[0]}" required>
+                <p style="font-size: 0.8rem; color: #666;">Artist ID (e.g., yo_maps)</p>
+            </div>
+            
+            <div class="form-group">
+                <label>Featured Artists (comma-separated IDs)</label>
+                <input type="text" name="featuredArtists" class="form-control" value="${meta?.featuredArtists?.join(', ') || ''}">
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4">${description}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Duration (seconds)</label>
+                <input type="number" name="duration" class="form-control" value="${meta?.duration || 0}" step="0.001">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/songs" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this song?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// Handle edit submission
+export async function handleAdminSongEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const baseName = formData.get('baseName');
+  const title = formData.get('title');
+  const primaryArtist = formData.get('primaryArtist');
+  const featuredArtistsStr = formData.get('featuredArtists');
+  const description = formData.get('description');
+  const duration = parseFloat(formData.get('duration'));
+  
+  if (!baseName || !title || !primaryArtist) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  // Parse featured artists
+  const featuredArtists = featuredArtistsStr
+    ? featuredArtistsStr.split(',').map(s => s.trim()).filter(s => s)
+    : [];
+  
+  try {
+    // Update metadata
+    const metadata = {
+      title,
+      primaryArtist,
+      featuredArtists,
+      description,
+      duration
+    };
+    await saveMetadata(env, baseName, metadata);
+    
+    // Update description file
+    await env.media.put(`descriptions/${baseName}.txt`, description);
+    
+    return { success: true, redirect: '/admin/songs' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
 // Mobile card with views
