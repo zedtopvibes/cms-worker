@@ -1,4 +1,4 @@
-// ==================== PAGE VIEWS HELPER ====================
+// ==================== PAGE VIEWS HELPER ==================== 
 
 // Increment page view
 export async function incrementPageView(env, pageType, pageId) {
