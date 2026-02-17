@@ -125,6 +125,74 @@ if (path === '/' || path === '/dashboard') {
             </div>
         </div>
         
+<!-- Quick Actions Panel -->
+<div style="background: white; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+    <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+        <i class="fas fa-bolt" style="color: #ff5500;"></i> 
+        Quick Actions
+    </h3>
+    
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+        <a href="/admin/upload" class="quick-action-btn">
+            <i class="fas fa-cloud-upload-alt" style="font-size: 1.5rem; color: #ff5500;"></i>
+            <span>Upload Song</span>
+        </a>
+        
+        <a href="/admin/album/create" class="quick-action-btn">
+            <i class="fas fa-compact-disc" style="font-size: 1.5rem; color: #28a745;"></i>
+            <span>New Album</span>
+        </a>
+        
+        <a href="/admin/artist/create" class="quick-action-btn">
+            <i class="fas fa-microphone" style="font-size: 1.5rem; color: #9b59b6;"></i>
+            <span>New Artist</span>
+        </a>
+        
+        <a href="/admin/playlist/create" class="quick-action-btn">
+            <i class="fas fa-list" style="font-size: 1.5rem; color: #4a90e2;"></i>
+            <span>New Playlist</span>
+        </a>
+        
+        <a href="/admin/stats" class="quick-action-btn">
+            <i class="fas fa-chart-line" style="font-size: 1.5rem; color: #e67e22;"></i>
+            <span>View Stats</span>
+        </a>
+        
+        <a href="/admin/search" class="quick-action-btn">
+            <i class="fas fa-search" style="font-size: 1.5rem; color: #e74c3c;"></i>
+            <span>Search</span>
+        </a>
+    </div>
+</div>
+
+<style>
+.quick-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 15px 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #333;
+    transition: all 0.3s;
+    border: 1px solid #e8e8e8;
+    min-height: 80px;
+}
+
+.quick-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    border-color: #ff5500;
+}
+
+.quick-action-btn span {
+    margin-top: 5px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+</style>
         <!-- 7-Day Trend Chart (ASCII-style for now) -->
         <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
