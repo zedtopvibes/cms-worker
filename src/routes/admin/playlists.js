@@ -267,6 +267,301 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
   return content;
 }
 
+// ===== ADD THESE MISSING FUNCTIONS =====
+
+// Edit playlist page
+export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const playlistId = url.searchParams.get('id');
+  
+  if (!playlistId) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  const playlists = await getPlaylists(env);
+  const playlist = playlists[playlistId];
+  
+  if (!playlist) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Playlist: ${playlist.title}</h2>
+        
+        <form id="editForm" action="/admin/playlists/edit" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="playlistId" value="${playlistId}">
+            
+            <div class="form-group">
+                <label>Playlist Title</label>
+                <input type="text" name="title" class="form-control" value="${playlist.title}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4">${playlist.description || ''}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Curator Name</label>
+                <input type="text" name="curator" class="form-control" value="${playlist.curator || 'ZEDALBUMS'}">
+            </div>
+            
+            <div class="form-group">
+                <label>Current Cover Image</label>
+                ${playlist.thumbnail ? 
+                    `<div style="margin-bottom:10px;">
+                        <img src="/playlists/thumbnails/${playlistId}.jpg" style="width:100px; height:100px; border-radius:8px; object-fit:cover; border:3px solid #4a90e2;">
+                    </div>` : 
+                    '<p>No image</p>'
+                }
+                <label>New Cover Image (optional)</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/playlists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this playlist?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// Handle playlist edit submission
+export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const playlistId = formData.get('playlistId');
+  const title = formData.get('title');
+  const description = formData.get('description');
+  const curator = formData.get('curator');
+  const thumbnailFile = formData.get('thumbnail');
+  
+  if (!playlistId || !title) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  try {
+    const playlists = await getPlaylists(env);
+    
+    if (!playlists[playlistId]) {
+      return { success: false, error: 'Playlist not found' };
+    }
+    
+    // Update playlist details
+    playlists[playlistId].title = title;
+    playlists[playlistId].description = description;
+    playlists[playlistId].curator = curator;
+    playlists[playlistId].updated = Date.now();
+    
+    // Upload new thumbnail if provided
+    if (thumbnailFile && thumbnailFile.size > 0) {
+      const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+      const thumbnailKey = `playlists/thumbnails/${playlistId}.${imgType}`;
+      await env.media.put(thumbnailKey, thumbnailFile.stream());
+      playlists[playlistId].thumbnail = thumbnailKey;
+    }
+    
+    await savePlaylists(env, playlists);
+    
+    return { success: true, redirect: '/admin/playlists?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle playlist deletion
+export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const playlistId = url.searchParams.get('id');
+  
+  if (!playlistId) {
+    return { success: false, error: 'No playlist specified' };
+  }
+  
+  try {
+    const playlists = await getPlaylists(env);
+    
+    // Delete thumbnail if exists
+    if (playlists[playlistId]?.thumbnail) {
+      await env.media.delete(playlists[playlistId].thumbnail).catch(() => {});
+    }
+    
+    // Remove playlist from index
+    delete playlists[playlistId];
+    await savePlaylists(env, playlists);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Manage playlist songs page
+export async function handleAdminPlaylistSongs(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const playlistId = url.searchParams.get('id');
+  
+  if (!playlistId) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  const playlists = await getPlaylists(env);
+  const playlist = playlists[playlistId];
+  const artists = await getArtists(env);
+  
+  if (!playlist) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  // Get all songs
+  const songList = await env.media.list({ prefix: "songs/" });
+  const songs = songList.objects || [];
+  
+  // Build song options with metadata
+  const songOptions = await Promise.all(
+    songs.map(async (song) => {
+      const fileName = song.key.split('/')[1];
+      const baseName = fileName.replace('.mp3', '');
+      const inPlaylist = playlist.songs?.includes(baseName);
+      const meta = await getMetadata(env, baseName);
+      
+      let artistName = baseName.split('_')[0];
+      if (meta?.primaryArtist) {
+        artistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+      }
+      
+      const title = meta?.title || baseName.split('_').slice(1).join(' ');
+      
+      return `
+        <tr>
+            <td><input type="checkbox" name="songs" value="${baseName}" ${inPlaylist ? 'checked' : ''}></td>
+            <td>${title}</td>
+            <td>${artistName}</td>
+            <td>${inPlaylist ? '<span class="badge" style="background:#4a90e2; color:white;">In Playlist</span>' : '-'}</td>
+        </tr>
+      `;
+    })
+  );
+  
+  const content = `
+    <div style="max-width: 800px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-music"></i> Manage Songs: ${playlist.title}</h2>
+        
+        <form id="songsForm" action="/admin/playlists/songs" method="POST">
+            <input type="hidden" name="playlistId" value="${playlistId}">
+            
+            <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" onclick="checkAll()" class="btn btn-secondary btn-sm">Select All</button>
+                <button type="button" onclick="uncheckAll()" class="btn btn-secondary btn-sm">Deselect All</button>
+                <span style="flex:1;"></span>
+                <span><strong>Total Songs:</strong> ${playlist.songs?.length || 0}</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
+                            <th>Song</th>
+                            <th>Artist</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${songOptions.join('')}
+                        ${songOptions.length === 0 ? `
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i>
+                                    <p>No songs found</p>
+                                </td>
+                            </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/playlists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        function checkAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = true);
+            document.getElementById('selectAll').checked = true;
+        }
+        
+        function uncheckAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
+        }
+        
+        function toggleAll() {
+            const selectAll = document.getElementById('selectAll').checked;
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = selectAll);
+        }
+        
+        document.getElementById('songsForm').addEventListener('submit', function(e) {
+            if (!confirm('Update playlist songs?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// Handle playlist songs update
+export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const playlistId = formData.get('playlistId');
+  const selectedSongs = formData.getAll('songs');
+  
+  if (!playlistId) {
+    return { success: false, error: 'No playlist specified' };
+  }
+  
+  try {
+    const playlists = await getPlaylists(env);
+    
+    if (!playlists[playlistId]) {
+      return { success: false, error: 'Playlist not found' };
+    }
+    
+    // Update playlist songs
+    playlists[playlistId].songs = selectedSongs;
+    playlists[playlistId].updated = Date.now();
+    await savePlaylists(env, playlists);
+    
+    return { success: true, redirect: '/admin/playlists?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Mobile card with views
 function generateMobileCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
@@ -324,7 +619,7 @@ function generateGridCard(playlist) {
   `;
 }
 
-// Pagination helper (same as songs.js)
+// Pagination helper
 function generatePagination(currentPage, totalPages, search, sort) {
   if (totalPages <= 1) return '';
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
