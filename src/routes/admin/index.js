@@ -35,6 +35,11 @@ import {
   handleAdminPlaylistSongsPost
 } from './playlists.js';
 import { handleAdminStats } from './stats.js';
+
+// ===== NEW IMPORTS FOR DASHBOARD WIDGETS =====
+import { getDashboardStats } from '../../helpers/dashboardStats.js';
+import { formatNumber } from '../../helpers/formatting.js';
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
