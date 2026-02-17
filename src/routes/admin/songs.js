@@ -243,51 +243,105 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   return content;
 }
 
-// ===== EDIT/DELETE FUNCTIONS WITH SUPER DEBUG LOGGING =====
+// ===== EDIT/DELETE FUNCTIONS WITH ENHANCED ERROR HANDLING =====
 
-// Handle song deletion - SUPER DEBUG VERSION
+// Handle song deletion - ENHANCED ERROR HANDLING VERSION
 export async function handleAdminSongDelete(req, env, ctx, auth) {
   console.log('🔍 ===== DELETE FUNCTION STARTED =====');
-  console.log('🔍 1. Full auth object:', JSON.stringify(auth, null, 2));
-  console.log('🔍 2. auth.session:', auth?.session);
-  console.log('🔍 3. auth.session?.id:', auth?.session?.id);
-  console.log('🔍 4. auth type:', typeof auth);
-  console.log('🔍 5. Does auth have session?', auth ? 'yes' : 'no');
-  console.log('🔍 6. auth keys:', Object.keys(auth || {}));
-  
-  const url = new URL(req.url);
-  const baseName = url.searchParams.get('name');
-  console.log('🔍 7. Song to delete:', baseName);
-  
-  if (!baseName) {
-    console.log('❌ 8. No song specified');
-    return { success: false, error: 'No song specified' };
-  }
   
   try {
+    console.log('🔍 1. Parsing URL...');
+    const url = new URL(req.url);
+    const baseName = url.searchParams.get('name');
+    console.log('🔍 2. Song to delete:', baseName);
+    
+    if (!baseName) {
+      console.log('❌ 3. No song specified');
+      return { success: false, error: 'No song specified' };
+    }
+    
+    console.log('🔍 4. Auth object present:', !!auth);
+    console.log('🔍 5. Auth session present:', !!(auth?.session));
+    console.log('🔍 6. Auth session ID:', auth?.session?.id);
+    console.log('🔍 7. Auth type:', typeof auth);
+    console.log('🔍 8. Auth keys:', Object.keys(auth || {}));
+    
     // Get song title for logging
     console.log('🔍 9. Fetching metadata...');
-    const meta = await getMetadata(env, baseName);
-    const title = meta?.title || baseName;
-    console.log('🔍 10. Song title:', title);
+    let meta, title;
+    try {
+      meta = await getMetadata(env, baseName);
+      title = meta?.title || baseName;
+      console.log('🔍 10. Song title:', title);
+      console.log('🔍 11. Metadata found:', !!meta);
+    } catch (metaError) {
+      console.error('❌ 12. Error fetching metadata:', metaError);
+      title = baseName; // Fallback
+      console.log('🔍 13. Using fallback title:', title);
+    }
     
     // Delete from R2
-    console.log('🔍 11. Deleting files from R2...');
-    await env.media.delete(`songs/${baseName}.mp3`).catch(() => console.log('⚠️ Song file not found'));
-    await env.media.delete(`images/${baseName}.jpg`).catch(() => console.log('⚠️ JPG not found'));
-    await env.media.delete(`images/${baseName}.png`).catch(() => console.log('⚠️ PNG not found'));
-    await env.media.delete(`descriptions/${baseName}.txt`).catch(() => console.log('⚠️ Description not found'));
-    await env.media.delete(`metadata/${baseName}.json`).catch(() => console.log('⚠️ Metadata not found'));
-    console.log('✅ 12. Files deleted from R2');
+    console.log('🔍 14. Deleting files from R2...');
+    const deleteResults = [];
+    const deleteErrors = [];
     
-    // Try to log activity
-    console.log('🔍 13. Attempting to log activity...');
-    console.log('🔍 14. adminId value:', auth?.session?.id);
+    // Try to delete each file type
+    try {
+      await env.media.delete(`songs/${baseName}.mp3`);
+      deleteResults.push('✅ song.mp3');
+      console.log('✅ Song file deleted');
+    } catch (e) { 
+      deleteErrors.push('⚠️ song.mp3 not found');
+      console.log('⚠️ Song file not found or already deleted'); 
+    }
+    
+    try {
+      await env.media.delete(`images/${baseName}.jpg`);
+      deleteResults.push('✅ image.jpg');
+      console.log('✅ JPG deleted');
+    } catch (e) { 
+      deleteErrors.push('⚠️ image.jpg not found');
+      console.log('⚠️ JPG not found'); 
+    }
+    
+    try {
+      await env.media.delete(`images/${baseName}.png`);
+      deleteResults.push('✅ image.png');
+      console.log('✅ PNG deleted');
+    } catch (e) { 
+      deleteErrors.push('⚠️ image.png not found');
+      console.log('⚠️ PNG not found'); 
+    }
+    
+    try {
+      await env.media.delete(`descriptions/${baseName}.txt`);
+      deleteResults.push('✅ description.txt');
+      console.log('✅ Description deleted');
+    } catch (e) { 
+      deleteErrors.push('⚠️ description.txt not found');
+      console.log('⚠️ Description not found'); 
+    }
+    
+    try {
+      await env.media.delete(`metadata/${baseName}.json`);
+      deleteResults.push('✅ metadata.json');
+      console.log('✅ Metadata deleted');
+    } catch (e) { 
+      deleteErrors.push('⚠️ metadata.json not found');
+      console.log('⚠️ Metadata not found'); 
+    }
+    
+    console.log('✅ 15. Files deleted from R2:', deleteResults.join(', '));
+    if (deleteErrors.length > 0) {
+      console.log('⚠️ 16. Delete warnings:', deleteErrors.join(', '));
+    }
+    
+    // Try to log activity with extensive error handling
+    console.log('🔍 17. Attempting to log activity...');
     
     if (auth?.session?.id) {
-      console.log('🔍 15. Calling logAdminActivity with ID:', auth.session.id);
-      console.log('🔍 16. logAdminActivity params:', {
-        env: 'exists',
+      console.log('🔍 18. Calling logAdminActivity with ID:', auth.session.id);
+      console.log('🔍 19. logAdminActivity params:', {
         adminId: auth.session.id,
         action: 'delete',
         itemType: 'song',
@@ -295,23 +349,50 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
         itemName: title
       });
       
-      const logResult = await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
-      console.log('🔍 17. logAdminActivity result:', logResult);
+      try {
+        console.log('🔍 20. Executing logAdminActivity...');
+        const logResult = await logAdminActivity(
+          env, 
+          auth.session.id, 
+          'delete', 
+          'song', 
+          baseName, 
+          title
+        );
+        
+        console.log('🔍 21. logAdminActivity result:', logResult);
+        console.log('🔍 22. Result type:', typeof logResult);
+        
+        if (logResult === true) {
+          console.log('✅ 23. Activity logged successfully');
+        } else {
+          console.log('⚠️ 24. Activity logging returned:', logResult);
+        }
+        
+      } catch (logError) {
+        console.error('❌ 25. Error in logAdminActivity:', logError);
+        console.error('❌ 26. Error name:', logError.name);
+        console.error('❌ 27. Error message:', logError.message);
+        console.error('❌ 28. Error stack:', logError.stack);
+      }
     } else {
-      console.log('❌ 18. Cannot log: auth.session.id is', auth?.session?.id);
-      console.log('🔍 19. auth structure details:', {
-        hasAuth: !!auth,
-        hasSession: !!(auth?.session),
-        sessionKeys: auth?.session ? Object.keys(auth.session) : [],
-        authKeys: auth ? Object.keys(auth) : []
-      });
+      console.log('❌ 29. Cannot log: auth.session.id is undefined');
+      console.log('🔍 30. Auth structure:', JSON.stringify(auth, null, 2));
+      console.log('🔍 31. Auth keys available:', Object.keys(auth || {}));
+      console.log('🔍 32. Session object:', auth?.session);
     }
     
-    console.log('✅ 20. Delete function completed');
+    console.log('✅ 33. Delete function completed successfully');
+    console.log('🔍 ===== DELETE FUNCTION ENDED =====');
+    
     return { success: true };
+    
   } catch (error) {
-    console.error('❌ 21. Error in delete function:', error);
-    console.error('❌ 22. Error stack:', error.stack);
+    console.error('❌ 34. Unhandled error in delete function:', error);
+    console.error('❌ 35. Error name:', error.name);
+    console.error('❌ 36. Error message:', error.message);
+    console.error('❌ 37. Error stack:', error.stack);
+    console.error('❌ 38. Error cause:', error.cause);
     return { success: false, error: error.message };
   }
 }
