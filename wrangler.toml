@@ -2,15 +2,23 @@ name = "cms"
 main = "src/index.js"
 compatibility_date = "2025-02-01"
 
+# ===== OBSERVABILITY SETTINGS =====
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # Environment variables
 [vars]
-ENVIRONMENT = "production" 
+ENVIRONMENT = "production"
 SITE_NAME = "ZEDALBUMS.TOP"
 
 [[r2_buckets]]
 binding = "media"
-bucket_name = "media" 
- 
+bucket_name = "media"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "music-stats"
@@ -20,6 +28,6 @@ database_id = "c1f2a231-d2aa-474d-9181-210a9fb11e7e"
 binding = "ADMIN_SESSIONS"
 id = "c05b34847d3b4d2c8102e60740e0f6d3"
 
-# ===== CRON TRIGGERS - ADD THIS =====
+# ===== CRON TRIGGERS =====
 [triggers]
 crons = ["0 0 * * *"]  # Runs at midnight every day
