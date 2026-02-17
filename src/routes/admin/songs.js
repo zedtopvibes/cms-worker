@@ -243,51 +243,75 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   return content;
 }
 
-// ===== EDIT/DELETE FUNCTIONS WITH FIXED ACTIVITY LOGGING =====
+// ===== EDIT/DELETE FUNCTIONS WITH SUPER DEBUG LOGGING =====
 
-// Handle song deletion - FIXED VERSION
+// Handle song deletion - SUPER DEBUG VERSION
 export async function handleAdminSongDelete(req, env, ctx, auth) {
   console.log('🔍 ===== DELETE FUNCTION STARTED =====');
+  console.log('🔍 1. Full auth object:', JSON.stringify(auth, null, 2));
+  console.log('🔍 2. auth.session:', auth?.session);
+  console.log('🔍 3. auth.session?.id:', auth?.session?.id);
+  console.log('🔍 4. auth type:', typeof auth);
+  console.log('🔍 5. Does auth have session?', auth ? 'yes' : 'no');
+  console.log('🔍 6. auth keys:', Object.keys(auth || {}));
   
   const url = new URL(req.url);
   const baseName = url.searchParams.get('name');
-  console.log('🔍 Song to delete:', baseName);
+  console.log('🔍 7. Song to delete:', baseName);
   
   if (!baseName) {
-    console.log('❌ No song specified');
+    console.log('❌ 8. No song specified');
     return { success: false, error: 'No song specified' };
   }
   
   try {
     // Get song title for logging
-    console.log('🔍 Fetching metadata...');
+    console.log('🔍 9. Fetching metadata...');
     const meta = await getMetadata(env, baseName);
     const title = meta?.title || baseName;
-    console.log('🔍 Song title:', title);
+    console.log('🔍 10. Song title:', title);
     
     // Delete from R2
-    console.log('🔍 Deleting files from R2...');
+    console.log('🔍 11. Deleting files from R2...');
     await env.media.delete(`songs/${baseName}.mp3`).catch(() => console.log('⚠️ Song file not found'));
     await env.media.delete(`images/${baseName}.jpg`).catch(() => console.log('⚠️ JPG not found'));
     await env.media.delete(`images/${baseName}.png`).catch(() => console.log('⚠️ PNG not found'));
     await env.media.delete(`descriptions/${baseName}.txt`).catch(() => console.log('⚠️ Description not found'));
     await env.media.delete(`metadata/${baseName}.json`).catch(() => console.log('⚠️ Metadata not found'));
-    console.log('✅ Files deleted from R2');
+    console.log('✅ 12. Files deleted from R2');
     
-    // ✅ FIXED: Check if auth.session.id exists before logging
+    // Try to log activity
+    console.log('🔍 13. Attempting to log activity...');
+    console.log('🔍 14. adminId value:', auth?.session?.id);
+    
     if (auth?.session?.id) {
-      console.log('🔍 Logging activity with admin ID:', auth.session.id);
+      console.log('🔍 15. Calling logAdminActivity with ID:', auth.session.id);
+      console.log('🔍 16. logAdminActivity params:', {
+        env: 'exists',
+        adminId: auth.session.id,
+        action: 'delete',
+        itemType: 'song',
+        itemId: baseName,
+        itemName: title
+      });
+      
       const logResult = await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
-      console.log('🔍 logAdminActivity result:', logResult);
+      console.log('🔍 17. logAdminActivity result:', logResult);
     } else {
-      console.log('⚠️ No admin session ID found, skipping activity log');
-      console.log('🔍 Auth object:', JSON.stringify(auth));
+      console.log('❌ 18. Cannot log: auth.session.id is', auth?.session?.id);
+      console.log('🔍 19. auth structure details:', {
+        hasAuth: !!auth,
+        hasSession: !!(auth?.session),
+        sessionKeys: auth?.session ? Object.keys(auth.session) : [],
+        authKeys: auth ? Object.keys(auth) : []
+      });
     }
     
-    console.log('✅ Delete function completed successfully');
+    console.log('✅ 20. Delete function completed');
     return { success: true };
   } catch (error) {
-    console.error('❌ Error in delete function:', error);
+    console.error('❌ 21. Error in delete function:', error);
+    console.error('❌ 22. Error stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
@@ -378,7 +402,7 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle edit submission - FIXED VERSION
+// Handle edit submission
 export async function handleAdminSongEditPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const baseName = formData.get('baseName');
@@ -411,7 +435,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
     
-    // ✅ FIXED: Check if auth.session.id exists before logging
+    // ✅ LOG ADMIN ACTIVITY
     if (auth?.session?.id) {
       await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
     } else {
