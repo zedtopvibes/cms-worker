@@ -4,7 +4,8 @@ import { getAggregatedStats } from './db.js';
 import { 
   getTodayViews,
   getViewsChartData,
-  getViewTrends
+  getViewTrends,
+  getPopularPagesForPeriod
 } from './pageViewsEnhanced.js';
 import {
   getPlaysForPeriod,
@@ -146,8 +147,8 @@ export async function getDashboardStats(env) {
       });
     }
     
-    // Get top content this week (REAL DATA)
-    const topContent = await getTopContent(env);
+    // Get top content this week by VIEWS (not plays)
+    const topContent = await getTopContentByViews(env);
     
     // Get recent activity (REAL DATA from admin_activity table)
     const recentActivity = await getRecentActivity(env);
@@ -175,7 +176,7 @@ export async function getDashboardStats(env) {
       // Chart data
       weeklyData,
       
-      // Top content
+      // Top content by VIEWS
       topContent,
       
       // Recent activity
@@ -273,18 +274,18 @@ function getTrendValue(change) {
   return '0';
 }
 
-// Get top content this week (REAL DATA)
-async function getTopContent(env) {
+// Get top content this week by VIEWS (UPDATED)
+async function getTopContentByViews(env) {
   try {
     const topContent = [];
     const artists = await getArtists(env);
+    const albums = await getAlbums(env);
     
-    // Get top songs by plays this week
-    const { getPopularByPlays } = await import('./playsDownloadsEnhanced.js');
-    const topSongs = await getPopularByPlays(env, 'week', 3, 'song');
+    // Get top songs by VIEWS this week
+    const topSongs = await getPopularPagesForPeriod(env, 'week', 5, 'song');
     
     for (const song of topSongs) {
-      const metadata = await getMetadata(env, song.item_id);
+      const metadata = await getMetadata(env, song.page_id);
       let artistName = 'Unknown';
       
       if (metadata?.primaryArtist) {
@@ -293,33 +294,41 @@ async function getTopContent(env) {
       }
       
       topContent.push({
-        title: metadata?.title || song.item_id,
+        title: metadata?.title || song.page_id,
         artist: artistName,
         type: 'song',
-        views: song.plays
+        views: song.views
       });
     }
     
-    // Get top albums by plays this week
-    const topAlbums = await getPopularByPlays(env, 'week', 2, 'album');
+    // Get top albums by VIEWS this week
+    const topAlbums = await getPopularPagesForPeriod(env, 'week', 3, 'album');
     for (const album of topAlbums) {
+      const albumData = albums[album.page_id];
+      let artistName = 'Various';
+      
+      if (albumData?.artists && albumData.artists.length > 0) {
+        const artist = artists[albumData.artists[0]];
+        artistName = artist?.name || albumData.artists[0];
+      }
+      
       topContent.push({
-        title: album.item_id,
-        artist: 'Various',
+        title: albumData?.title || album.page_id,
+        artist: artistName,
         type: 'album',
-        views: album.plays
+        views: album.views
       });
     }
     
-    // Get top artists by plays this week
-    const topArtists = await getPopularByPlays(env, 'week', 2, 'artist');
+    // Get top artists by VIEWS this week
+    const topArtists = await getPopularPagesForPeriod(env, 'week', 2, 'artist');
     for (const artist of topArtists) {
-      const artistData = artists[artist.item_id];
+      const artistData = artists[artist.page_id];
       topContent.push({
-        title: artistData?.name || artist.item_id,
+        title: artistData?.name || artist.page_id,
         artist: 'Artist',
         type: 'artist',
-        views: artist.plays
+        views: artist.views
       });
     }
     
@@ -329,7 +338,7 @@ async function getTopContent(env) {
       .slice(0, 5);
       
   } catch (error) {
-    console.error('Error getting top content:', error);
+    console.error('Error getting top content by views:', error);
     return [];
   }
 }
