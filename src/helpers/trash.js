@@ -1,4 +1,4 @@
-// ==================== R2 TRASH HELPER ====================
+// ==================== R2 TRASH  HELPER ====================
 
 // Move item to trash
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
