@@ -1,4 +1,4 @@
-// ==================== ADMIN STATISTICS - ENHANCED WITH DAILY/WEEKLY/MONTHLY VIEWS ====================
+// ==================== ADMIN STATISTICS - ENHANCED WITH PLAYS & DOWNLOADS CHARTS ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats, getSongStats } from '../../helpers/db.js';
 import { 
@@ -15,12 +15,24 @@ import {
   getViewTrends,
   getViewsSummary
 } from '../../helpers/pageViewsEnhanced.js';
+import {
+  getPlaysForPeriod,
+  getDownloadsForPeriod,
+  getPopularByPlays,
+  getPopularByDownloads,
+  getPlaysTrends,
+  getDownloadsTrends,
+  getPlaysDownloadsSummary,
+  getPlaysChartData,
+  getDownloadsChartData
+} from '../../helpers/playsDownloadsEnhanced.js';
 import { formatNumber, formatDuration } from '../../helpers/formatting.js';
 
 export async function handleAdminStats(req, env, ctx, auth) {
   const url = new URL(req.url);
   const view = url.searchParams.get('view') || 'overview';
   const period = url.searchParams.get('period') || 'week';
+  const metric = url.searchParams.get('metric') || 'all'; // 'views', 'plays', 'downloads', 'all'
   
   // Get basic counts
   const albums = await getAlbums(env);
@@ -43,16 +55,23 @@ export async function handleAdminStats(req, env, ctx, auth) {
   // Get total stats
   const totalStats = await getAggregatedStats(allSongKeys, env);
   
-  // ===== ENHANCED PAGE VIEWS STATS =====
+  // ===== ENHANCED STATS =====
   const viewsSummary = await getViewsSummary(env);
-  const chartData = await getViewsChartData(env, period);
-  const trends = await getViewTrends(env, null, null);
+  const playsDownloadsSummary = await getPlaysDownloadsSummary(env);
   
-  // Get popular pages by different periods
-  const popularToday = await getPopularPages(env, 5, null, 'today');
-  const popularThisWeek = await getPopularPages(env, 5, null, 'week');
-  const popularThisMonth = await getPopularPages(env, 5, null, 'month');
-  const popularAllTime = await getPopularPages(env, 5, null, 'total');
+  // Get chart data
+  const viewsChartData = await getViewsChartData(env, period);
+  const playsChartData = await getPlaysChartData(env, period);
+  const downloadsChartData = await getDownloadsChartData(env, period);
+  
+  // Get trends
+  const viewsTrends = await getViewTrends(env, null, null);
+  
+  // Get popular items by different metrics
+  const popularSongsByPlays = await getPopularByPlays(env, 'total', 5, 'song');
+  const popularSongsByDownloads = await getPopularByDownloads(env, 'total', 5, 'song');
+  const popularAlbumsByPlays = await getPopularByPlays(env, 'total', 5, 'album');
+  const popularArtistsByPlays = await getPopularByPlays(env, 'total', 5, 'artist');
   
   // Get top items
   const topSongs = await getTopSongs(env, 10);
@@ -94,40 +113,52 @@ export async function handleAdminStats(req, env, ctx, auth) {
       content = renderOverview(
         totalSongs, albums, artists, playlists, totalStats, totalStorage, 
         topSongs, topAlbums, topArtists, topPlaylists, recentSongs,
-        viewsSummary, chartData, trends, period,
-        popularToday, popularThisWeek, popularThisMonth, popularAllTime
+        viewsSummary, playsDownloadsSummary, 
+        viewsChartData, playsChartData, downloadsChartData,
+        viewsTrends, period, metric,
+        popularSongsByPlays, popularSongsByDownloads,
+        popularAlbumsByPlays, popularArtistsByPlays
       );
       break;
   }
   
-  // View tabs with period selector
+  // View tabs with period and metric selectors
   const tabs = `
     <div style="margin-bottom: 20px;">
         <div style="display: flex; gap: 8px; margin-bottom: 10px; overflow-x: auto; padding: 5px 0 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none;">
-            <a href="/admin/stats?view=overview&period=${period}" class="tab-btn ${view === 'overview' ? 'active' : ''}" style="white-space: nowrap;">
+            <a href="/admin/stats?view=overview&period=${period}&metric=${metric}" class="tab-btn ${view === 'overview' ? 'active' : ''}" style="white-space: nowrap;">
                 <i class="fas fa-chart-pie"></i> Overview
             </a>
-            <a href="/admin/stats?view=songs&period=${period}" class="tab-btn ${view === 'songs' ? 'active' : ''}" style="white-space: nowrap;">
+            <a href="/admin/stats?view=songs&period=${period}&metric=${metric}" class="tab-btn ${view === 'songs' ? 'active' : ''}" style="white-space: nowrap;">
                 <i class="fas fa-music"></i> Songs
             </a>
-            <a href="/admin/stats?view=albums&period=${period}" class="tab-btn ${view === 'albums' ? 'active' : ''}" style="white-space: nowrap;">
+            <a href="/admin/stats?view=albums&period=${period}&metric=${metric}" class="tab-btn ${view === 'albums' ? 'active' : ''}" style="white-space: nowrap;">
                 <i class="fas fa-compact-disc"></i> Albums
             </a>
-            <a href="/admin/stats?view=artists&period=${period}" class="tab-btn ${view === 'artists' ? 'active' : ''}" style="white-space: nowrap;">
+            <a href="/admin/stats?view=artists&period=${period}&metric=${metric}" class="tab-btn ${view === 'artists' ? 'active' : ''}" style="white-space: nowrap;">
                 <i class="fas fa-microphone"></i> Artists
             </a>
-            <a href="/admin/stats?view=playlists&period=${period}" class="tab-btn ${view === 'playlists' ? 'active' : ''}" style="white-space: nowrap;">
+            <a href="/admin/stats?view=playlists&period=${period}&metric=${metric}" class="tab-btn ${view === 'playlists' ? 'active' : ''}" style="white-space: nowrap;">
                 <i class="fas fa-list"></i> Playlists
             </a>
         </div>
         
-        <!-- Period Selector (for overview) -->
+        <!-- Period and Metric Selectors (for overview) -->
         ${view === 'overview' ? `
-        <div style="display: flex; gap: 5px; overflow-x: auto; padding: 5px 0;">
-            <a href="/admin/stats?view=overview&period=day" class="btn btn-sm ${period === 'day' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Daily</a>
-            <a href="/admin/stats?view=overview&period=week" class="btn btn-sm ${period === 'week' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Weekly</a>
-            <a href="/admin/stats?view=overview&period=month" class="btn btn-sm ${period === 'month' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Monthly</a>
-            <a href="/admin/stats?view=overview&period=year" class="btn btn-sm ${period === 'year' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Yearly</a>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+            <div style="display: flex; gap: 5px; overflow-x: auto; padding: 5px 0;">
+                <a href="/admin/stats?view=overview&period=day&metric=${metric}" class="btn btn-sm ${period === 'day' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Daily</a>
+                <a href="/admin/stats?view=overview&period=week&metric=${metric}" class="btn btn-sm ${period === 'week' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Weekly</a>
+                <a href="/admin/stats?view=overview&period=month&metric=${metric}" class="btn btn-sm ${period === 'month' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Monthly</a>
+                <a href="/admin/stats?view=overview&period=year&metric=${metric}" class="btn btn-sm ${period === 'year' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">Yearly</a>
+            </div>
+            
+            <div style="display: flex; gap: 5px; overflow-x: auto; padding: 5px 0;">
+                <a href="/admin/stats?view=overview&period=${period}&metric=all" class="btn btn-sm ${metric === 'all' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">All</a>
+                <a href="/admin/stats?view=overview&period=${period}&metric=views" class="btn btn-sm ${metric === 'views' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">👁️ Views</a>
+                <a href="/admin/stats?view=overview&period=${period}&metric=plays" class="btn btn-sm ${metric === 'plays' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">▶️ Plays</a>
+                <a href="/admin/stats?view=overview&period=${period}&metric=downloads" class="btn btn-sm ${metric === 'downloads' ? 'btn-primary' : 'btn-secondary'}" style="white-space: nowrap;">⬇️ Downloads</a>
+            </div>
         </div>
         ` : ''}
     </div>
@@ -160,12 +191,14 @@ async function getTopSongs(env, limit = 10) {
       const stats = await getSongStats(baseName, env);
       const meta = await getMetadata(env, baseName);
       const views = await getPageViews(env, 'song', baseName, 'total');
+      const plays = await getPlaysForPeriod(env, 'song', baseName, 'total');
+      const downloads = await getDownloadsForPeriod(env, 'song', baseName, 'total');
       
       return {
         name: meta?.title || baseName,
         artist: meta?.primaryArtist ? (artists[meta.primaryArtist]?.name || meta.primaryArtist) : baseName.split('_')[0],
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: plays || stats.plays,
+        downloads: downloads || stats.downloads,
         views,
         baseName
       };
@@ -185,13 +218,15 @@ async function getTopAlbums(env, limit = 10) {
       const stats = await getAggregatedStats(album.songs || [], env);
       const primaryArtist = album.artists?.length ? (artists[album.artists[0]]?.name || album.artists[0]) : 'Various';
       const views = await getPageViews(env, 'album', id, 'total');
+      const plays = await getPlaysForPeriod(env, 'album', id, 'total');
+      const downloads = await getDownloadsForPeriod(env, 'album', id, 'total');
       
       return {
         id,
         title: album.title,
         artist: primaryArtist,
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: plays || stats.plays,
+        downloads: downloads || stats.downloads,
         views,
         songs: album.songs?.length || 0
       };
@@ -210,12 +245,14 @@ async function getTopArtists(env, limit = 10) {
       const stats = await getAggregatedStats(artist.songs || [], env);
       const monthlyListeners = Math.floor(stats.plays * 0.3);
       const views = await getPageViews(env, 'artist', id, 'total');
+      const plays = await getPlaysForPeriod(env, 'artist', id, 'total');
+      const downloads = await getDownloadsForPeriod(env, 'artist', id, 'total');
       
       return {
         id,
         name: artist.name,
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: plays || stats.plays,
+        downloads: downloads || stats.downloads,
         views,
         monthlyListeners,
         songs: artist.songs?.length || 0,
@@ -235,13 +272,15 @@ async function getTopPlaylists(env, limit = 10) {
     Object.entries(playlists).map(async ([id, playlist]) => {
       const stats = await getAggregatedStats(playlist.songs || [], env);
       const views = await getPageViews(env, 'playlist', id, 'total');
+      const plays = await getPlaysForPeriod(env, 'playlist', id, 'total');
+      const downloads = await getDownloadsForPeriod(env, 'playlist', id, 'total');
       
       return {
         id,
         title: playlist.title,
         curator: playlist.curator || 'ZEDALBUMS',
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: plays || stats.plays,
+        downloads: downloads || stats.downloads,
         views,
         songs: playlist.songs?.length || 0
       };
@@ -251,22 +290,29 @@ async function getTopPlaylists(env, limit = 10) {
   return playlistData.sort((a, b) => b.plays - a.plays).slice(0, limit);
 }
 
-// Render overview stats - ENHANCED WITH CHARTS
+// Render overview stats - ENHANCED WITH PLAYS & DOWNLOADS CHARTS
 function renderOverview(
   totalSongs, albums, artists, playlists, totalStats, totalStorage, 
   topSongs, topAlbums, topArtists, topPlaylists, recentSongs,
-  viewsSummary, chartData, trends, period,
-  popularToday, popularThisWeek, popularThisMonth, popularAllTime
+  viewsSummary, playsDownloadsSummary,
+  viewsChartData, playsChartData, downloadsChartData,
+  viewsTrends, period, metric,
+  popularSongsByPlays, popularSongsByDownloads,
+  popularAlbumsByPlays, popularArtistsByPlays
 ) {
-  // Determine chart labels based on period
-  const chartLabels = chartData.labels || [];
-  const chartValues = chartData.data || [];
   
-  // Calculate max value for chart scaling
-  const maxValue = Math.max(...chartValues, 1);
+  // Calculate max values for charts
+  const maxViews = Math.max(...viewsChartData.data, 1);
+  const maxPlays = Math.max(...playsChartData.data, 1);
+  const maxDownloads = Math.max(...downloadsChartData.data, 1);
   
   // Format period label
   const periodLabel = period === 'day' ? 'Hourly' : period === 'week' ? 'Daily' : period === 'month' ? 'Weekly' : 'Monthly';
+  
+  // Determine which charts to show based on metric
+  const showViews = metric === 'all' || metric === 'views';
+  const showPlays = metric === 'all' || metric === 'plays';
+  const showDownloads = metric === 'all' || metric === 'downloads';
   
   return `
     <!-- Stats Grid -->
@@ -287,14 +333,6 @@ function renderOverview(
             <h3 style="font-size: 0.7rem;"><i class="fas fa-list"></i> Playlists</h3>
             <div class="number" style="font-size: 1.5rem;">${Object.keys(playlists).length}</div>
         </div>
-        <div class="stat-card" style="padding: 12px;">
-            <h3 style="font-size: 0.7rem;"><i class="fas fa-play"></i> Plays</h3>
-            <div class="number" style="font-size: 1.5rem;">${formatNumber(totalStats.plays)}</div>
-        </div>
-        <div class="stat-card" style="padding: 12px;">
-            <h3 style="font-size: 0.7rem;"><i class="fas fa-download"></i> Downloads</h3>
-            <div class="number" style="font-size: 1.5rem;">${formatNumber(totalStats.downloads)}</div>
-        </div>
     </div>
     
     <!-- Storage Card -->
@@ -305,78 +343,60 @@ function renderOverview(
         </div>
     </div>
     
-    <!-- ===== ENHANCED PAGE VIEWS SECTION WITH CHART ===== -->
+    <!-- Today's Stats Cards -->
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0;">
+        <div style="background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; padding: 12px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.7rem; opacity: 0.9;">Today's Views</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${formatNumber(viewsSummary.todayViews)}</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #4a90e2, #357abd); color: white; padding: 12px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.7rem; opacity: 0.9;">Today's Plays</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${formatNumber(playsDownloadsSummary.today.plays)}</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #28a745, #218838); color: white; padding: 12px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.7rem; opacity: 0.9;">Today's Downloads</div>
+            <div style="font-size: 1.5rem; font-weight: 700;">${formatNumber(playsDownloadsSummary.today.downloads)}</div>
+        </div>
+    </div>
+    
+    <!-- Quick Stats Row -->
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0;">
+        <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 0.7rem; color: #666;">Total Views</div>
+            <div style="font-size: 1.2rem; font-weight: 700; color: #ff5500;">${formatNumber(viewsSummary.totalViews)}</div>
+        </div>
+        <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 0.7rem; color: #666;">Total Plays</div>
+            <div style="font-size: 1.2rem; font-weight: 700; color: #4a90e2;">${formatNumber(playsDownloadsSummary.total.plays)}</div>
+        </div>
+        <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+            <div style="font-size: 0.7rem; color: #666;">Total Downloads</div>
+            <div style="font-size: 1.2rem; font-weight: 700; color: #28a745;">${formatNumber(playsDownloadsSummary.total.downloads)}</div>
+        </div>
+    </div>
+    
+    <!-- CHARTS SECTION -->
     <div style="background: white; border-radius: 12px; padding: 15px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-            <h4 style="font-size: 1rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> Page Views</h4>
-            <div style="display: flex; gap: 10px;">
-                <span style="background: #ff5500; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">
-                    Total: ${formatNumber(viewsSummary.totalViews)}
-                </span>
-            </div>
-        </div>
+        <h4 style="margin-bottom: 15px;"><i class="fas fa-chart-line" style="color: #ff5500;"></i> ${periodLabel} Trends</h4>
         
-        <!-- Mini Stats Cards -->
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 20px;">
-            <div style="background: #e7f5ff; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 0.7rem; color: #004085;">Today</div>
-                <div style="font-size: 1.2rem; font-weight: 700; color: #004085;">${formatNumber(viewsSummary.todayViews)}</div>
-                ${trends ? `
-                    <div style="font-size: 0.65rem; color: ${trends.dailyChange >= 0 ? '#28a745' : '#dc3545'};">
-                        ${trends.dailyChange >= 0 ? '↑' : '↓'} ${Math.abs(trends.dailyChangePercent)}% from yesterday
-                    </div>
-                ` : ''}
-            </div>
-            <div style="background: #fff3cd; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 0.7rem; color: #856404;">This Week</div>
-                <div style="font-size: 1.2rem; font-weight: 700; color: #856404;">${formatNumber(viewsSummary.weekViews)}</div>
-                ${trends ? `
-                    <div style="font-size: 0.65rem; color: ${trends.weeklyChange >= 0 ? '#28a745' : '#dc3545'};">
-                        ${trends.weeklyChange >= 0 ? '↑' : '↓'} ${Math.abs(trends.weeklyChangePercent)}% from last week
-                    </div>
-                ` : ''}
-            </div>
-            <div style="background: #d4edda; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 0.7rem; color: #155724;">This Month</div>
-                <div style="font-size: 1.2rem; font-weight: 700; color: #155724;">${formatNumber(viewsSummary.monthViews)}</div>
-                ${trends ? `
-                    <div style="font-size: 0.65rem; color: ${trends.monthlyChange >= 0 ? '#28a745' : '#dc3545'};">
-                        ${trends.monthlyChange >= 0 ? '↑' : '↓'} ${Math.abs(trends.monthlyChangePercent)}% from last month
-                    </div>
-                ` : ''}
-            </div>
-            <div style="background: #f8d7da; padding: 10px; border-radius: 8px;">
-                <div style="font-size: 0.7rem; color: #721c24;">Avg/Item</div>
-                <div style="font-size: 1.2rem; font-weight: 700; color: #721c24;">
-                    ${viewsSummary.byType.length ? formatNumber(Math.round(viewsSummary.totalViews / viewsSummary.byType.reduce((acc, t) => acc + t.count, 0))) : 0}
-                </div>
-                <div style="font-size: 0.65rem; color: #721c24;">per item</div>
-            </div>
-        </div>
-        
-        <!-- Simple Chart (Bar Graph) -->
-        ${chartLabels.length > 0 ? `
-        <div style="margin: 20px 0;">
+        <!-- Views Chart -->
+        ${showViews ? `
+        <div style="margin-bottom: 25px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span style="font-size: 0.8rem; font-weight: 600;">${periodLabel} Views</span>
-                <span style="font-size: 0.7rem; color: #666;">Last ${chartLabels.length} ${period === 'day' ? 'hours' : period === 'week' ? 'days' : period === 'month' ? 'weeks' : 'months'}</span>
+                <span style="font-size: 0.9rem; font-weight: 600; color: #ff5500;">👁️ Views</span>
+                <span style="font-size: 0.7rem; color: #666;">Last ${viewsChartData.labels.length} ${period === 'day' ? 'hours' : period === 'week' ? 'days' : period === 'month' ? 'weeks' : 'months'}</span>
             </div>
-            <div style="display: flex; align-items: flex-end; gap: 3px; height: 120px; margin: 10px 0;">
-                ${chartValues.map((value, i) => {
-                    const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
-                    let label = chartLabels[i];
-                    // Format label for display
-                    if (period === 'week') {
-                        label = label.split('-').pop(); // Show just day for weekly
-                    } else if (period === 'month') {
-                        label = 'W' + label.split('-').pop(); // Show week number
-                    } else if (period === 'year') {
-                        label = label.split('-')[1]; // Show month
-                    }
+            <div style="display: flex; align-items: flex-end; gap: 3px; height: 100px; margin: 10px 0;">
+                ${viewsChartData.data.map((value, i) => {
+                    const height = maxViews > 0 ? (value / maxViews) * 100 : 0;
+                    let label = viewsChartData.labels[i];
+                    if (period === 'week') label = label.split('-').pop();
+                    else if (period === 'month') label = 'W' + label.split('-').pop();
+                    else if (period === 'year') label = label.split('-')[1];
                     return `
                         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;">
                             <div style="width: 100%; background: #ff5500; height: ${height}%; min-height: 2px; border-radius: 4px 4px 0 0;"></div>
-                            <span style="font-size: 0.6rem; color: #666; transform: rotate(-45deg); white-space: nowrap;">${label}</span>
+                            <span style="font-size: 0.6rem; color: #666;">${label}</span>
                         </div>
                     `;
                 }).join('')}
@@ -384,83 +404,92 @@ function renderOverview(
         </div>
         ` : ''}
         
-        <!-- Views by Type -->
-        <div style="margin: 15px 0;">
-            <h5 style="margin: 0 0 8px; font-size: 0.9rem;">Views by Type</h5>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
-                ${viewsSummary.byType.map(type => `
-                    <div style="background: #f8f9fa; padding: 8px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: #666;">${getPageIcon(type.page_type)} ${type.page_type}s</div>
-                        <div style="font-weight: 700; color: #ff5500;">${formatNumber(type.total)}</div>
-                        <div style="font-size: 0.6rem; color: #999;">${type.count} items</div>
-                    </div>
-                `).join('')}
-                ${viewsSummary.byType.length === 0 ? `
-                    <div style="grid-column: span 2; text-align: center; padding: 20px; color: #666;">
-                        <i class="fas fa-eye-slash"></i> No page views yet
-                    </div>
-                ` : ''}
+        <!-- Plays Chart -->
+        ${showPlays ? `
+        <div style="margin-bottom: 25px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span style="font-size: 0.9rem; font-weight: 600; color: #4a90e2;">▶️ Plays</span>
+                <span style="font-size: 0.7rem; color: #666;">Last ${playsChartData.labels.length} ${period === 'day' ? 'hours' : period === 'week' ? 'days' : period === 'month' ? 'weeks' : 'months'}</span>
+            </div>
+            <div style="display: flex; align-items: flex-end; gap: 3px; height: 100px; margin: 10px 0;">
+                ${playsChartData.data.map((value, i) => {
+                    const height = maxPlays > 0 ? (value / maxPlays) * 100 : 0;
+                    let label = playsChartData.labels[i];
+                    if (period === 'week') label = label.split('-').pop();
+                    else if (period === 'month') label = 'W' + label.split('-').pop();
+                    else if (period === 'year') label = label.split('-')[1];
+                    return `
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                            <div style="width: 100%; background: #4a90e2; height: ${height}%; min-height: 2px; border-radius: 4px 4px 0 0;"></div>
+                            <span style="font-size: 0.6rem; color: #666;">${label}</span>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         </div>
+        ` : ''}
         
-        <!-- Popular Pages Tabs -->
-        <div style="margin: 15px 0;">
-            <div style="display: flex; gap: 5px; overflow-x: auto; padding: 5px 0; margin-bottom: 10px;">
-                <button class="tab-btn active" onclick="showPopularTab('today')" id="tab-today" style="padding: 6px 12px; white-space: nowrap;">Today</button>
-                <button class="tab-btn" onclick="showPopularTab('week')" id="tab-week" style="padding: 6px 12px; white-space: nowrap;">This Week</button>
-                <button class="tab-btn" onclick="showPopularTab('month')" id="tab-month" style="padding: 6px 12px; white-space: nowrap;">This Month</button>
-                <button class="tab-btn" onclick="showPopularTab('all')" id="tab-all" style="padding: 6px 12px; white-space: nowrap;">All Time</button>
+        <!-- Downloads Chart -->
+        ${showDownloads ? `
+        <div style="margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span style="font-size: 0.9rem; font-weight: 600; color: #28a745;">⬇️ Downloads</span>
+                <span style="font-size: 0.7rem; color: #666;">Last ${downloadsChartData.labels.length} ${period === 'day' ? 'hours' : period === 'week' ? 'days' : period === 'month' ? 'weeks' : 'months'}</span>
             </div>
-            
-            <!-- Today's Popular -->
-            <div id="popular-today" style="display: block;">
-                ${renderPopularList(popularToday, 'today')}
-            </div>
-            
-            <!-- This Week's Popular (hidden by default) -->
-            <div id="popular-week" style="display: none;">
-                ${renderPopularList(popularThisWeek, 'week')}
-            </div>
-            
-            <!-- This Month's Popular (hidden by default) -->
-            <div id="popular-month" style="display: none;">
-                ${renderPopularList(popularThisMonth, 'month')}
-            </div>
-            
-            <!-- All Time Popular (hidden by default) -->
-            <div id="popular-all" style="display: none;">
-                ${renderPopularList(popularAllTime, 'all')}
+            <div style="display: flex; align-items: flex-end; gap: 3px; height: 100px; margin: 10px 0;">
+                ${downloadsChartData.data.map((value, i) => {
+                    const height = maxDownloads > 0 ? (value / maxDownloads) * 100 : 0;
+                    let label = downloadsChartData.labels[i];
+                    if (period === 'week') label = label.split('-').pop();
+                    else if (period === 'month') label = 'W' + label.split('-').pop();
+                    else if (period === 'year') label = label.split('-')[1];
+                    return `
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                            <div style="width: 100%; background: #28a745; height: ${height}%; min-height: 2px; border-radius: 4px 4px 0 0;"></div>
+                            <span style="font-size: 0.6rem; color: #666;">${label}</span>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         </div>
+        ` : ''}
+    </div>
+    
+    <!-- Popular Content Section -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+        <!-- Popular Songs by Plays -->
+        <div style="background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <h5 style="margin: 0 0 10px 0; color: #4a90e2;"><i class="fas fa-fire"></i> Top Songs by Plays</h5>
+            ${renderCompactList(popularSongsByPlays, 'plays')}
+        </div>
         
-        <script>
-            function showPopularTab(period) {
-                // Hide all
-                document.getElementById('popular-today').style.display = 'none';
-                document.getElementById('popular-week').style.display = 'none';
-                document.getElementById('popular-month').style.display = 'none';
-                document.getElementById('popular-all').style.display = 'none';
-                
-                // Show selected
-                document.getElementById('popular-' + period).style.display = 'block';
-                
-                // Update active tab
-                document.querySelectorAll('[id^="tab-"]').forEach(tab => {
-                    tab.classList.remove('active');
-                });
-                document.getElementById('tab-' + period).classList.add('active');
-            }
-        </script>
+        <!-- Popular Songs by Downloads -->
+        <div style="background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <h5 style="margin: 0 0 10px 0; color: #28a745;"><i class="fas fa-download"></i> Top Songs by Downloads</h5>
+            ${renderCompactList(popularSongsByDownloads, 'downloads')}
+        </div>
+        
+        <!-- Popular Albums by Plays -->
+        <div style="background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <h5 style="margin: 0 0 10px 0; color: #4a90e2;"><i class="fas fa-compact-disc"></i> Top Albums by Plays</h5>
+            ${renderCompactList(popularAlbumsByPlays, 'plays')}
+        </div>
+        
+        <!-- Popular Artists by Plays -->
+        <div style="background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <h5 style="margin: 0 0 10px 0; color: #4a90e2;"><i class="fas fa-microphone"></i> Top Artists by Plays</h5>
+            ${renderCompactList(popularArtistsByPlays, 'plays')}
+        </div>
     </div>
     
     <!-- Top Charts -->
-    <h3 style="margin: 20px 0 10px; font-size: 1.1rem;"><i class="fas fa-fire" style="color: #ff5500;"></i> Top Charts</h3>
+    <h3 style="margin: 20px 0 10px; font-size: 1.1rem;"><i class="fas fa-trophy" style="color: #ff5500;"></i> Top Charts</h3>
     
     <!-- Top Songs -->
     <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <h4 style="font-size: 1rem;"><i class="fas fa-music" style="color: #ff5500;"></i> Top Songs</h4>
-            <span style="font-size: 0.8rem; color: #666;">Plays</span>
+            <span style="font-size: 0.8rem; color: #666;">Plays / Views / Downloads</span>
         </div>
         ${generateTopListMobile(topSongs, 'song')}
     </div>
@@ -469,7 +498,7 @@ function renderOverview(
     <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <h4 style="font-size: 1rem;"><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Top Albums</h4>
-            <span style="font-size: 0.8rem; color: #666;">Plays</span>
+            <span style="font-size: 0.8rem; color: #666;">Plays / Views</span>
         </div>
         ${generateTopListMobile(topAlbums, 'album')}
     </div>
@@ -487,7 +516,7 @@ function renderOverview(
     <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <h4 style="font-size: 1rem;"><i class="fas fa-list" style="color: #ff5500;"></i> Top Playlists</h4>
-            <span style="font-size: 0.8rem; color: #666;">Plays</span>
+            <span style="font-size: 0.8rem; color: #666;">Plays / Views</span>
         </div>
         ${generateTopListMobile(topPlaylists, 'playlist')}
     </div>
@@ -506,42 +535,33 @@ function renderOverview(
     </div>
     
     <!-- Quick Stats Cards -->
-    <div style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 12px;">
-            <div style="font-size: 0.8rem; opacity: 0.9;">Average Plays per Song</div>
-            <div style="font-size: 1.8rem; font-weight: 700;">${totalSongs ? Math.round(totalStats.plays / totalSongs) : 0}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Avg Plays per Song</div>
+            <div style="font-size: 1.8rem; font-weight: 700;">${totalSongs ? Math.round(playsDownloadsSummary.total.plays / totalSongs) : 0}</div>
         </div>
         <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 15px; border-radius: 12px;">
-            <div style="font-size: 0.8rem; opacity: 0.9;">Average Views per Item</div>
-            <div style="font-size: 1.8rem; font-weight: 700;">
-                ${(totalSongs + Object.keys(albums).length + Object.keys(artists).length + Object.keys(playlists).length) > 0 
-                    ? formatNumber(Math.round(viewsSummary.totalViews / (totalSongs + Object.keys(albums).length + Object.keys(artists).length + Object.keys(playlists).length))) 
-                    : 0}
-            </div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Avg Downloads per Song</div>
+            <div style="font-size: 1.8rem; font-weight: 700;">${totalSongs ? Math.round(playsDownloadsSummary.total.downloads / totalSongs) : 0}</div>
         </div>
     </div>
   `;
 }
 
-// Helper to render popular list
-function renderPopularList(popularPages, period) {
-  if (popularPages.length === 0) {
-    return `<p style="text-align: center; color: #666; padding: 15px;">No views for this period</p>`;
+// Helper to render compact list for popular items
+function renderCompactList(items, type) {
+  if (!items || items.length === 0) {
+    return '<p style="color: #666; text-align: center; padding: 10px;">No data</p>';
   }
   
-  return popularPages.map(page => `
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-        <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
-            <span>${getPageIcon(page.page_type)}</span>
-            <div style="flex: 1; min-width: 0;">
-                <div style="font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${page.page_id}
-                </div>
-                <div style="font-size: 0.6rem; color: #666;">${page.page_type}</div>
-            </div>
+  return items.map((item, index) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="width: 20px; height: 20px; background: ${index < 3 ? '#ff5500' : '#f0f0f0'}; color: ${index < 3 ? 'white' : '#666'}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 600;">${index + 1}</span>
+            <span style="font-size: 0.8rem;">${item.item_id}</span>
         </div>
-        <span style="font-weight: 600; color: #ff5500; font-size: 0.8rem; white-space: nowrap; margin-left: 8px;">
-            ${formatNumber(page.views)}
+        <span style="font-weight: 600; color: ${type === 'plays' ? '#4a90e2' : '#28a745'};">
+            ${type === 'plays' ? '▶️' : '⬇️'} ${formatNumber(item[type])}
         </span>
     </div>
   `).join('');
@@ -556,33 +576,38 @@ function generateTopListMobile(items, type) {
   return items.map((item, index) => {
     let title = '';
     let subtitle = '';
-    let value = '';
-    let secondaryValue = '';
+    let plays = '';
+    let views = '';
+    let downloads = '';
     
     switch (type) {
       case 'song':
         title = item.name;
         subtitle = item.artist;
-        value = formatNumber(item.plays);
-        secondaryValue = formatNumber(item.views);
+        plays = formatNumber(item.plays);
+        views = formatNumber(item.views);
+        downloads = formatNumber(item.downloads);
         break;
       case 'album':
         title = item.title;
         subtitle = item.artist;
-        value = formatNumber(item.plays);
-        secondaryValue = formatNumber(item.views);
+        plays = formatNumber(item.plays);
+        views = formatNumber(item.views);
+        downloads = formatNumber(item.downloads);
         break;
       case 'artist':
         title = item.name;
         subtitle = `${item.songs} songs • ${item.albums} albums`;
-        value = formatNumber(item.monthlyListeners);
-        secondaryValue = formatNumber(item.views);
+        plays = formatNumber(item.monthlyListeners);
+        views = formatNumber(item.views);
+        downloads = formatNumber(item.downloads);
         break;
       case 'playlist':
         title = item.title;
         subtitle = `by ${item.curator}`;
-        value = formatNumber(item.plays);
-        secondaryValue = formatNumber(item.views);
+        plays = formatNumber(item.plays);
+        views = formatNumber(item.views);
+        downloads = formatNumber(item.downloads);
         break;
     }
     
@@ -596,8 +621,9 @@ function generateTopListMobile(items, type) {
               <div style="font-size: 0.75rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${subtitle}</div>
           </div>
           <div style="text-align: right;">
-              <span style="font-size: 0.8rem; color: #ff5500; font-weight: 600; background: #fff0e6; padding: 3px 8px; border-radius: 20px; white-space: nowrap;">${value}</span>
-              <span style="font-size: 0.7rem; color: #4a90e2; display: block; margin-top: 2px;">👁️ ${secondaryValue}</span>
+              <span style="font-size: 0.8rem; color: #4a90e2; font-weight: 600; background: #e6f0ff; padding: 3px 8px; border-radius: 20px; white-space: nowrap;">▶️ ${plays}</span>
+              <span style="font-size: 0.7rem; color: #28a745; display: block; margin-top: 2px;">⬇️ ${downloads}</span>
+              <span style="font-size: 0.7rem; color: #ff5500; display: block;">👁️ ${views}</span>
           </div>
       </div>
     `;
@@ -627,16 +653,20 @@ async function renderSongStats(env, songs) {
       const meta = await getMetadata(env, baseName);
       const totalViews = await getPageViews(env, 'song', baseName, 'total');
       const todayViews = await getPageViews(env, 'song', baseName, 'today');
-      const weekViews = await getPageViews(env, 'song', baseName, 'week');
+      const totalPlays = await getPlaysForPeriod(env, 'song', baseName, 'total');
+      const todayPlays = await getPlaysForPeriod(env, 'song', baseName, 'today');
+      const totalDownloads = await getDownloadsForPeriod(env, 'song', baseName, 'total');
+      const todayDownloads = await getDownloadsForPeriod(env, 'song', baseName, 'today');
       
       return {
         name: meta?.title || baseName,
         artist: meta?.primaryArtist ? (artists[meta.primaryArtist]?.name || meta.primaryArtist) : baseName.split('_')[0],
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: totalPlays || stats.plays,
+        downloads: totalDownloads || stats.downloads,
         views: totalViews,
+        todayPlays,
+        todayDownloads,
         todayViews,
-        weekViews,
         uploaded: new Date(song.uploaded).toLocaleDateString()
       };
     })
@@ -647,11 +677,13 @@ async function renderSongStats(env, songs) {
   const totalPlays = songData.reduce((acc, s) => acc + s.plays, 0);
   const totalDownloads = songData.reduce((acc, s) => acc + s.downloads, 0);
   const totalViews = songData.reduce((acc, s) => acc + s.views, 0);
+  const totalTodayPlays = songData.reduce((acc, s) => acc + s.todayPlays, 0);
+  const totalTodayDownloads = songData.reduce((acc, s) => acc + s.todayDownloads, 0);
   const totalTodayViews = songData.reduce((acc, s) => acc + s.todayViews, 0);
   
   return `
     <!-- Stats Cards -->
-    <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px;">
+    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;">
         <div class="stat-card" style="padding: 12px;">
             <h3 style="font-size: 0.7rem;">Total Songs</h3>
             <div class="number" style="font-size: 1.5rem;">${songs.length}</div>
@@ -668,13 +700,13 @@ async function renderSongStats(env, songs) {
             <h3 style="font-size: 0.7rem;">Page Views</h3>
             <div class="number" style="font-size: 1.5rem;">${formatNumber(totalViews)}</div>
         </div>
-    </div>
-    
-    <!-- Today's Activity -->
-    <div style="background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; padding: 12px; border-radius: 12px; margin-bottom: 15px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span><i class="fas fa-sun"></i> Today's Views</span>
-            <span style="font-weight: 700;">${formatNumber(totalTodayViews)}</span>
+        <div class="stat-card" style="padding: 12px;">
+            <h3 style="font-size: 0.7rem;">Today's Plays</h3>
+            <div class="number" style="font-size: 1.5rem; color: #4a90e2;">${formatNumber(totalTodayPlays)}</div>
+        </div>
+        <div class="stat-card" style="padding: 12px;">
+            <h3 style="font-size: 0.7rem;">Today's Downloads</h3>
+            <div class="number" style="font-size: 1.5rem; color: #28a745;">${formatNumber(totalTodayDownloads)}</div>
         </div>
     </div>
     
@@ -689,10 +721,11 @@ async function renderSongStats(env, songs) {
                 </div>
                 <div style="color: #ff5500; font-size: 0.85rem; margin-bottom: 8px;">${song.artist}</div>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(song.plays)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(song.downloads)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(song.views)}</span>
-                    ${song.todayViews > 0 ? `<span style="font-size: 0.7rem; background: #ff5500; color: white; padding: 2px 8px; border-radius: 20px;">🔥 ${song.todayViews} today</span>` : ''}
+                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #4a90e2;"></i> ${formatNumber(song.plays)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #28a745;"></i> ${formatNumber(song.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> ${formatNumber(song.views)}</span>
+                    ${song.todayPlays > 0 ? `<span style="font-size: 0.7rem; background: #4a90e2; color: white; padding: 2px 8px; border-radius: 20px;">▶️ ${song.todayPlays} today</span>` : ''}
+                    ${song.todayDownloads > 0 ? `<span style="font-size: 0.7rem; background: #28a745; color: white; padding: 2px 8px; border-radius: 20px;">⬇️ ${song.todayDownloads} today</span>` : ''}
                 </div>
             </div>
         `).join('')}
@@ -711,17 +744,21 @@ async function renderAlbumStats(env, albums) {
       const primaryArtist = album.artists?.length ? (artists[album.artists[0]]?.name || album.artists[0]) : 'Various';
       const totalViews = await getPageViews(env, 'album', id, 'total');
       const todayViews = await getPageViews(env, 'album', id, 'today');
-      const weekViews = await getPageViews(env, 'album', id, 'week');
+      const totalPlays = await getPlaysForPeriod(env, 'album', id, 'total');
+      const todayPlays = await getPlaysForPeriod(env, 'album', id, 'today');
+      const totalDownloads = await getDownloadsForPeriod(env, 'album', id, 'total');
+      const todayDownloads = await getDownloadsForPeriod(env, 'album', id, 'today');
       
       return {
         title: album.title,
         artist: primaryArtist,
         songs: album.songs?.length || 0,
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: totalPlays || stats.plays,
+        downloads: totalDownloads || stats.downloads,
         views: totalViews,
+        todayPlays,
+        todayDownloads,
         todayViews,
-        weekViews,
         created: new Date(album.created).toLocaleDateString()
       };
     })
@@ -766,10 +803,10 @@ async function renderAlbumStats(env, albums) {
                 <div style="color: #ff5500; font-size: 0.85rem; margin-bottom: 8px;">${album.artist}</div>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                     <span style="font-size: 0.8rem;"><i class="fas fa-music"></i> ${album.songs} songs</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(album.plays)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(album.downloads)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(album.views)}</span>
-                    ${album.todayViews > 0 ? `<span style="font-size: 0.7rem; background: #ff5500; color: white; padding: 2px 8px; border-radius: 20px;">🔥 ${album.todayViews} today</span>` : ''}
+                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #4a90e2;"></i> ${formatNumber(album.plays)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #28a745;"></i> ${formatNumber(album.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> ${formatNumber(album.views)}</span>
+                    ${album.todayPlays > 0 ? `<span style="font-size: 0.7rem; background: #4a90e2; color: white; padding: 2px 8px; border-radius: 20px;">▶️ ${album.todayPlays} today</span>` : ''}
                 </div>
             </div>
         `).join('')}
@@ -786,14 +823,20 @@ async function renderArtistStats(env, artists) {
       const monthlyListeners = Math.floor(stats.plays * 0.3);
       const totalViews = await getPageViews(env, 'artist', id, 'total');
       const todayViews = await getPageViews(env, 'artist', id, 'today');
+      const totalPlays = await getPlaysForPeriod(env, 'artist', id, 'total');
+      const todayPlays = await getPlaysForPeriod(env, 'artist', id, 'today');
+      const totalDownloads = await getDownloadsForPeriod(env, 'artist', id, 'total');
+      const todayDownloads = await getDownloadsForPeriod(env, 'artist', id, 'today');
       
       return {
         name: artist.name,
         songs: artist.songs?.length || 0,
         albums: artist.albums?.length || 0,
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: totalPlays || stats.plays,
+        downloads: totalDownloads || stats.downloads,
         views: totalViews,
+        todayPlays,
+        todayDownloads,
         todayViews,
         monthlyListeners
       };
@@ -838,11 +881,14 @@ async function renderArtistStats(env, artists) {
                     <span style="font-size: 0.8rem;"><i class="fas fa-compact-disc"></i> ${artist.albums} albums</span>
                 </div>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 8px; border-radius: 8px;">
-                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(artist.plays)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(artist.downloads)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(artist.views)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #4a90e2;"></i> ${formatNumber(artist.plays)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #28a745;"></i> ${formatNumber(artist.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> ${formatNumber(artist.views)}</span>
                     <span style="font-size: 0.8rem; background: #9b59b6; color: white; padding: 2px 8px; border-radius: 20px;">${formatNumber(artist.monthlyListeners)} monthly</span>
-                    ${artist.todayViews > 0 ? `<span style="font-size: 0.7rem; background: #ff5500; color: white; padding: 2px 8px; border-radius: 20px;">🔥 ${artist.todayViews} today</span>` : ''}
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                    ${artist.todayPlays > 0 ? `<span style="font-size: 0.7rem; background: #4a90e2; color: white; padding: 2px 8px; border-radius: 20px;">▶️ ${artist.todayPlays} today</span>` : ''}
+                    ${artist.todayDownloads > 0 ? `<span style="font-size: 0.7rem; background: #28a745; color: white; padding: 2px 8px; border-radius: 20px;">⬇️ ${artist.todayDownloads} today</span>` : ''}
                 </div>
             </div>
         `).join('')}
@@ -858,14 +904,20 @@ async function renderPlaylistStats(env, playlists) {
       const stats = await getAggregatedStats(playlist.songs || [], env);
       const totalViews = await getPageViews(env, 'playlist', id, 'total');
       const todayViews = await getPageViews(env, 'playlist', id, 'today');
+      const totalPlays = await getPlaysForPeriod(env, 'playlist', id, 'total');
+      const todayPlays = await getPlaysForPeriod(env, 'playlist', id, 'today');
+      const totalDownloads = await getDownloadsForPeriod(env, 'playlist', id, 'total');
+      const todayDownloads = await getDownloadsForPeriod(env, 'playlist', id, 'today');
       
       return {
         title: playlist.title,
         curator: playlist.curator || 'ZEDALBUMS',
         songs: playlist.songs?.length || 0,
-        plays: stats.plays,
-        downloads: stats.downloads,
+        plays: totalPlays || stats.plays,
+        downloads: totalDownloads || stats.downloads,
         views: totalViews,
+        todayPlays,
+        todayDownloads,
         todayViews,
         updated: new Date(playlist.updated || playlist.created).toLocaleDateString()
       };
@@ -911,10 +963,13 @@ async function renderPlaylistStats(env, playlists) {
                 <div style="color: #4a90e2; font-size: 0.85rem; margin-bottom: 8px;">by ${playlist.curator}</div>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                     <span style="font-size: 0.8rem;"><i class="fas fa-music"></i> ${playlist.songs} songs</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(playlist.plays)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(playlist.downloads)}</span>
-                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(playlist.views)}</span>
-                    ${playlist.todayViews > 0 ? `<span style="font-size: 0.7rem; background: #ff5500; color: white; padding: 2px 8px; border-radius: 20px;">🔥 ${playlist.todayViews} today</span>` : ''}
+                    <span style="font-size: 0.8rem;"><i class="fas fa-play" style="color: #4a90e2;"></i> ${formatNumber(playlist.plays)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-download" style="color: #28a745;"></i> ${formatNumber(playlist.downloads)}</span>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-eye" style="color: #ff5500;"></i> ${formatNumber(playlist.views)}</span>
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                    ${playlist.todayPlays > 0 ? `<span style="font-size: 0.7rem; background: #4a90e2; color: white; padding: 2px 8px; border-radius: 20px;">▶️ ${playlist.todayPlays} today</span>` : ''}
+                    ${playlist.todayDownloads > 0 ? `<span style="font-size: 0.7rem; background: #28a745; color: white; padding: 2px 8px; border-radius: 20px;">⬇️ ${playlist.todayDownloads} today</span>` : ''}
                 </div>
             </div>
         `).join('')}
