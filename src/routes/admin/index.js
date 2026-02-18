@@ -1,3 +1,4 @@
+check if I have added everything correctly 
 // ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
@@ -55,9 +56,6 @@ import { handleAdminSearch } from './search.js';
 
 // ===== BULK OPERATIONS IMPORTS =====
 import { handleAdminBulk, executeBulkAction } from './bulk.js';
-
-// ===== ACTIVITY LOG IMPORTS =====
-import { handleAdminActivity } from './activity.js';
 
 // ===== DASHBOARD IMPORTS =====
 import { getDashboardStats } from '../../helpers/dashboardStats.js';
@@ -779,18 +777,6 @@ if (path === '/bulk') {
   } else if (req.method === 'POST') {
     return await executeBulkAction(req, env, ctx, auth);
   }
-}
-
-// ===== ACTIVITY LOG =====
-if (path === '/activity') {
-  const result = await handleAdminActivity(req, env, ctx, auth);
-  return new Response(adminLayout(result.title, result.content, auth, 'activity'), {
-    headers: { 'Content-Type': 'text/html' }
-  });
-}
-
-if (path === '/activity/export') {
-  return await handleAdminActivityExport(req, env, ctx, auth);
 }
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
