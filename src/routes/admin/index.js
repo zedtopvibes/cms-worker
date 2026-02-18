@@ -96,7 +96,6 @@ export async function handleAdmin(req, env, ctx) {
               <p style="color: #666;">${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
           
-          <!-- ===== NEW ENHANCED STATS SECTION ===== -->
           <!-- Real-time Stats Grid -->
           <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
               <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
@@ -108,7 +107,7 @@ export async function handleAdmin(req, env, ctx) {
                   <div style="font-size: 0.75rem; opacity: 0.9;">${stats.viewsTrendValue} from yesterday</div>
               </div>
               
-              <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #4a90e2, #357abd); color: white; border: none;">
+              <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; border: none;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                       <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">▶️ Plays Today</h3>
                       <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.playsTrend}</span>
@@ -127,7 +126,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Second Row Stats - KEPT EXACTLY AS IS -->
+          <!-- Second Row Stats -->
           <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px;">
               <div class="stat-card" style="padding: 12px;">
                   <h3 style="font-size: 0.7rem; color: #666;">🎵 New Songs</h3>
@@ -148,7 +147,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Quick Actions Panel - KEPT EXACTLY AS IS -->
+          <!-- Quick Actions Panel -->
           <div style="background: white; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
                   <i class="fas fa-bolt" style="color: #ff5500;"></i> 
@@ -183,12 +182,12 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- 7-Day Trend Chart - UPDATED WITH NEW COLORS -->
+          <!-- 7-Day Trend Chart -->
           <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                   <h4 style="font-size: 1rem;"><i class="fas fa-chart-line" style="color: #ff5500;"></i> 7-Day Activity</h4>
                   <div style="display: flex; gap: 15px; font-size: 0.7rem;">
-                      <span><span style="color: #667eea;">■</span> Views</span>
+                      <span><span style="color: #ff5500;">■</span> Views</span>
                       <span><span style="color: #4a90e2;">■</span> Plays</span>
                       <span><span style="color: #28a745;">■</span> Downloads</span>
                   </div>
@@ -198,33 +197,17 @@ export async function handleAdmin(req, env, ctx) {
                   ${stats.weeklyData.map(day => `
                       <div style="display: flex; flex-direction: column; align-items: center; width: 12%;">
                           <div style="display: flex; gap: 2px; width: 100%; justify-content: center;">
-                              <div style="width: 8px; height: ${day.views}px; background: #667eea; border-radius: 4px 4px 0 0;" title="${day.viewsRaw} views"></div>
-                              <div style="width: 8px; height: ${day.plays}px; background: #4a90e2; border-radius: 4px 4px 0 0;" title="${day.playsRaw} plays"></div>
-                              <div style="width: 8px; height: ${day.downloads}px; background: #28a745; border-radius: 4px 4px 0 0;" title="${day.downloadsRaw} downloads"></div>
+                              <div style="width: 8px; height: ${day.views}px; background: #ff5500; border-radius: 4px 4px 0 0;"></div>
+                              <div style="width: 8px; height: ${day.plays}px; background: #4a90e2; border-radius: 4px 4px 0 0;"></div>
+                              <div style="width: 8px; height: ${day.downloads}px; background: #28a745; border-radius: 4px 4px 0 0;"></div>
                           </div>
                           <div style="font-size: 0.6rem; margin-top: 5px; color: #666;">${day.label}</div>
                       </div>
                   `).join('')}
               </div>
-              
-              <!-- Mini Stats Row - NEW -->
-              <div style="display: flex; justify-content: space-around; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0;">
-                  <div style="text-align: center;">
-                      <div style="font-size: 0.6rem; color: #666;">Total Views</div>
-                      <div style="font-size: 1rem; font-weight: 600; color: #667eea;">${formatNumber(stats.weeklyData.reduce((acc, d) => acc + d.viewsRaw, 0))}</div>
-                  </div>
-                  <div style="text-align: center;">
-                      <div style="font-size: 0.6rem; color: #666;">Total Plays</div>
-                      <div style="font-size: 1rem; font-weight: 600; color: #4a90e2;">${formatNumber(stats.weeklyData.reduce((acc, d) => acc + d.playsRaw, 0))}</div>
-                  </div>
-                  <div style="text-align: center;">
-                      <div style="font-size: 0.6rem; color: #666;">Total Downloads</div>
-                      <div style="font-size: 1rem; font-weight: 600; color: #28a745;">${formatNumber(stats.weeklyData.reduce((acc, d) => acc + d.downloadsRaw, 0))}</div>
-                  </div>
-              </div>
           </div>
           
-          <!-- Top Content This Week - KEPT EXACTLY AS IS -->
+          <!-- Top Content This Week -->
           <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <h4 style="margin-bottom: 15px; font-size: 1rem;"><i class="fas fa-fire" style="color: #ff5500;"></i> Top Content This Week</h4>
               
@@ -239,11 +222,6 @@ export async function handleAdmin(req, env, ctx) {
                           <span style="font-weight: 600; color: #ff5500;">${formatNumber(item.views)} 👁️</span>
                       </div>
                   `).join('')}
-                  ${stats.topContent.length === 0 ? `
-                      <div style="text-align: center; padding: 20px; color: #666;">
-                          <i class="fas fa-chart-line"></i> No data yet
-                      </div>
-                  ` : ''}
               </div>
               
               <div style="margin-top: 15px; text-align: center;">
@@ -251,7 +229,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Recent Activity Feed - KEPT EXACTLY AS IS -->
+          <!-- Recent Activity Feed -->
           <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <h4 style="margin-bottom: 15px; font-size: 1rem;"><i class="fas fa-clock" style="color: #ff5500;"></i> Recent Activity</h4>
               
@@ -268,18 +246,13 @@ export async function handleAdmin(req, env, ctx) {
                           ${activity.link ? `<a href="${activity.link}" style="color: #ff5500; font-size: 0.8rem;">View →</a>` : ''}
                       </div>
                   `).join('')}
-                  ${stats.recentActivity.length === 0 ? `
-                      <div style="text-align: center; padding: 20px; color: #666;">
-                          <i class="fas fa-history"></i> No recent activity
-                      </div>
-                  ` : ''}
               </div>
           </div>
           
-          <!-- Quick Actions (Mobile) - KEPT EXACTLY AS IS -->
+          <!-- Quick Actions (Mobile) -->
           <h2 style="margin: 20px 0 15px; font-size: 1.1rem;"><i class="fas fa-bolt" style="color: #ff5500;"></i> Quick Actions</h2>
           
-          <!-- Mobile Cards - KEPT EXACTLY AS IS -->
+          <!-- Mobile Cards -->
           <div class="mobile-cards">
               <div class="mobile-card" onclick="window.location='/admin/upload'" style="cursor: pointer;">
                   <div class="mobile-card-row">
@@ -319,7 +292,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Desktop Grid - KEPT EXACTLY AS IS -->
+          <!-- Desktop Grid -->
           <div class="desktop-actions" style="display: none;">
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
                   <a href="/admin/upload" class="btn btn-primary">Upload Song</a>
