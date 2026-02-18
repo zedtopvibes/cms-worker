@@ -137,6 +137,102 @@ export async function getPageViewsForPeriod(env, pageType, pageId, period = 'tot
   }
 }
 
+// ===== GET TODAY'S VIEWS =====
+export async function getTodayViews(env, pageType = null, pageId = null) {
+  try {
+    const { date } = getDateParts();
+    
+    if (pageType && pageId) {
+      // Get views for specific item today
+      const result = await env.DB.prepare(
+        `SELECT views FROM daily_page_views 
+         WHERE page_type = ? AND page_id = ? AND view_date = ?`
+      ).bind(pageType, pageId, date).first();
+      
+      return result?.views || 0;
+    } else {
+      // Get total views for today across all items
+      let query = `SELECT SUM(views) as total FROM daily_page_views WHERE view_date = ?`;
+      let params = [date];
+      
+      if (pageType) {
+        query += ` AND page_type = ?`;
+        params.push(pageType);
+      }
+      
+      const result = await env.DB.prepare(query).bind(...params).first();
+      return result?.total || 0;
+    }
+  } catch (error) {
+    console.error('Error getting today views:', error);
+    return 0;
+  }
+}
+
+// ===== GET THIS WEEK'S VIEWS =====
+export async function getWeekViews(env, pageType = null, pageId = null) {
+  try {
+    const { yearWeek } = getDateParts();
+    
+    if (pageType && pageId) {
+      // Get views for specific item this week
+      const result = await env.DB.prepare(
+        `SELECT views FROM weekly_page_views 
+         WHERE page_type = ? AND page_id = ? AND year_week = ?`
+      ).bind(pageType, pageId, yearWeek).first();
+      
+      return result?.views || 0;
+    } else {
+      // Get total views for this week across all items
+      let query = `SELECT SUM(views) as total FROM weekly_page_views WHERE year_week = ?`;
+      let params = [yearWeek];
+      
+      if (pageType) {
+        query += ` AND page_type = ?`;
+        params.push(pageType);
+      }
+      
+      const result = await env.DB.prepare(query).bind(...params).first();
+      return result?.total || 0;
+    }
+  } catch (error) {
+    console.error('Error getting week views:', error);
+    return 0;
+  }
+}
+
+// ===== GET THIS MONTH'S VIEWS =====
+export async function getMonthViews(env, pageType = null, pageId = null) {
+  try {
+    const { yearMonth } = getDateParts();
+    
+    if (pageType && pageId) {
+      // Get views for specific item this month
+      const result = await env.DB.prepare(
+        `SELECT views FROM monthly_page_views 
+         WHERE page_type = ? AND page_id = ? AND year_month = ?`
+      ).bind(pageType, pageId, yearMonth).first();
+      
+      return result?.views || 0;
+    } else {
+      // Get total views for this month across all items
+      let query = `SELECT SUM(views) as total FROM monthly_page_views WHERE year_month = ?`;
+      let params = [yearMonth];
+      
+      if (pageType) {
+        query += ` AND page_type = ?`;
+        params.push(pageType);
+      }
+      
+      const result = await env.DB.prepare(query).bind(...params).first();
+      return result?.total || 0;
+    }
+  } catch (error) {
+    console.error('Error getting month views:', error);
+    return 0;
+  }
+}
+
 // ===== GET POPULAR PAGES FOR A PERIOD =====
 export async function getPopularPagesForPeriod(env, period = 'total', limit = 10, pageType = null) {
   try {
@@ -358,6 +454,51 @@ export async function getViewsChartData(env, range = 'week', pageType = null, pa
   }
 }
 
+// ===== GET VIEWS SUMMARY FOR DASHBOARD =====
+export async function getViewsSummary(env) {
+  try {
+    const [total, byType, today, week, month] = await Promise.all([
+      // Total views
+      env.DB.prepare(`SELECT SUM(total_views) as total FROM total_page_views`).first(),
+      
+      // Views by type
+      env.DB.prepare(`
+        SELECT page_type, SUM(total_views) as total, COUNT(*) as count
+        FROM total_page_views 
+        GROUP BY page_type 
+        ORDER BY total DESC
+      `).all(),
+      
+      // Today's views
+      getTodayViews(env),
+      
+      // This week's views
+      getWeekViews(env),
+      
+      // This month's views
+      getMonthViews(env)
+    ]);
+    
+    return {
+      totalViews: total?.total || 0,
+      todayViews: today || 0,
+      weekViews: week || 0,
+      monthViews: month || 0,
+      byType: byType.results || []
+    };
+    
+  } catch (error) {
+    console.error('Error getting views summary:', error);
+    return {
+      totalViews: 0,
+      todayViews: 0,
+      weekViews: 0,
+      monthViews: 0,
+      byType: []
+    };
+  }
+}
+
 // ===== BACKFILL EXISTING DATA FROM OLD TABLE =====
 export async function backfillPageViews(env) {
   try {
@@ -465,60 +606,6 @@ export async function backfillPageViews(env) {
   }
 }
 
-// ===== GET SUMMARY STATS FOR DASHBOARD =====
-export async function getViewsSummary(env) {
-  try {
-    const [total, byType, today, week, month] = await Promise.all([
-      // Total views
-      env.DB.prepare(`SELECT SUM(total_views) as total FROM total_page_views`).first(),
-      
-      // Views by type
-      env.DB.prepare(`
-        SELECT page_type, SUM(total_views) as total 
-        FROM total_page_views 
-        GROUP BY page_type 
-        ORDER BY total DESC
-      `).all(),
-      
-      // Today's views
-      env.DB.prepare(`
-        SELECT SUM(views) as total FROM daily_page_views 
-        WHERE view_date = ?
-      `).bind(getDateParts().date).first(),
-      
-      // This week's views
-      env.DB.prepare(`
-        SELECT SUM(views) as total FROM weekly_page_views 
-        WHERE year_week = ?
-      `).bind(getDateParts().yearWeek).first(),
-      
-      // This month's views
-      env.DB.prepare(`
-        SELECT SUM(views) as total FROM monthly_page_views 
-        WHERE year_month = ?
-      `).bind(getDateParts().yearMonth).first()
-    ]);
-    
-    return {
-      totalViews: total?.total || 0,
-      todayViews: today?.total || 0,
-      weekViews: week?.total || 0,
-      monthViews: month?.total || 0,
-      byType: byType.results || []
-    };
-    
-  } catch (error) {
-    console.error('Error getting views summary:', error);
-    return {
-      totalViews: 0,
-      todayViews: 0,
-      weekViews: 0,
-      monthViews: 0,
-      byType: []
-    };
-  }
-}
-
 // ===== CLEAN UP OLD DATA (OPTIONAL) =====
 export async function cleanupOldViews(env, daysToKeep = 90) {
   try {
@@ -538,3 +625,18 @@ export async function cleanupOldViews(env, daysToKeep = 90) {
     return { success: false, error: error.message };
   }
 }
+
+// ===== EXPORT ALL FUNCTIONS =====
+export {
+  incrementPageView,
+  getPageViewsForPeriod,
+  getTodayViews,
+  getWeekViews,
+  getMonthViews,
+  getPopularPagesForPeriod,
+  getViewTrends,
+  getViewsChartData,
+  getViewsSummary,
+  backfillPageViews,
+  cleanupOldViews
+};
