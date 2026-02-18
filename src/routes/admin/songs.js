@@ -266,7 +266,7 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
     await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
     await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
     
-    // ✅ LOG ADMIN ACTIVITY
+    // ✅ LOG ADMIN ACTIVITY (ALREADY HERE)
     await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
     
     return { success: true };
@@ -361,7 +361,7 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle edit submission
+// Handle edit submission (ADDED LOGGING HERE)
 export async function handleAdminSongEditPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const baseName = formData.get('baseName');
@@ -394,7 +394,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // ✅ ADDED: LOG ADMIN ACTIVITY FOR EDIT
     await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
     
     return { success: true, redirect: '/admin/songs?updated=1' };
