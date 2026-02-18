@@ -1,4 +1,4 @@
-// ==================== R2 TRASH  HELPER ====================
+// ==================== R2 TRASH HELPER ====================
 
 // Move item to trash
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
@@ -10,7 +10,7 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
     expiresAt.setDate(expiresAt.getDate() + retentionDays);
     
     const trashId = `${itemType}_${itemId}_${Date.now()}`;
-    let totalSize = sizeBytes;
+    let totalSize = sizeBytes || 0;
     let trashPaths = [];
 
     // Handle different item types
@@ -18,8 +18,8 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
       case 'song':
         // Move song file and associated files to trash
         const files = await moveSongToTrash(env, itemId);
-        trashPaths = files.paths;
-        totalSize = files.totalSize;
+        trashPaths = files.paths || [];
+        totalSize = files.totalSize || 0;
         break;
         
       case 'album':
@@ -36,6 +36,27 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
         break;
     }
 
+    // SAFETY CHECKS - ensure NO undefined values
+    const safeValues = {
+      id: trashId || '',
+      item_type: itemType || '',
+      item_id: itemId || '',
+      item_name: itemName || itemId || 'Unknown',
+      original_path: getOriginalPath(itemType, itemId) || '',
+      trash_path: JSON.stringify(trashPaths || []),
+      metadata: JSON.stringify(metadata || {}),
+      deleted_by: adminId || 'system',
+      expires_at: expiresAt.toISOString() || new Date().toISOString(),
+      size_bytes: typeof totalSize === 'number' ? totalSize : 0
+    };
+
+    console.log('Moving to trash:', {
+      type: safeValues.item_type,
+      id: safeValues.item_id,
+      name: safeValues.item_name,
+      size: safeValues.size_bytes
+    });
+
     // Store in database
     await env.DB.prepare(
       `INSERT INTO trash_items (
@@ -43,16 +64,16 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
         metadata, deleted_by, expires_at, size_bytes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
-      trashId,
-      itemType,
-      itemId,
-      itemName || itemId,
-      getOriginalPath(itemType, itemId),
-      JSON.stringify(trashPaths),
-      JSON.stringify(metadata),
-      adminId,
-      expiresAt.toISOString(),
-      totalSize
+      safeValues.id,
+      safeValues.item_type,
+      safeValues.item_id,
+      safeValues.item_name,
+      safeValues.original_path,
+      safeValues.trash_path,
+      safeValues.metadata,
+      safeValues.deleted_by,
+      safeValues.expires_at,
+      safeValues.size_bytes
     ).run();
 
     return { success: true, trashId };
@@ -136,7 +157,7 @@ export async function deletePermanently(env, trashId) {
   }
 }
 
-// EMPTY TRASH - ADD THIS FUNCTION
+// Empty trash
 export async function emptyTrash(env, itemType = 'all') {
   try {
     let query = `SELECT * FROM trash_items WHERE restored_at IS NULL`;
@@ -375,10 +396,15 @@ async function moveSongToTrash(env, songId) {
     }
   }
 
-  return { paths, totalSize };
+  return { 
+    paths: paths || [], 
+    totalSize: totalSize || 0 
+  };
 }
 
 function getOriginalPath(type, id) {
+  if (!type || !id) return '';
+  
   switch (type) {
     case 'song': return `songs/${id}.mp3`;
     case 'album': return `albums/thumbnails/${id}.jpg`;
@@ -389,7 +415,7 @@ function getOriginalPath(type, id) {
 }
 
 function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0 || !bytes) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
