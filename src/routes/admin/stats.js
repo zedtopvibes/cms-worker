@@ -5,14 +5,16 @@ import {
   getPopularPages, 
   getTotalPageViews, 
   getViewsByType, 
-  getPageViews,
+  getPageViews
+} from '../../helpers/pageViews.js';
+import { 
   getTodayViews,
   getWeekViews,
   getMonthViews,
   getViewsChartData,
   getViewTrends,
   getViewsSummary
-} from '../../helpers/pageViews.js';
+} from '../../helpers/pageViewsEnhanced.js';
 import { formatNumber, formatDuration } from '../../helpers/formatting.js';
 
 export async function handleAdminStats(req, env, ctx, auth) {
