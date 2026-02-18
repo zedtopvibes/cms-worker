@@ -1,830 +1,801 @@
-// ==================== PLAYLISTS  ROUTES ====================
-// ALL IMPORTS AT THE TOP
-import { incrementPageView } from '../helpers/pageViews.js';
-import { getPlaylists, getAlbums, getArtists, getMetadata, savePlaylists } from '../helpers/storage.js';
-import { getAggregatedStats } from '../helpers/db.js';
-import { sanitize, formatDuration } from '../helpers/formatting.js';
+// ==================== ADMIN PLAYLISTS MANAGEMENT ====================
+import { getPlaylists, savePlaylists, getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
+import { getAggregatedStats } from '../../helpers/db.js';
+import { getPageViews } from '../../helpers/pageViews.js';
+import { sanitize, formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
 
-export async function handlePlaylists(req, env, ctx) {
+// ===== LIST ALL PLAYLISTS =====
+export async function handleAdminPlaylists(req, env, ctx, auth) {
   const url = new URL(req.url);
-  const path = url.pathname;
+  const page = parseInt(url.searchParams.get('page')) || 1;
+  const search = url.searchParams.get('search') || '';
+  const sort = url.searchParams.get('sort') || 'date';
+  const ITEMS_PER_PAGE = 20;
 
-  // Playlists list page
-  if (path === "/playlists") {
-    const templateObj = await env.media.get("playlists.html");
-    if (!templateObj) {
-      return new Response("playlists.html template not found in R2", { status: 500 });
-    }
-    let html = await templateObj.text();
-
-    const playlists = await getPlaylists(env);
-    const albums = await getAlbums(env);
-    const artists = await getArtists(env);
-
-    let playlistList = Object.values(playlists).sort((a, b) => b.created - a.created);
-    
-    const artistId = url.searchParams.get("artist");
-    let filterArtistName = "";
-    let filteredPlaylists = playlistList;
-    
-    if (artistId) {
-      const artist = artists[artistId];
-      if (artist) {
-        filterArtistName = artist.name;
-        
-        filteredPlaylists = [];
-        
-        for (const playlist of playlistList) {
-          if (!playlist.songs) continue;
-          
-          for (const songKey of playlist.songs) {
-            const meta = await getMetadata(env, songKey);
-            if (meta) {
-              if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
-                filteredPlaylists.push(playlist);
-                break;
-              }
-            } else if (songKey.startsWith(artistId + "_")) {
-              filteredPlaylists.push(playlist);
-              break;
-            }
-          }
+  // Get all playlists
+  const playlists = await getPlaylists(env);
+  const artists = await getArtists(env);
+  
+  // Get detailed playlist data with views
+  let playlistsData = await Promise.all(
+    Object.entries(playlists).map(async ([id, playlist]) => {
+      const stats = await getAggregatedStats(playlist.songs || [], env);
+      const pageViews = await getPageViews(env, 'playlist', id);
+      
+      // Get featured artists count
+      const uniqueArtists = new Set();
+      if (playlist.songs) {
+        for (const songKey of playlist.songs) {
+          const [artistId] = songKey.split('_');
+          uniqueArtists.add(artistId);
         }
-      }
-    }
-    
-    const displayPlaylists = filteredPlaylists;
-
-    const ITEMS_PER_PAGE = 10;
-    const page = parseInt(url.searchParams.get("page")) || 1;
-    const totalPlaylists = displayPlaylists.length;
-    const totalPages = Math.ceil(totalPlaylists / ITEMS_PER_PAGE);
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const pagePlaylists = displayPlaylists.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
-    const playlistsHtml = await Promise.all(pagePlaylists.map(async pl => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (pl.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(pl.thumbnail);
-          if (thumbObj) {
-            const ext = pl.thumbnail.split(".").pop();
-            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-
-      const songCount = pl.songs?.length || 0;
-      const date = new Date(pl.created);
-      const formattedDate = date.toLocaleDateString('en-GB', {
-        day: '2-digit', month: 'short', year: 'numeric'
-      });
-
-      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
-      const thumbnailContent = hasImage
-        ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">`
-        : '';
-
-      return `
-        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
-          <div class="album-thumbnail ${thumbnailClass}">
-            ${thumbnailContent}
-          </div>
-          <div class="album-info">
-            <span class="album-title">${pl.title}</span>
-            <div class="album-meta">
-              <span class="album-artist playlist-songs">${songCount} Songs</span>
-              <span class="album-genre">Playlist</span>
-            </div>
-            <span class="album-date">${formattedDate}</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    let paginationHtmlPlaylists = '';
-    if (totalPages > 1) {
-      let baseUrl = '/playlists';
-      if (artistId) {
-        baseUrl += `?artist=${artistId}&`;
-      } else {
-        baseUrl += '?';
       }
       
-      paginationHtmlPlaylists = `<div class="pagination-container"><div class="pagination">`;
-      paginationHtmlPlaylists += `<a href="${baseUrl}page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
-      for (let i = 1; i <= totalPages; i++) {
-        if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
-          paginationHtmlPlaylists += `<a href="${baseUrl}page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
-        } else if (i === page-3 || i === page+3) {
-          paginationHtmlPlaylists += `<span class="pagination-ellipsis">...</span>`;
-        }
-      }
-      paginationHtmlPlaylists += `<a href="${baseUrl}page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
-      paginationHtmlPlaylists += `</div></div>`;
-    }
+      return {
+        id,
+        title: playlist.title,
+        description: playlist.description || '',
+        curator: playlist.curator || 'ZEDALBUMS',
+        thumbnail: playlist.thumbnail,
+        songs: playlist.songs || [],
+        songCount: playlist.songs?.length || 0,
+        artistCount: uniqueArtists.size,
+        plays: stats.plays,
+        downloads: stats.downloads,
+        views: pageViews,
+        created: playlist.created,
+        updated: playlist.updated || playlist.created,
+        hasImage: !!playlist.thumbnail
+      };
+    })
+  );
 
-    let filterHeaderHtml = '';
-    if (artistId && filterArtistName) {
-      filterHeaderHtml = `
-        <div class="filter-header" style="padding: 15px; background: #f0f7ff; border-radius: 3px; margin-bottom: 15px; border-left: 4px solid #4a90e2;">
-          <i class="fas fa-filter" style="color: #4a90e2;"></i>
-          <strong>Showing playlists featuring ${filterArtistName}</strong>
-          <a href="/playlists" style="margin-left: 15px; color: #ff5500; text-decoration: none;">Clear filter ✕</a>
-        </div>
-      `;
-    }
-
-    const featured = playlistList
-      .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
-      .slice(0, 3);
-
-    const featuredHtml = await Promise.all(featured.map(async pl => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (pl.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(pl.thumbnail);
-          if (thumbObj) {
-            const ext = pl.thumbnail.split(".").pop();
-            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const songCount = pl.songs?.length || 0;
-      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
-      const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
-      return `
-        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
-          <div class="album-thumbnail ${thumbnailClass}">
-            ${thumbnailContent}
-          </div>
-          <div class="album-info">
-            <span class="album-title">${pl.title}</span>
-            <div class="album-meta">
-              <span class="album-artist playlist-songs">${songCount} Songs</span>
-              <span class="album-genre">Editor's Pick</span>
-            </div>
-            <span class="album-date">Featured</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    const topArtistsPlaylist = Object.values(artists)
-      .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
-      .slice(0, 3);
-
-    const topArtistsHtmlPlaylist = await Promise.all(topArtistsPlaylist.map(async artist => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (artist.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(artist.thumbnail);
-          if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const bgStyle = hasImage
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
-      const songCount = artist.songs?.length || 0;
-      return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-          <div class="album-info">
-            <span class="album-title">${artist.name}</span>
-            <div class="album-meta">
-              <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Artist'}</span>
-            </div>
-            <span class="album-date">Top artist</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    const recent = playlistList
-      .sort((a, b) => b.created - a.created)
-      .slice(0, 3);
-
-    const recentHtml = await Promise.all(recent.map(async pl => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (pl.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(pl.thumbnail);
-          if (thumbObj) {
-            const ext = pl.thumbnail.split(".").pop();
-            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const songCount = pl.songs?.length || 0;
-      const date = new Date(pl.created);
-      const now = new Date();
-      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-      const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
-      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
-      const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
-      return `
-        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
-          <div class="album-thumbnail ${thumbnailClass}">
-            ${thumbnailContent}
-          </div>
-          <div class="album-info">
-            <span class="album-title">${pl.title}</span>
-            <div class="album-meta">
-              <span class="album-artist playlist-songs">${songCount} Songs</span>
-              <span class="album-genre">Playlist</span>
-            </div>
-            <span class="album-date">${timeAgo}</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    const genresHtmlPlaylist = `
-      <div class="album-item">
-        <div class="album-thumbnail placeholder"></div>
-        <div class="album-info">
-          <span class="album-title">Zam Hip Hop</span>
-          <div class="album-meta">
-            <span class="album-artist">24 Playlists</span>
-            <span class="album-genre">Popular</span>
-          </div>
-          <span class="album-date">Most active</span>
-        </div>
-      </div>
-      <div class="album-item">
-        <div class="album-thumbnail placeholder"></div>
-        <div class="album-info">
-          <span class="album-title">Zam Pop</span>
-          <div class="album-meta">
-            <span class="album-artist">18 Playlists</span>
-            <span class="album-genre">Trending</span>
-          </div>
-          <span class="album-date">+5 this week</span>
-        </div>
-      </div>
-      <div class="album-item">
-        <div class="album-thumbnail placeholder"></div>
-        <div class="album-info">
-          <span class="album-title">Gospel</span>
-          <div class="album-meta">
-            <span class="album-artist">12 Playlists</span>
-            <span class="album-genre">Spiritual</span>
-          </div>
-          <span class="album-date">Rising</span>
-        </div>
-      </div>
-    `;
-
-    html = html.replace(
-      /<!-- FILTER_HEADER_START -->[\s\S]*?<!-- FILTER_HEADER_END -->/g,
-      `<!-- FILTER_HEADER_START -->${filterHeaderHtml}<!-- FILTER_HEADER_END -->`
+  // Apply search filter
+  if (search) {
+    const searchLower = search.toLowerCase();
+    playlistsData = playlistsData.filter(playlist => 
+      playlist.title.toLowerCase().includes(searchLower) ||
+      playlist.curator.toLowerCase().includes(searchLower) ||
+      playlist.description.toLowerCase().includes(searchLower)
     );
-    
-    html = html.replace(
-      /<!-- PLAYLISTS_START -->[\s\S]*?<!-- PLAYLISTS_END -->/g,
-      `<!-- PLAYLISTS_START -->${playlistsHtml.join('')}<!-- PLAYLISTS_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
-      `<!-- PAGINATION_START -->${paginationHtmlPlaylists}<!-- PAGINATION_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- FEATURED_PLAYLISTS_START -->[\s\S]*?<!-- FEATURED_PLAYLISTS_END -->/g,
-      `<!-- FEATURED_PLAYLISTS_START -->${featuredHtml.join('')}<!-- FEATURED_PLAYLISTS_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/g,
-      `<!-- TOP_ARTISTS_START -->${topArtistsHtmlPlaylist.join('')}<!-- TOP_ARTISTS_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- GENRES_START -->[\s\S]*?<!-- GENRES_END -->/g,
-      `<!-- GENRES_START -->${genresHtmlPlaylist}<!-- GENRES_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- RECENT_PLAYLISTS_START -->[\s\S]*?<!-- RECENT_PLAYLISTS_END -->/g,
-      `<!-- RECENT_PLAYLISTS_START -->${recentHtml.join('')}<!-- RECENT_PLAYLISTS_END -->`
-    );
-    
-    if (artistId && filterArtistName) {
-      html = html.replace(
-        /<title>.*?<\/title>/,
-        `<title>Playlists featuring ${filterArtistName} - ZEDALBUMS</title>`
-      );
-    }
-
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html",
-        "Cache-Control": "public, max-age=300"
-      }
-    });
   }
 
-  // Playlist detail page
-  if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
-    const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
-
-    const playlists = await getPlaylists(env);
-    const playlist = playlists[playlistId];
-    if (!playlist) return new Response("Playlist not found", { status: 404 });
-
-    // ✅ TRACK PAGE VIEW
-    ctx.waitUntil(incrementPageView(env, 'playlist', playlistId));
-
-    const playlistStats = await getAggregatedStats(playlist.songs || [], env);
-
-    const templateObj = await env.media.get("playlist.html");
-    if (!templateObj) {
-      return new Response("playlist.html template not found in R2", { status: 500 });
+  // Apply sorting with views
+  playlistsData.sort((a, b) => {
+    switch (sort) {
+      case 'title':
+        return a.title.localeCompare(b.title);
+      case 'curator':
+        return a.curator.localeCompare(b.curator);
+      case 'songs':
+        return b.songCount - a.songCount;
+      case 'artists':
+        return b.artistCount - a.artistCount;
+      case 'plays':
+        return b.plays - a.plays;
+      case 'views':
+        return (b.views || 0) - (a.views || 0);
+      case 'updated':
+        return b.updated - a.updated;
+      case 'date':
+      default:
+        return b.created - a.created;
     }
-    let html = await templateObj.text();
+  });
 
-    const albums = await getAlbums(env);
-    const artists = await getArtists(env);
+  // Pagination
+  const totalPlaylists = playlistsData.length;
+  const totalPages = Math.ceil(totalPlaylists / ITEMS_PER_PAGE);
+  const startIdx = (page - 1) * ITEMS_PER_PAGE;
+  const pagePlaylists = playlistsData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
-    const songCount = playlist.songs?.length || 0;
-    const createdDate = new Date(playlist.created);
-    const formattedDate = createdDate.toLocaleDateString('en-GB', {
-      day: '2-digit', month: 'short', year: 'numeric'
-    });
+  // Sort options with views
+  const sortOptions = [
+    { value: 'date', label: 'Date Created' },
+    { value: 'updated', label: 'Last Updated' },
+    { value: 'title', label: 'Title' },
+    { value: 'curator', label: 'Curator' },
+    { value: 'songs', label: 'Most Songs' },
+    { value: 'artists', label: 'Most Artists' },
+    { value: 'plays', label: 'Most Plays' },
+    { value: 'views', label: 'Most Viewed' }
+  ];
 
-    // Calculate total duration
-    let totalSeconds = 0;
-    if (playlist.songs) {
-      const durations = await Promise.all(playlist.songs.map(async songKey => {
-        const meta = await getMetadata(env, songKey);
-        return meta?.duration || 0;
-      }));
-      totalSeconds = durations.reduce((acc, dur) => acc + dur, 0);
-    }
-    const totalHours = Math.floor(totalSeconds / 3600);
-    const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
-    const totalDuration = totalHours > 0 ? `${totalHours} hr ${totalMinutes} min` : `${totalMinutes} min`;
+  // Calculate totals
+  const totalSongs = playlistsData.reduce((acc, p) => acc + p.songCount, 0);
+  const totalArtists = playlistsData.reduce((acc, p) => acc + p.artistCount, 0);
+  const totalPlays = playlistsData.reduce((acc, p) => acc + p.plays, 0);
+  const totalDownloads = playlistsData.reduce((acc, p) => acc + p.downloads, 0);
+  const totalViews = playlistsData.reduce((acc, p) => acc + (p.views || 0), 0);
 
-    let hasCover = false;
-    let coverHtml = `<i class="fas fa-music"></i>`;
-    if (playlist.thumbnail) {
-      try {
-        const thumbObj = await env.media.get(playlist.thumbnail);
-        if (thumbObj) {
-          const ext = playlist.thumbnail.split(".").pop();
-          const thumbUrl = `/playlists/thumbnails/${encodeURIComponent(playlist.id)}.${ext}`;
-          hasCover = true;
-          coverHtml = `<img src="${thumbUrl}" alt="${playlist.title}">`;
-        }
-      } catch (e) {}
-    }
-
-    const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
-      const meta = await getMetadata(env, songKey);
-      let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-      let artistDisplay = "";
-      if (meta) {
-        const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
-        const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
-        artistDisplay = featured ? `${primary} feat. ${featured}` : primary;
-      } else {
-        const [artistId] = songKey.split("_");
-        const artist = artists[artistId];
-        artistDisplay = artist ? artist.name : artistId;
-      }
-
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      try {
-        const jpgObj = await env.media.get(`images/${songKey}.jpg`);
-        if (jpgObj) {
-          thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
-          hasImage = true;
-        } else {
-          const pngObj = await env.media.get(`images/${songKey}.png`);
-          if (pngObj) {
-            thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
-            hasImage = true;
-          }
-        }
-      } catch (e) {}
-
-      const durationSeconds = meta?.duration || 0;
-      const durationFormatted = formatDuration(durationSeconds);
-      const trackNumber = (index + 1).toString().padStart(2, '0');
-
-      return `
-        <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}?playlist=${playlistId}'">
-          <div class="album-thumbnail ${hasImage ? '' : 'song-thumbnail placeholder'}">
-            ${hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : ''}
-          </div>
-          <div class="album-info">
-            <span class="album-title">${artistDisplay} - ${title}</span>
-            <div class="album-meta">
-              <span class="album-artist">${artistDisplay}</span>
-              <span class="song-duration">${durationFormatted}</span>
-              <span class="album-genre">Track ${trackNumber}</span>
+  const content = `
+    <div style="margin-bottom: 20px;">
+        <!-- Header -->
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center;">
+                <h2 style="margin:0; font-size:1.3rem;"><i class="fas fa-list"></i> Playlists Management</h2>
+                <a href="/admin/playlist/create" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Create New Playlist
+                </a>
             </div>
-            <span class="album-date">Track ${trackNumber}</span>
-          </div>
+            
+            <!-- Search and Filter -->
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <div style="flex: 1; min-width: 200px;">
+                    <div style="position: relative;">
+                        <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #999;"></i>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Search playlists, curators..." 
+                               value="${search}" style="padding-left: 40px;">
+                    </div>
+                </div>
+                <select id="sortSelect" class="form-control" style="width: auto; min-width: 150px;">
+                    ${sortOptions.map(opt => `
+                        <option value="${opt.value}" ${sort === opt.value ? 'selected' : ''}>Sort by: ${opt.label}</option>
+                    `).join('')}
+                </select>
+                <button onclick="applyFilters()" class="btn btn-primary">
+                    <i class="fas fa-filter"></i> Apply
+                </button>
+            </div>
+            
+            <!-- Stats Summary with Views -->
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
+                <div><i class="fas fa-list" style="color: #4a90e2;"></i> Playlists: <strong>${totalPlaylists}</strong></div>
+                <div><i class="fas fa-music" style="color: #4a90e2;"></i> Songs: <strong>${totalSongs}</strong></div>
+                <div><i class="fas fa-users" style="color: #4a90e2;"></i> Artists: <strong>${totalArtists}</strong></div>
+                <div><i class="fas fa-play" style="color: #4a90e2;"></i> Plays: <strong>${formatNumber(totalPlays)}</strong></div>
+                <div><i class="fas fa-eye" style="color: #4a90e2;"></i> Views: <strong>${formatNumber(totalViews)}</strong></div>
+            </div>
         </div>
-      `;
-    })).then(results => results.join(''));
-
-    let paginationHtmlPlaylist = '';
-    if (songCount > 12) {
-      const totalPages = Math.ceil(songCount / 12);
-      paginationHtmlPlaylist = `<div class="pagination-container"><div class="pagination">
-        <a href="#" class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</a>
-        <a href="#" class="pagination-item active">1</a>
-        <a href="#" class="pagination-item">2</a>
-        <span class="pagination-ellipsis">...</span>
-        <a href="#" class="pagination-item">${totalPages}</a>
-        <a href="#" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>
-      </div></div>`;
-    }
-
-    let mainArtistId = null;
-    let mainArtistName = null;
-    if (playlist.songs && playlist.songs.length > 0) {
-      const firstSongKey = playlist.songs[0];
-      const meta = await getMetadata(env, firstSongKey);
-      if (meta) {
-        mainArtistId = meta.primaryArtist;
-      } else {
-        const [aid] = firstSongKey.split("_");
-        mainArtistId = aid;
-      }
-      const artist = artists[mainArtistId];
-      if (artist) {
-        mainArtistName = artist.name;
-      }
-    }
-
-    let moreByArtistHtml = '';
-    if (mainArtistId) {
-      const artistAlbums = Object.values(albums)
-        .filter(a => a.artists?.includes(mainArtistId))
-        .sort((a, b) => b.created - a.created)
-        .slice(0, 3);
-      moreByArtistHtml = await Promise.all(artistAlbums.map(async album => {
-        let thumbUrl = "/images/placeholder.jpg";
-        let hasImage = false;
-        if (album.thumbnail) {
-          try {
-            const thumbObj = await env.media.get(album.thumbnail);
-            if (thumbObj) {
-              const ext = album.thumbnail.split(".").pop();
-              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
-              hasImage = true;
-            }
-          } catch (e) {}
-        }
-        const date = new Date(album.created).toLocaleDateString('en-GB', {
-          day: '2-digit', month: 'short', year: 'numeric'
-        });
-        return `
-          <div class="album-item" onclick="window.location='/album/${album.id}'">
-            <div class="album-thumbnail ${hasImage ? '' : 'placeholder'}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${mainArtistName} - ${album.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${mainArtistName}</span>
-                <span class="album-genre">Album</span>
-              </div>
-              <span class="album-date">${date}</span>
-            </div>
-          </div>
-        `;
-      })).then(results => results.join(''));
-      if (artistAlbums.length === 0) {
-        moreByArtistHtml = `<div style="padding: 20px; text-align: center; color: #666;">No albums by this artist</div>`;
-      }
-    } else {
-      moreByArtistHtml = `<div style="padding: 20px; text-align: center; color: #666;">No artist found</div>`;
-    }
-
-    const similarPlaylists = Object.values(playlists)
-      .filter(p => p.id !== playlistId && p.songs && p.songs.length > 0)
-      .sort(() => 0.5 - Math.random())
-      .slice(0, 3);
-
-    const similarHtml = await Promise.all(similarPlaylists.map(async pl => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (pl.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(pl.thumbnail);
-          if (thumbObj) {
-            const ext = pl.thumbnail.split(".").pop();
-            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const songCount = pl.songs?.length || 0;
-      const date = new Date(pl.created).toLocaleDateString('en-GB', {
-        day: '2-digit', month: 'short', year: 'numeric'
-      });
-      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
-      const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
-      return `
-        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
-          <div class="album-thumbnail ${thumbnailClass}">
-            ${thumbnailContent}
-          </div>
-          <div class="album-info">
-            <span class="album-title">${pl.title}</span>
-            <div class="album-meta">
-              <span class="album-artist playlist-songs">${songCount} Songs</span>
-              <span class="album-genre">Playlist</span>
-            </div>
-            <span class="album-date">${date}</span>
-          </div>
+        
+        <!-- Mobile Cards -->
+        <div class="mobile-cards">
+            ${pagePlaylists.map(playlist => generateMobileCard(playlist)).join('')}
+            ${pagePlaylists.length === 0 ? `
+                <div class="empty-state">
+                    <i class="fas fa-list"></i>
+                    <h3>No playlists found</h3>
+                    <p>Try adjusting your search or create a new playlist</p>
+                    <a href="/admin/playlist/create" class="btn btn-primary" style="margin-top: 15px;">
+                        <i class="fas fa-plus"></i> Create New Playlist
+                    </a>
+                </div>
+            ` : ''}
         </div>
-      `;
-    })).then(results => results.join(''));
-
-    const featuredArtistsPlaylist = Object.values(artists)
-      .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
-      .slice(0, 3);
+        
+        <!-- Desktop Grid -->
+        <div class="playlists-grid" style="display: none;">
+            ${pagePlaylists.map(playlist => generateGridCard(playlist)).join('')}
+        </div>
+        
+        <!-- Pagination -->
+        ${generatePagination(page, totalPages, search, sort)}
+    </div>
     
-    const featuredArtistsHtmlPlaylist = await Promise.all(featuredArtistsPlaylist.map(async artist => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (artist.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(artist.thumbnail);
-          if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const bgStyle = hasImage
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
-      const songCount = artist.songs?.length || 0;
-      return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-          <div class="album-info">
-            <span class="album-title">${artist.name}</span>
-            <div class="album-meta">
-              <span class="album-artist">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Artist'}</span>
-            </div>
-            <span class="album-date">Featured</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    const playlistInfoHtml = `
-      <div style="padding: 15px; font-size: 0.9rem; color: #555;">
-        <p><strong>Created:</strong> ${formattedDate}</p>
-        <p><strong>Songs:</strong> ${songCount}</p>
-        <p><strong>Total duration:</strong> ${totalDuration}</p>
-        <p><strong>Total Plays:</strong> ${playlistStats.plays.toLocaleString()}</p>
-        <p><strong>Total Downloads:</strong> ${playlistStats.downloads.toLocaleString()}</p>
-        <p><strong>Curator:</strong> ${playlist.curator || 'ZEDALBUMS'}</p>
-        ${playlist.description ? `<p><strong>Description:</strong> ${playlist.description}</p>` : ''}
-        <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 3px;">
-          <i class="fas fa-info-circle" style="color: #00b894;"></i>
-          <span style="margin-left: 5px;">Updated regularly</span>
-        </div>
-      </div>
-    `;
-
-    html = html.replace(/<title>.*?<\/title>/, `<title>${playlist.title} - Playlist - ZEDALBUMS</title>`);
-    html = html.replace(
-      /<span class="breadcrumb-current">.*?<\/span>/,
-      `<span class="breadcrumb-current"><i class="fas fa-music"></i>${playlist.title}</span>`
-    );
-    html = html.replace(
-      /<!-- PLAYLIST_COVER_HTML -->[\s\S]*?<!-- \/PLAYLIST_COVER_HTML -->/,
-      `<!-- PLAYLIST_COVER_HTML -->${coverHtml}<!-- /PLAYLIST_COVER_HTML -->`
-    );
-    html = html.replace(
-      /<!-- PLAYLIST_META -->[\s\S]*?<!-- \/PLAYLIST_META -->/,
-      `<!-- PLAYLIST_META -->
-      <div class="playlist-stats"><i class="fas fa-music"></i> ${songCount} Songs</div>
-      <div class="playlist-stats"><i class="fas fa-clock"></i> ${totalDuration}</div>
-      <div class="playlist-stats"><i class="fas fa-calendar"></i> Created: ${formattedDate}</div>
-      <div class="playlist-stats"><i class="fas fa-headphones"></i> ${playlistStats.plays.toLocaleString()} Plays</div>
-      <div class="playlist-stats"><i class="fas fa-download"></i> ${playlistStats.downloads.toLocaleString()} Downloads</div>
-      <!-- /PLAYLIST_META -->`
-    );
-    html = html.replace(
-      /<h1 class="playlist-title">Playlist Title<\/h1>/,
-      `<h1 class="playlist-title">${playlist.title}</h1>`
-    );
-    html = html.replace(
-      /<p class="playlist-description">Playlist description<\/p>/,
-      `<p class="playlist-description">${playlist.description || 'No description available.'}</p>`
-    );
-    html = html.replace(
-      /(<div class="latest-albums-list">)([\s\S]*?)(<\/div>)/,
-      `$1${songsHtml}$3`
-    );
-    html = html.replace(
-      /<!-- PAGINATION_HTML -->[\s\S]*?<!-- \/PAGINATION_HTML -->/,
-      `<!-- PAGINATION_HTML -->${paginationHtmlPlaylist}<!-- /PAGINATION_HTML -->`
-    );
-    html = html.replace(
-      /<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g,
-      `<!-- MORE_BY_ARTIST_START -->${moreByArtistHtml}<!-- MORE_BY_ARTIST_END -->`
-    );
-    html = html.replace(
-      /<!-- SIMILAR_PLAYLISTS_START -->[\s\S]*?<!-- SIMILAR_PLAYLISTS_END -->/g,
-      `<!-- SIMILAR_PLAYLISTS_START -->${similarHtml}<!-- SIMILAR_PLAYLISTS_END -->`
-    );
-    html = html.replace(
-      /<!-- FEATURED_ARTISTS_START -->[\s\S]*?<!-- FEATURED_ARTISTS_END -->/g,
-      `<!-- FEATURED_ARTISTS_START -->${featuredArtistsHtmlPlaylist.join('')}<!-- FEATURED_ARTISTS_END -->`
-    );
-    html = html.replace(
-      /<!-- PLAYLIST_INFO_START -->[\s\S]*?<!-- PLAYLIST_INFO_END -->/g,
-      `<!-- PLAYLIST_INFO_START -->${playlistInfoHtml}<!-- PLAYLIST_INFO_END -->`
-    );
-
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html",
-        "Cache-Control": "public, max-age=300"
-      }
-    });
-  }
-
-  // Playlist create page
-  if (path === "/playlist/create" && req.method === "GET") {
-    const html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Create Playlist - ZEDALBUMS</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 50px; background: #f0f0f0; }
-        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; margin-bottom: 20px; border-left: 4px solid #4a90e2; padding-left: 15px; }
-        label { display: block; margin-top: 15px; font-weight: 600; color: #555; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; }
-        button { margin-top: 25px; padding: 14px; background: #4a90e2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 600; width: 100%; }
-        button:hover { background: #3a7bc8; }
-        .back-link { margin-top: 20px; text-align: center; }
-        .back-link a { color: #666; text-decoration: none; }
-        .back-link a:hover { color: #4a90e2; }
-        .note { background: #f8f9fa; padding: 12px; border-radius: 4px; margin-top: 20px; font-size: 0.9rem; color: #666; border-left: 3px solid #4a90e2; }
-      </style>
-      <script>
-        document.addEventListener('DOMContentLoaded', function() {
-          const urlParams = new URLSearchParams(window.location.search);
-          const fromUpload = urlParams.get('from') === 'upload';
-          
-          const backLink = document.querySelector('.back-link a');
-          if (fromUpload && backLink) {
-            backLink.href = '/upload';
-            backLink.innerHTML = '← Back to Upload';
-          }
+    <style>
+        .playlists-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .playlist-grid-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+            border: 1px solid #e8e8e8;
+        }
+        
+        .playlist-grid-card:hover {
+            transform: translateY(-4px);
+            border-color: #4a90e2;
+        }
+        
+        .playlist-thumbnail {
+            width: 100%;
+            aspect-ratio: 1;
+            background: linear-gradient(135deg, #4a90e2, #9013fe);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 3rem;
+        }
+        
+        .playlist-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .playlist-info {
+            padding: 15px;
+        }
+        
+        .playlist-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        
+        .playlist-curator {
+            color: #4a90e2;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+        
+        .playlist-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        
+        @media (min-width: 768px) {
+            .mobile-cards { display: none; }
+            .playlists-grid { display: grid !important; }
+        }
+    </style>
+    
+    <script>
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value;
+            const sort = document.getElementById('sortSelect').value;
+            let url = '/admin/playlists?';
+            if (search) url += 'search=' + encodeURIComponent(search) + '&';
+            url += 'sort=' + sort;
+            window.location.href = url;
+        }
+        
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyFilters();
         });
-      </script>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Create New Playlist</h1>
-        <form action="/playlist/create" method="POST" enctype="multipart/form-data">
-          <label>Playlist Title</label>
-          <input type="text" name="title" placeholder="e.g. Zambian Hits 2024" required>
-          
-          <label>Description (Optional)</label>
-          <textarea name="description" rows="3" placeholder="Describe your playlist..."></textarea>
-          
-          <label>Curator Name (Optional)</label>
-          <input type="text" name="curator" placeholder="e.g. ZEDALBUMS" value="ZEDALBUMS">
-          
-          <label>Cover Image (Optional)</label>
-          <input type="file" name="thumbnail" accept="image/*">
-          
-          <button type="submit">Create Playlist</button>
+        
+        window.viewPlaylist = function(id) { window.open('/playlist/' + id, '_blank'); };
+        window.editPlaylist = function(id) { window.location.href = '/admin/playlists/edit?id=' + id; };
+        window.manageSongs = function(id) { window.location.href = '/admin/playlists/songs?id=' + id; };
+        window.deletePlaylist = function(id) {
+            if (confirm('Delete this playlist? It will be moved to trash.')) window.location.href = '/admin/playlists/delete?id=' + id;
+        };
+    </script>
+  `;
+
+  return content;
+}
+
+// ===== CREATE NEW PLAYLIST PAGE =====
+export async function handleAdminPlaylistCreate(req, env, ctx, auth) {
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #4a90e2;"></i> Create New Playlist</h2>
+        
+        <form action="/admin/playlist/create" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Playlist Title</label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. Zambian Hits 2025" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Playlist description..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Curator Name</label>
+                <input type="text" name="curator" class="form-control" placeholder="e.g. ZEDALBUMS" value="ZEDALBUMS">
+            </div>
+            
+            <div class="form-group">
+                <label>Cover Image</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" style="background: #4a90e2;">
+                    <i class="fas fa-save"></i> Create Playlist
+                </button>
+                <a href="/admin/playlists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
         </form>
         
-        <div class="note">
-          <strong>💡 Tip:</strong> After creating your playlist, you can add songs to it from the upload form.
+        <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #4a90e2;">
+            <p style="margin:0; font-size:0.9rem; color:#666;">
+                <i class="fas fa-info-circle" style="color:#4a90e2;"></i>
+                After creating your playlist, you can add songs to it from the Songs Management page.
+            </p>
         </div>
+    </div>
+  `;
+  
+  return content;
+}
+
+// ===== HANDLE PLAYLIST CREATION POST =====
+export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const title = formData.get('title');
+  const description = formData.get('description') || '';
+  const curator = formData.get('curator') || 'ZEDALBUMS';
+  const thumbnailFile = formData.get('thumbnail');
+
+  if (!title) {
+    return { success: false, error: 'Playlist title is required' };
+  }
+
+  const playlistId = sanitize(title) + "_" + Date.now();
+  const playlists = await getPlaylists(env);
+
+  let thumbnailKey = null;
+  if (thumbnailFile && thumbnailFile.size > 0) {
+    const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+    thumbnailKey = `playlists/thumbnails/${playlistId}.${imgType}`;
+    await env.media.put(thumbnailKey, thumbnailFile.stream());
+  }
+
+  playlists[playlistId] = {
+    id: playlistId,
+    title: title,
+    description: description,
+    curator: curator,
+    thumbnail: thumbnailKey,
+    created: Date.now(),
+    updated: Date.now(),
+    songs: []
+  };
+
+  await savePlaylists(env, playlists);
+  
+  // Log activity
+  await logAdminActivity(env, auth.session.id, 'create', 'playlist', playlistId, title);
+
+  return { 
+    success: true, 
+    redirect: `/admin/playlists?created=1` 
+  };
+}
+
+// ===== EDIT PLAYLIST PAGE =====
+export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const playlistId = url.searchParams.get('id');
+  
+  if (!playlistId) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  const playlists = await getPlaylists(env);
+  const playlist = playlists[playlistId];
+  
+  if (!playlist) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Playlist: ${playlist.title}</h2>
         
-        <div class="back-link">
-          <a href="/upload">← Back to Upload</a> | 
-          <a href="/playlists">View All Playlists</a>
-        </div>
-      </div>
-    </body>
-    </html>
-    `;
-    return new Response(html, { headers: { "Content-Type": "text/html" } });
+        <form id="editForm" action="/admin/playlists/edit" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="playlistId" value="${playlistId}">
+            
+            <div class="form-group">
+                <label>Playlist Title</label>
+                <input type="text" name="title" class="form-control" value="${playlist.title}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="4">${playlist.description || ''}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Curator Name</label>
+                <input type="text" name="curator" class="form-control" value="${playlist.curator || 'ZEDALBUMS'}">
+            </div>
+            
+            <div class="form-group">
+                <label>Current Cover Image</label>
+                ${playlist.thumbnail ? 
+                    `<div style="margin-bottom:10px;">
+                        <img src="/playlists/thumbnails/${playlistId}.jpg" style="width:100px; height:100px; border-radius:8px; object-fit:cover; border:3px solid #4a90e2;">
+                    </div>` : 
+                    '<p>No image</p>'
+                }
+                <label>New Cover Image (optional)</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/playlists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this playlist?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// ===== HANDLE PLAYLIST EDIT POST =====
+export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const playlistId = formData.get('playlistId');
+  const title = formData.get('title');
+  const description = formData.get('description');
+  const curator = formData.get('curator');
+  const thumbnailFile = formData.get('thumbnail');
+  
+  if (!playlistId || !title) {
+    return { success: false, error: 'Missing required fields' };
   }
-
-  if (path === "/playlist/create" && req.method === "POST") {
-    const formData = await req.formData();
-    const title = formData.get("title");
-    const description = formData.get("description") || "";
-    const curator = formData.get("curator") || "ZEDALBUMS";
-    const thumbnailFile = formData.get("thumbnail");
-
-    if (!title) {
-      return new Response("Missing playlist title", { status: 400 });
-    }
-
-    const playlistId = sanitize(title) + "_" + Date.now();
+  
+  try {
     const playlists = await getPlaylists(env);
-
-    let thumbnailKey = null;
+    
+    if (!playlists[playlistId]) {
+      return { success: false, error: 'Playlist not found' };
+    }
+    
+    // Update playlist details
+    playlists[playlistId].title = title;
+    playlists[playlistId].description = description;
+    playlists[playlistId].curator = curator;
+    playlists[playlistId].updated = Date.now();
+    
+    // Upload new thumbnail if provided
     if (thumbnailFile && thumbnailFile.size > 0) {
-      const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
-      thumbnailKey = `playlists/thumbnails/${playlistId}.${imgType}`;
+      const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+      const thumbnailKey = `playlists/thumbnails/${playlistId}.${imgType}`;
       await env.media.put(thumbnailKey, thumbnailFile.stream());
+      playlists[playlistId].thumbnail = thumbnailKey;
     }
-
-    playlists[playlistId] = {
-      id: playlistId,
-      title: title,
-      description: description,
-      curator: curator,
-      thumbnail: thumbnailKey,
-      created: Date.now(),
-      updated: Date.now(),
-      songs: []
-    };
-
+    
     await savePlaylists(env, playlists);
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Playlist Created - ZEDALBUMS</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 50px; background: #f0f0f0; text-align: center; }
-          .success { background: white; padding: 30px; border-radius: 8px; max-width: 500px; margin: 0 auto; }
-          h1 { color: #4a90e2; }
-          .btn { display: inline-block; margin: 10px; padding: 12px 24px; background: #4a90e2; color: white; text-decoration: none; border-radius: 4px; }
-          .btn:hover { background: #3a7bc8; }
-          .btn-upload { background: #ff5500; }
-          .btn-upload:hover { background: #ff6a1a; }
-        </style>
-      </head>
-      <body>
-        <div class="success">
-          <h1>✅ Playlist Created!</h1>
-          <p style="font-size: 1.2rem; margin: 20px 0;">"${title}"</p>
-          <a href="/playlist/${playlistId}" class="btn">View Playlist</a>
-          <a href="/upload" class="btn btn-upload">Upload Songs</a>
-          <p style="margin-top: 30px;">
-            <a href="/playlist/create">Create Another Playlist</a> | 
-            <a href="/playlists">All Playlists</a> | 
-            <a href="/">Home</a>
-          </p>
-        </div>
-      </body>
-      </html>
-    `;
     
-    return new Response(html, { 
-      headers: { "Content-Type": "text/html" } 
-    });
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'edit', 'playlist', playlistId, title);
+    
+    return { success: true, redirect: '/admin/playlists?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
+}
 
-  // API endpoint for getting all playlists
-  if (path === "/api/playlists/list" && req.method === "GET") {
+// ===== HANDLE PLAYLIST DELETION - UPDATED to use trash =====
+export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const playlistId = url.searchParams.get('id');
+  
+  if (!playlistId) {
+    return { success: false, error: 'No playlist specified' };
+  }
+  
+  try {
     const playlists = await getPlaylists(env);
-    const playlistArray = Object.values(playlists).map(p => ({
-      id: p.id,
-      title: p.title,
-      songs: p.songs || [],
-      created: p.created,
-      songCount: (p.songs || []).length
-    }));
+    const playlist = playlists[playlistId];
+    const playlistTitle = playlist?.title || 'Unknown playlist';
     
-    return new Response(JSON.stringify(playlistArray), {
-      headers: { "Content-Type": "application/json" }
-    });
+    // Get thumbnail path
+    let thumbnailPath = null;
+    if (playlist?.thumbnail) {
+      thumbnailPath = playlist.thumbnail;
+    }
+    
+    // Prepare metadata
+    const itemData = {
+      title: playlist?.title,
+      description: playlist?.description,
+      curator: playlist?.curator,
+      songs: playlist?.songs,
+      created: playlist?.created,
+      updated: playlist?.updated,
+      thumbnail: playlist?.thumbnail
+    };
+    
+    // Move to trash
+    const result = await moveToTrash(
+      env,
+      auth.session.id,
+      'playlist',
+      playlistId,
+      playlistTitle,
+      itemData,
+      0 // Playlists don't have size
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Remove from playlists index
+    delete playlists[playlistId];
+    await savePlaylists(env, playlists);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'delete', 'playlist', playlistId, playlistTitle);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error moving playlist to trash:', error);
+    return { success: false, error: error.message };
   }
+}
 
-  return new Response("Not found", { status: 404 });
+// ===== MANAGE PLAYLIST SONGS PAGE =====
+export async function handleAdminPlaylistSongs(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const playlistId = url.searchParams.get('id');
+  
+  if (!playlistId) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  const playlists = await getPlaylists(env);
+  const playlist = playlists[playlistId];
+  const artists = await getArtists(env);
+  
+  if (!playlist) {
+    return { redirect: '/admin/playlists' };
+  }
+  
+  // Get all songs
+  const songList = await env.media.list({ prefix: "songs/" });
+  const songs = songList.objects || [];
+  
+  // Build song options with metadata
+  const songOptions = await Promise.all(
+    songs.map(async (song) => {
+      const fileName = song.key.split('/')[1];
+      const baseName = fileName.replace('.mp3', '');
+      const inPlaylist = playlist.songs?.includes(baseName);
+      const meta = await getMetadata(env, baseName);
+      
+      let artistName = baseName.split('_')[0];
+      if (meta?.primaryArtist) {
+        artistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+      }
+      
+      const title = meta?.title || baseName.split('_').slice(1).join(' ') || baseName;
+      
+      return `
+        <tr>
+            <td><input type="checkbox" name="songs" value="${baseName}" ${inPlaylist ? 'checked' : ''}></td>
+            <td>${title}</td>
+            <td>${artistName}</td>
+            <td>${inPlaylist ? '<span class="badge" style="background:#4a90e2; color:white;">In Playlist</span>' : '-'}</td>
+        </tr>
+      `;
+    })
+  );
+  
+  const content = `
+    <div style="max-width: 800px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-music"></i> Manage Songs: ${playlist.title}</h2>
+        
+        <form id="songsForm" action="/admin/playlists/songs" method="POST">
+            <input type="hidden" name="playlistId" value="${playlistId}">
+            
+            <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" onclick="checkAll()" class="btn btn-secondary btn-sm">Select All</button>
+                <button type="button" onclick="uncheckAll()" class="btn btn-secondary btn-sm">Deselect All</button>
+                <span style="flex:1;"></span>
+                <span><strong>Total Songs:</strong> ${playlist.songs?.length || 0}</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
+                            <th>Song</th>
+                            <th>Artist</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${songOptions.join('')}
+                        ${songOptions.length === 0 ? `
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i>
+                                    <p>No songs found</p>
+                                </td>
+                            </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/playlists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        function checkAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = true);
+            document.getElementById('selectAll').checked = true;
+        }
+        
+        function uncheckAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
+        }
+        
+        function toggleAll() {
+            const selectAll = document.getElementById('selectAll').checked;
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = selectAll);
+        }
+        
+        document.getElementById('songsForm').addEventListener('submit', function(e) {
+            if (!confirm('Update playlist songs?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// ===== HANDLE PLAYLIST SONGS UPDATE =====
+export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const playlistId = formData.get('playlistId');
+  const selectedSongs = formData.getAll('songs');
+  
+  if (!playlistId) {
+    return { success: false, error: 'No playlist specified' };
+  }
+  
+  try {
+    const playlists = await getPlaylists(env);
+    const playlistTitle = playlists[playlistId]?.title || 'Unknown playlist';
+    
+    if (!playlists[playlistId]) {
+      return { success: false, error: 'Playlist not found' };
+    }
+    
+    // Update playlist songs
+    playlists[playlistId].songs = selectedSongs;
+    playlists[playlistId].updated = Date.now();
+    await savePlaylists(env, playlists);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'update', 'playlist-songs', playlistId, 
+      `Updated songs for ${playlistTitle}`);
+    
+    return { success: true, redirect: '/admin/playlists?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== HELPER FUNCTIONS =====
+
+// Mobile card with views (UPDATED with Preview button)
+function generateMobileCard(playlist) {
+  const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short'
+  });
+  
+  return `
+    <div class="mobile-card">
+        <div style="font-weight:700; margin-bottom:5px;">${playlist.title}</div>
+        <div style="color:#4a90e2; margin-bottom:8px;">by ${playlist.curator}</div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
+            <span><i class="fas fa-music"></i> ${playlist.songCount} songs</span>
+            <span><i class="fas fa-users"></i> ${playlist.artistCount} artists</span>
+            <span><i class="fas fa-play" style="color:#ff5500;"></i> ${formatNumber(playlist.plays)}</span>
+            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(playlist.views || 0)}</span>
+        </div>
+        <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">Updated ${updated}</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="previewModal.show('playlist', '${playlist.id}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button onclick="editPlaylist('${playlist.id}')" class="btn btn-primary btn-sm" style="flex:1; background: #4a90e2; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="manageSongs('${playlist.id}')" class="btn btn-secondary btn-sm" style="flex:1; background: #6c757d; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-music"></i> Songs
+            </button>
+            <button onclick="deletePlaylist('${playlist.id}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+        </div>
+    </div>
+  `;
+}
+
+// Grid card with views (UPDATED with Preview button)
+function generateGridCard(playlist) {
+  const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short'
+  });
+  
+  return `
+    <div class="playlist-grid-card">
+        <div class="playlist-thumbnail" onclick="viewPlaylist('${playlist.id}')">
+            ${playlist.thumbnail ? `<img src="/playlists/thumbnails/${playlist.id}.jpg">` : '📋'}
+        </div>
+        <div class="playlist-info">
+            <div class="playlist-title" onclick="viewPlaylist('${playlist.id}')">${playlist.title}</div>
+            <div class="playlist-curator" onclick="viewPlaylist('${playlist.id}')">by ${playlist.curator}</div>
+            <div class="playlist-stats">
+                <span><i class="fas fa-music"></i> ${playlist.songCount}</span>
+                <span><i class="fas fa-users"></i> ${playlist.artistCount}</span>
+                <span><i class="fas fa-play"></i> ${formatNumber(playlist.plays)}</span>
+                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(playlist.views || 0)}</span>
+            </div>
+            <div style="font-size:0.75rem; color:#999; margin-top:5px;">Updated ${updated}</div>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button onclick="previewModal.show('playlist', '${playlist.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button onclick="editPlaylist('${playlist.id}')" class="btn btn-primary btn-sm" title="Edit" style="background: #4a90e2; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="manageSongs('${playlist.id}')" class="btn btn-secondary btn-sm" title="Songs" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-music"></i>
+                </button>
+                <button onclick="deletePlaylist('${playlist.id}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+  `;
+}
+
+// Pagination helper
+function generatePagination(currentPage, totalPages, search, sort) {
+  if (totalPages <= 1) return '';
+  let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
+  if (currentPage > 1) {
+    html += `<a href="?page=${currentPage-1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
+  } else {
+    html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
+  }
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+      html += `<a href="?page=${i}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item ${i === currentPage ? 'active' : ''}">${i}</a>`;
+    } else if (i === currentPage - 3 || i === currentPage + 3) {
+      html += `<span class="pagination-ellipsis">...</span>`;
+    }
+  }
+  if (currentPage < totalPages) {
+    html += `<a href="?page=${currentPage+1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
+  } else {
+    html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
+  }
+  html += '</div>';
+  return html;
 }
