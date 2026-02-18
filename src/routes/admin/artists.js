@@ -1,4 +1,4 @@
-// ==================== ADMIN  ARTISTS MANAGEMENT ====================
+// ==================== ADMIN ARTISTS MANAGEMENT ====================
 import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
@@ -687,7 +687,7 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views
+// Mobile card with views (UPDATED with Preview button)
 function generateMobileCard(artist) {
   const date = new Date(artist.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -704,16 +704,25 @@ function generateMobileCard(artist) {
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">Since ${date}</div>
-        <div style="display:flex; gap:8px;">
-            <button onclick="editArtist('${artist.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-            <button onclick="mergeArtist('${artist.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Merge</button>
-            <button onclick="deleteArtist('${artist.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="previewModal.show('artist', '${artist.id}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button onclick="editArtist('${artist.id}')" class="btn btn-primary btn-sm" style="flex:1; background: #9b59b6; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="mergeArtist('${artist.id}')" class="btn btn-secondary btn-sm" style="flex:1; background: #6c757d; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-compress"></i> Merge
+            </button>
+            <button onclick="deleteArtist('${artist.id}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
         </div>
     </div>
   `;
 }
 
-// Grid card with views
+// Grid card with views (UPDATED with Preview button)
 function generateGridCard(artist) {
   return `
     <div class="artist-grid-card">
@@ -729,10 +738,19 @@ function generateGridCard(artist) {
                 <span><i class="fas fa-headphones"></i> ${formatNumber(artist.monthlyListeners)}</span>
                 <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
             </div>
-            <div style="display:flex; gap:8px; margin-top:12px;">
-                <button onclick="editArtist('${artist.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-                <button onclick="mergeArtist('${artist.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Merge</button>
-                <button onclick="deleteArtist('${artist.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button onclick="previewModal.show('artist', '${artist.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button onclick="editArtist('${artist.id}')" class="btn btn-primary btn-sm" title="Edit" style="background: #9b59b6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="mergeArtist('${artist.id}')" class="btn btn-secondary btn-sm" title="Merge" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-compress"></i>
+                </button>
+                <button onclick="deleteArtist('${artist.id}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     </div>
