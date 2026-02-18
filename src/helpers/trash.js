@@ -1,4 +1,4 @@
-// ==================== R2 TRASH HELPER ====================
+// ==================== R2  TRASH HELPER ====================
 import { getAlbums, saveAlbums } from './storage.js';
 import { getArtists, saveArtists } from './storage.js';
 import { getPlaylists, savePlaylists } from './storage.js';
