@@ -1,797 +1,825 @@
-// ==================== ARTISTS ROUTES ====================
-// ALL IMPORTS AT THE TOP 
-import { incrementPageView } from '../helpers/pageViews.js';
-import { 
-  getArtists, 
-  getAlbums, 
-  getPlaylists, 
-  getMetadata, 
-  saveArtists,
-  getArtistAlbumsAndSingles 
-} from '../helpers/storage.js';
-import { getAggregatedStats } from '../helpers/db.js';
-import { sanitize, formatDuration } from '../helpers/formatting.js';
+// ==================== ADMIN ARTISTS MANAGEMENT ====================
+import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
+import { getAggregatedStats } from '../../helpers/db.js';
+import { getPageViews } from '../../helpers/pageViews.js';
+import { sanitize, formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
 
-export async function handleArtists(req, env, ctx) {
+// ===== LIST ALL ARTISTS =====
+export async function handleAdminArtists(req, env, ctx, auth) {
   const url = new URL(req.url);
-  const path = url.pathname;
+  const page = parseInt(url.searchParams.get('page')) || 1;
+  const search = url.searchParams.get('search') || '';
+  const sort = url.searchParams.get('sort') || 'name';
+  const ITEMS_PER_PAGE = 20;
 
-  // Artists list page
-  if (path === "/artists") {
-    const templateObj = await env.media.get("artists.html");
-    if (!templateObj) {
-      return new Response("artists.html template not found in R2", { status: 500 });
-    }
-    let html = await templateObj.text();
+  // Get all artists
+  const artists = await getArtists(env);
+  const albums = await getAlbums(env);
+  
+  // Get detailed artist data with views
+  let artistsData = await Promise.all(
+    Object.entries(artists).map(async ([id, artist]) => {
+      const stats = await getAggregatedStats(artist.songs || [], env);
+      const pageViews = await getPageViews(env, 'artist', id);
+      
+      // Get album count
+      const albumCount = artist.albums?.length || 0;
+      
+      // Get monthly listeners (estimate based on plays)
+      const monthlyListeners = Math.floor(stats.plays * 0.3);
+      
+      return {
+        id,
+        name: artist.name,
+        description: artist.description || '',
+        genre: artist.genre || 'Various',
+        thumbnail: artist.thumbnail,
+        songCount: artist.songs?.length || 0,
+        albumCount,
+        plays: stats.plays,
+        downloads: stats.downloads,
+        views: pageViews,
+        monthlyListeners,
+        created: artist.created,
+        hasImage: !!artist.thumbnail
+      };
+    })
+  );
 
-    const artists = await getArtists(env);
-    const albums = await getAlbums(env);
-    
-    const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
-    
-    const ARTISTS_PER_PAGE = 12;
-    const page = parseInt(url.searchParams.get("page")) || 1;
-    const totalArtists = artistList.length;
-    const totalPages = Math.ceil(totalArtists / ARTISTS_PER_PAGE);
-    const startIdx = (page - 1) * ARTISTS_PER_PAGE;
-    const pageArtists = artistList.slice(startIdx, startIdx + ARTISTS_PER_PAGE);
-
-    const artistsHtml = await Promise.all(pageArtists.map(async artist => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (artist.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(artist.thumbnail);
-          if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-
-      const songCount = artist.songs?.length || 0;
-      const sinceYear = new Date(artist.created).getFullYear();
-      const bgStyle = hasImage 
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
-
-      return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-          <div class="album-info">
-            <span class="album-title">${artist.name}</span>
-            <div class="album-meta">
-              <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Various'}</span>
-            </div>
-            <span class="album-date">Since ${sinceYear}</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    let paginationHtml = '';
-    if (totalPages > 1) {
-      paginationHtml = `<div class="pagination-container"><div class="pagination">`;
-      paginationHtml += `<a href="/artists?page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
-      for (let i = 1; i <= totalPages; i++) {
-        if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
-          paginationHtml += `<a href="/artists?page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
-        } else if (i === page-3 || i === page+3) {
-          paginationHtml += `<span class="pagination-ellipsis">...</span>`;
-        }
-      }
-      paginationHtml += `<a href="/artists?page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
-      paginationHtml += `</div></div>`;
-    }
-
-    const topArtists = Object.values(artists)
-      .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
-      .slice(0, 3);
-    
-    const topArtistsHtml = await Promise.all(topArtists.map(async artist => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (artist.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(artist.thumbnail);
-          if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const songCount = artist.songs?.length || 0;
-      const bgStyle = hasImage 
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
-      return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-          <div class="album-info">
-            <span class="album-title">${artist.name}</span>
-            <div class="album-meta">
-              <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Various'}</span>
-            </div>
-            <span class="album-date">${songCount >= 100 ? 'Most Songs' : 'Popular'}</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    const newArtists = Object.values(artists)
-      .sort((a, b) => b.created - a.created)
-      .slice(0, 3);
-    
-    const newArtistsHtml = await Promise.all(newArtists.map(async artist => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (artist.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(artist.thumbnail);
-          if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            hasImage = true;
-          }
-        } catch (e) {}
-      }
-      const songCount = artist.songs?.length || 0;
-      const sinceYear = new Date(artist.created).getFullYear();
-      const bgStyle = hasImage 
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
-      return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-          <div class="album-info">
-            <span class="album-title">${artist.name}</span>
-            <div class="album-meta">
-              <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Various'}</span>
-            </div>
-            <span class="album-date">Since ${sinceYear}</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
-    const totalArtistsCount = Object.keys(artists).length;
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const newArtistsThisMonth = Object.values(artists).filter(a => a.created > thirtyDaysAgo).length;
-
-    const statsHtml = `
-      <div style="padding: 15px; font-size: 0.9rem; color: #555;">
-        <p><strong>Total Artists:</strong> ${totalArtistsCount}+</p>
-        <p><strong>Total Songs:</strong> ${totalSongs}+</p>
-        <p><strong>New This Month:</strong> ${newArtistsThisMonth} Artists</p>
-        <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 3px;">
-          <i class="fas fa-info-circle" style="color: #ff5500;"></i>
-          <span style="margin-left: 5px;">All Zambian artists included</span>
-        </div>
-      </div>
-    `;
-
-    html = html.replace(
-      /<!-- ARTISTS_START -->[\s\S]*?<!-- ARTISTS_END -->/g,
-      `<!-- ARTISTS_START -->${artistsHtml.join('')}<!-- ARTISTS_END -->`
+  // Apply search filter
+  if (search) {
+    const searchLower = search.toLowerCase();
+    artistsData = artistsData.filter(artist => 
+      artist.name.toLowerCase().includes(searchLower) ||
+      artist.genre.toLowerCase().includes(searchLower) ||
+      artist.description.toLowerCase().includes(searchLower)
     );
-    
-    html = html.replace(
-      /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
-      `<!-- PAGINATION_START -->${paginationHtml}<!-- PAGINATION_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/g,
-      `<!-- TOP_ARTISTS_START -->${topArtistsHtml.join('')}<!-- TOP_ARTISTS_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- NEW_ARTISTS_START -->[\s\S]*?<!-- NEW_ARTISTS_END -->/g,
-      `<!-- NEW_ARTISTS_START -->${newArtistsHtml.join('')}<!-- NEW_ARTISTS_END -->`
-    );
-    
-    html = html.replace(
-      /<!-- ARTIST_STATS_START -->[\s\S]*?<!-- ARTIST_STATS_END -->/g,
-      `<!-- ARTIST_STATS_START -->${statsHtml}<!-- ARTIST_STATS_END -->`
-    );
-
-    return new Response(html, { 
-      headers: { 
-        "Content-Type": "text/html",
-        "Cache-Control": "public, max-age=300"
-      } 
-    });
   }
 
-  // Artist detail page
-  if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-    const artistId = decodeURIComponent(path.replace("/artist/", ""));
+  // Apply sorting with views
+  artistsData.sort((a, b) => {
+    switch (sort) {
+      case 'name':
+        return a.name.localeCompare(b.name);
+      case 'songs':
+        return b.songCount - a.songCount;
+      case 'albums':
+        return b.albumCount - a.albumCount;
+      case 'plays':
+        return b.plays - a.plays;
+      case 'listeners':
+        return b.monthlyListeners - a.monthlyListeners;
+      case 'views':
+        return (b.views || 0) - (a.views || 0);
+      case 'date':
+        return b.created - a.created;
+      default:
+        return a.name.localeCompare(b.name);
+    }
+  });
+
+  // Pagination
+  const totalArtists = artistsData.length;
+  const totalPages = Math.ceil(totalArtists / ITEMS_PER_PAGE);
+  const startIdx = (page - 1) * ITEMS_PER_PAGE;
+  const pageArtists = artistsData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+  // Sort options with views
+  const sortOptions = [
+    { value: 'name', label: 'Name' },
+    { value: 'songs', label: 'Most Songs' },
+    { value: 'albums', label: 'Most Albums' },
+    { value: 'plays', label: 'Most Plays' },
+    { value: 'listeners', label: 'Monthly Listeners' },
+    { value: 'views', label: 'Most Viewed' },
+    { value: 'date', label: 'Date Added' }
+  ];
+
+  // Calculate totals
+  const totalSongs = artistsData.reduce((acc, a) => acc + a.songCount, 0);
+  const totalAlbums = artistsData.reduce((acc, a) => acc + a.albumCount, 0);
+  const totalPlays = artistsData.reduce((acc, a) => acc + a.plays, 0);
+  const totalDownloads = artistsData.reduce((acc, a) => acc + a.downloads, 0);
+  const totalViews = artistsData.reduce((acc, a) => acc + (a.views || 0), 0);
+  const totalListeners = artistsData.reduce((acc, a) => acc + a.monthlyListeners, 0);
+
+  const content = `
+    <div style="margin-bottom: 20px;">
+        <!-- Header -->
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center;">
+                <h2 style="margin:0; font-size:1.3rem;"><i class="fas fa-microphone"></i> Artists Management</h2>
+                <a href="/admin/artist/create" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Create New Artist
+                </a>
+            </div>
+            
+            <!-- Search and Filter -->
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <div style="flex: 1; min-width: 200px;">
+                    <div style="position: relative;">
+                        <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #999;"></i>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Search artists, genres..." 
+                               value="${search}" style="padding-left: 40px;">
+                    </div>
+                </div>
+                <select id="sortSelect" class="form-control" style="width: auto; min-width: 150px;">
+                    ${sortOptions.map(opt => `
+                        <option value="${opt.value}" ${sort === opt.value ? 'selected' : ''}>Sort by: ${opt.label}</option>
+                    `).join('')}
+                </select>
+                <button onclick="applyFilters()" class="btn btn-primary">
+                    <i class="fas fa-filter"></i> Apply
+                </button>
+            </div>
+            
+            <!-- Stats Summary with Views -->
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
+                <div><i class="fas fa-microphone" style="color: #ff5500;"></i> Artists: <strong>${totalArtists}</strong></div>
+                <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${totalSongs}</strong></div>
+                <div><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Albums: <strong>${totalAlbums}</strong></div>
+                <div><i class="fas fa-headphones" style="color: #9b59b6;"></i> Listeners: <strong>${formatNumber(totalListeners)}</strong></div>
+                <div><i class="fas fa-eye" style="color: #4a90e2;"></i> Views: <strong>${formatNumber(totalViews)}</strong></div>
+            </div>
+        </div>
+        
+        <!-- Mobile Cards -->
+        <div class="mobile-cards">
+            ${pageArtists.map(artist => generateMobileCard(artist)).join('')}
+            ${pageArtists.length === 0 ? `
+                <div class="empty-state">
+                    <i class="fas fa-microphone"></i>
+                    <h3>No artists found</h3>
+                    <p>Try adjusting your search or create a new artist</p>
+                    <a href="/admin/artist/create" class="btn btn-primary" style="margin-top: 15px;">
+                        <i class="fas fa-plus"></i> Create New Artist
+                    </a>
+                </div>
+            ` : ''}
+        </div>
+        
+        <!-- Desktop Grid -->
+        <div class="artists-grid" style="display: none;">
+            ${pageArtists.map(artist => generateGridCard(artist)).join('')}
+        </div>
+        
+        <!-- Pagination -->
+        ${generatePagination(page, totalPages, search, sort)}
+    </div>
+    
+    <style>
+        .artists-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .artist-grid-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+            border: 1px solid #e8e8e8;
+        }
+        
+        .artist-grid-card:hover {
+            transform: translateY(-4px);
+            border-color: #9b59b6;
+        }
+        
+        .artist-thumbnail {
+            width: 100%;
+            aspect-ratio: 1;
+            background: linear-gradient(135deg, #9b59b6, #8e44ad);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 3rem;
+        }
+        
+        .artist-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .artist-info {
+            padding: 15px;
+        }
+        
+        .artist-name {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        
+        .artist-genre {
+            color: #9b59b6;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+        
+        .artist-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        
+        @media (min-width: 768px) {
+            .mobile-cards { display: none; }
+            .artists-grid { display: grid !important; }
+        }
+    </style>
+    
+    <script>
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value;
+            const sort = document.getElementById('sortSelect').value;
+            let url = '/admin/artists?';
+            if (search) url += 'search=' + encodeURIComponent(search) + '&';
+            url += 'sort=' + sort;
+            window.location.href = url;
+        }
+        
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyFilters();
+        });
+        
+        window.viewArtist = function(id) { window.open('/artist/' + id, '_blank'); };
+        window.editArtist = function(id) { window.location.href = '/admin/artists/edit?id=' + id; };
+        window.mergeArtist = function(id) { window.location.href = '/admin/artists/merge?id=' + id; };
+        window.deleteArtist = function(id) {
+            if (confirm('Delete this artist? It will be moved to trash.')) window.location.href = '/admin/artists/delete?id=' + id;
+        };
+    </script>
+  `;
+
+  return content;
+}
+
+// ===== CREATE NEW ARTIST PAGE =====
+export async function handleAdminArtistCreate(req, env, ctx, auth) {
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #9b59b6;"></i> Create New Artist</h2>
+        
+        <form action="/admin/artist/create" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Artist Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Yo Maps" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Genre</label>
+                <input type="text" name="genre" class="form-control" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+            </div>
+            
+            <div class="form-group">
+                <label>Bio</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Artist biography..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Origin/Location</label>
+                <input type="text" name="origin" class="form-control" placeholder="e.g. Lusaka, Zambia">
+            </div>
+            
+            <div class="form-group">
+                <label>Artist Image</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" style="background: #9b59b6;">
+                    <i class="fas fa-save"></i> Create Artist
+                </button>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+  `;
+  
+  return content;
+}
+
+// ===== HANDLE ARTIST CREATION POST =====
+export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const name = formData.get('name');
+  const genre = formData.get('genre') || '';
+  const description = formData.get('description') || '';
+  const origin = formData.get('origin') || '';
+  const thumbnailFile = formData.get('thumbnail');
+
+  if (!name) {
+    return { success: false, error: 'Artist name is required' };
+  }
+
+  const artistId = sanitize(name);
+  const artists = await getArtists(env);
+
+  // Check if artist already exists
+  if (artists[artistId]) {
+    return { success: false, error: 'Artist with this name already exists' };
+  }
+
+  let thumbnailKey = null;
+  if (thumbnailFile && thumbnailFile.size > 0) {
+    const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+    thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+    await env.media.put(thumbnailKey, thumbnailFile.stream());
+  }
+
+  artists[artistId] = {
+    id: artistId,
+    name: name,
+    description: description,
+    genre: genre,
+    origin: origin,
+    thumbnail: thumbnailKey,
+    created: Date.now(),
+    songs: [],
+    albums: []
+  };
+
+  await saveArtists(env, artists);
+  
+  // Log activity
+  await logAdminActivity(env, auth.session.id, 'create', 'artist', artistId, name);
+
+  return { 
+    success: true, 
+    redirect: `/admin/artists?created=1` 
+  };
+}
+
+// ===== EDIT ARTIST PAGE =====
+export async function handleAdminArtistEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const artistId = url.searchParams.get('id');
+  
+  if (!artistId) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  const artists = await getArtists(env);
+  const artist = artists[artistId];
+  
+  if (!artist) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Artist: ${artist.name}</h2>
+        
+        <form id="editForm" action="/admin/artists/edit" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="artistId" value="${artistId}">
+            
+            <div class="form-group">
+                <label>Artist Name</label>
+                <input type="text" name="name" class="form-control" value="${artist.name}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Genre</label>
+                <input type="text" name="genre" class="form-control" value="${artist.genre || ''}" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+            </div>
+            
+            <div class="form-group">
+                <label>Bio</label>
+                <textarea name="description" class="form-control" rows="4">${artist.description || ''}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Origin/Location</label>
+                <input type="text" name="origin" class="form-control" value="${artist.origin || ''}" placeholder="e.g. Lusaka, Zambia">
+            </div>
+            
+            <div class="form-group">
+                <label>Current Image</label>
+                ${artist.thumbnail ? 
+                    `<div style="margin-bottom:10px;">
+                        <img src="/artists/thumbnails/${artistId}.jpg" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #9b59b6;">
+                    </div>` : 
+                    '<p>No image</p>'
+                }
+                <label>New Image (optional)</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this artist?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// ===== HANDLE ARTIST EDIT POST =====
+export async function handleAdminArtistEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const artistId = formData.get('artistId');
+  const name = formData.get('name');
+  const genre = formData.get('genre');
+  const description = formData.get('description');
+  const origin = formData.get('origin');
+  const thumbnailFile = formData.get('thumbnail');
+  
+  if (!artistId || !name) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  try {
+    const artists = await getArtists(env);
+    
+    if (!artists[artistId]) {
+      return { success: false, error: 'Artist not found' };
+    }
+    
+    // Update artist details
+    artists[artistId].name = name;
+    artists[artistId].genre = genre;
+    artists[artistId].description = description;
+    artists[artistId].origin = origin;
+    
+    // Upload new thumbnail if provided
+    if (thumbnailFile && thumbnailFile.size > 0) {
+      const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+      const thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+      await env.media.put(thumbnailKey, thumbnailFile.stream());
+      artists[artistId].thumbnail = thumbnailKey;
+    }
+    
+    await saveArtists(env, artists);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
+    
+    return { success: true, redirect: '/admin/artists?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
+export async function handleAdminArtistDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const artistId = url.searchParams.get('id');
+  
+  if (!artistId) {
+    return { success: false, error: 'No artist specified' };
+  }
+  
+  try {
     const artists = await getArtists(env);
     const artist = artists[artistId];
-    if (!artist) return new Response("Artist not found", { status: 404 });
-
-    // ✅ TRACK PAGE VIEW
-    ctx.waitUntil(incrementPageView(env, 'artist', artistId));
-
-    const albums = await getAlbums(env);
-    const playlists = await getPlaylists(env);
+    const artistName = artist?.name || 'Unknown artist';
     
-    // Get artist's albums and singles
-    const artistData = await getArtistAlbumsAndSingles(env, artistId);
-    const { albums: artistAlbums, singles } = artistData;
-
-    const allSongKeys = artist.songs || [];
-    const artistStats = await getAggregatedStats(allSongKeys, env);
-
-    // Find playlists featuring this artist
-    const artistPlaylists = [];
-    const playlistsList = Object.values(playlists);
+    // Get thumbnail path
+    let thumbnailPath = null;
+    if (artist?.thumbnail) {
+      thumbnailPath = artist.thumbnail;
+    }
     
-    for (const playlist of playlistsList) {
-      if (!playlist.songs) continue;
-      
-      for (const songKey of playlist.songs) {
-        const meta = await getMetadata(env, songKey);
-        if (meta) {
-          if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
-            const artistSongCount = playlist.songs.filter(s => {
-              return s.startsWith(artistId + "_");
-            }).length;
-            
-            artistPlaylists.push({
-              id: playlist.id,
-              title: playlist.title,
-              thumbnail: playlist.thumbnail,
-              songCount: playlist.songs.length,
-              artistSongCount: artistSongCount,
-              curator: playlist.curator || 'ZEDALBUMS',
-              created: playlist.created
-            });
-            break;
-          }
-        } else {
-          if (songKey.startsWith(artistId + "_")) {
-            const artistSongCount = playlist.songs.filter(s => {
-              return s.startsWith(artistId + "_");
-            }).length;
-            
-            artistPlaylists.push({
-              id: playlist.id,
-              title: playlist.title,
-              thumbnail: playlist.thumbnail,
-              songCount: playlist.songs.length,
-              artistSongCount: artistSongCount,
-              curator: playlist.curator || 'ZEDALBUMS',
-              created: playlist.created
-            });
-            break;
-          }
-        }
-      }
-    }
-
-    artistPlaylists.sort((a, b) => b.created - a.created);
-
-    const templateObj = await env.media.get("artist.html");
-    if (!templateObj) {
-      return new Response("artist.html template not found in R2", { status: 500 });
-    }
-    let html = await templateObj.text();
-
-    const formatDate = (ts) =>
-      new Date(ts).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-
-    const artistName = artist.name || artistId;
-    const sinceYear = artist.created ? new Date(artist.created).getFullYear() : "N/A";
-    const description = artist.description || `All songs by ${artistName}.`;
-    const genre = artist.genre || "Zam Pop / R&B";
-    const songCount = artistData.totalSongs || artist.songs?.length || 0;
-    const plays = artistStats.plays.toLocaleString();
-    const downloads = artistStats.downloads.toLocaleString();
-
-    const breadcrumbHtml = `<span class="breadcrumb-current"><i class="fas fa-microphone"></i>${artistName}</span>`;
-
-    let artistCoverHtml = `<i class="fas fa-microphone"></i>`;
-    if (artist.thumbnail) {
-      try {
-        const thumbObj = await env.media.get(artist.thumbnail);
-        if (thumbObj) {
-          const ext = artist.thumbnail.split(".").pop();
-          const thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-          artistCoverHtml = `<img src="${thumbUrl}" alt="${artistName}">`;
-        }
-      } catch (e) {}
-    }
-
-    // Collect all songs
-    const allSongs = [];
-
-    for (const alb of artistAlbums) {
-      for (const songKey of alb.songs) {
-        const [sid] = songKey.split("_");
-        if (sid !== artistId) continue;
-        const meta = await getMetadata(env, songKey);
-        const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-        const uploaded = alb.created;
-        allSongs.push({
-          key: songKey,
-          title,
-          artistName,
-          artists: [artistName],
-          albumId: alb.id,
-          albumTitle: alb.title,
-          uploaded,
-          role: 'primary'
-        });
-      }
-    }
-
-    for (const songKey of singles) {
-      const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-      const uploaded = audioObj?.uploaded || Date.now();
-      const meta = await getMetadata(env, songKey);
-      const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-      allSongs.push({
-        key: songKey,
-        title,
-        artistName,
-        artists: [artistName],
-        albumId: null,
-        albumTitle: null,
-        uploaded,
-        role: 'primary'
-      });
-    }
-
-    const processedKeys = new Set(allSongs.map(s => s.key));
-    for (const songKey of artist.songs) {
-      if (processedKeys.has(songKey)) continue;
-      const meta = await getMetadata(env, songKey);
-      if (meta && meta.featuredArtists.includes(artistId)) {
-        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-        const uploaded = audioObj?.uploaded || Date.now();
-        const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
-        const title = meta.title;
-        allSongs.push({
-          key: songKey,
-          title,
-          artistName: primaryArtistName,
-          artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
-          albumId: null,
-          albumTitle: null,
-          uploaded,
-          role: 'featured'
-        });
-      }
-    }
-
-    allSongs.sort((a, b) => b.uploaded - a.uploaded);
-
-    const songsHtml = await Promise.all(
-      allSongs.slice(0, 10).map(async (song, idx) => {
-        let thumbUrl = "/images/placeholder.jpg";
-        let hasImage = false;
+    // Calculate total size (sum of all songs by artist)
+    let totalSize = 0;
+    if (artist?.songs) {
+      for (const songId of artist.songs) {
         try {
-          const jpg = await env.media.get(`images/${song.key}.jpg`);
-          if (jpg) {
-            thumbUrl = `/images/${encodeURIComponent(song.key)}.jpg`;
-            hasImage = true;
-          } else {
-            const png = await env.media.get(`images/${song.key}.png`);
-            if (png) {
-              thumbUrl = `/images/${encodeURIComponent(song.key)}.png`;
-              hasImage = true;
+          const songObj = await env.media.get(`songs/${songId}.mp3`);
+          totalSize += songObj?.size || 0;
+        } catch (e) {}
+      }
+    }
+    
+    // Prepare metadata
+    const itemData = {
+      name: artist?.name,
+      description: artist?.description,
+      genre: artist?.genre,
+      origin: artist?.origin,
+      songs: artist?.songs,
+      albums: artist?.albums,
+      created: artist?.created,
+      thumbnail: artist?.thumbnail
+    };
+    
+    // Move to trash
+    const result = await moveToTrash(
+      env,
+      auth.session.id,
+      'artist',
+      artistId,
+      artistName,
+      itemData,
+      totalSize
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Remove from artists index
+    delete artists[artistId];
+    await saveArtists(env, artists);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'delete', 'artist', artistId, artistName);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error moving artist to trash:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== MERGE ARTISTS PAGE =====
+export async function handleAdminArtistMerge(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const artistId = url.searchParams.get('id');
+  
+  if (!artistId) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  const artists = await getArtists(env);
+  const mainArtist = artists[artistId];
+  
+  if (!mainArtist) {
+    return { redirect: '/admin/artists' };
+  }
+  
+  // Get all other artists for merging
+  const otherArtists = Object.entries(artists)
+    .filter(([id]) => id !== artistId)
+    .map(([id, artist]) => ({
+      id,
+      name: artist.name,
+      songCount: artist.songs?.length || 0,
+      albumCount: artist.albums?.length || 0
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  
+  const artistOptions = otherArtists.map(artist => 
+    `<option value="${artist.id}">${artist.name} (${artist.songCount} songs, ${artist.albumCount} albums)</option>`
+  ).join('');
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2 style="margin-bottom: 20px;"><i class="fas fa-compress"></i> Merge Artists</h2>
+        
+        <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #9b59b6;">
+            <p><strong>Main Artist:</strong> ${mainArtist.name}</p>
+            <p><i class="fas fa-info-circle"></i> This artist will receive all songs and albums from the merged artist.</p>
+        </div>
+        
+        <form id="mergeForm" action="/admin/artists/merge" method="POST">
+            <input type="hidden" name="mainArtistId" value="${artistId}">
+            
+            <div class="form-group">
+                <label>Select Artist to Merge into ${mainArtist.name}</label>
+                <select name="mergeArtistId" class="form-control" required>
+                    <option value="">-- Select Artist --</option>
+                    ${artistOptions}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Action after merge</label>
+                <div style="display: flex; gap: 20px; margin-top: 10px;">
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="deleteAfter" value="yes" checked> Delete merged artist
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <input type="radio" name="deleteAfter" value="no"> Keep merged artist
+                    </label>
+                </div>
+            </div>
+            
+            <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Warning:</strong> This action cannot be undone. All songs and albums from the merged artist will be transferred to ${mainArtist.name}.
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" onclick="return confirm('Are you sure you want to merge these artists?')">
+                    <i class="fas fa-compress"></i> Merge Artists
+                </button>
+                <a href="/admin/artists" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+  `;
+  
+  return { content };
+}
+
+// ===== HANDLE ARTIST MERGE POST =====
+export async function handleAdminArtistMergePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const mainArtistId = formData.get('mainArtistId');
+  const mergeArtistId = formData.get('mergeArtistId');
+  const deleteAfter = formData.get('deleteAfter');
+  
+  if (!mainArtistId || !mergeArtistId) {
+    return { success: false, error: 'Missing artist IDs' };
+  }
+  
+  if (mainArtistId === mergeArtistId) {
+    return { success: false, error: 'Cannot merge an artist with itself' };
+  }
+  
+  try {
+    const artists = await getArtists(env);
+    const albums = await getAlbums(env);
+    
+    const mainArtist = artists[mainArtistId];
+    const mergeArtist = artists[mergeArtistId];
+    const mergeArtistName = mergeArtist?.name || 'Unknown artist';
+    
+    if (!mainArtist || !mergeArtist) {
+      return { success: false, error: 'Artist not found' };
+    }
+    
+    // Transfer songs
+    if (mergeArtist.songs) {
+      for (const songKey of mergeArtist.songs) {
+        if (!mainArtist.songs.includes(songKey)) {
+          mainArtist.songs.push(songKey);
+        }
+      }
+    }
+    
+    // Transfer albums
+    if (mergeArtist.albums) {
+      for (const albumId of mergeArtist.albums) {
+        if (!mainArtist.albums.includes(albumId)) {
+          mainArtist.albums.push(albumId);
+        }
+        
+        // Update album's artists array
+        if (albums[albumId]) {
+          if (!albums[albumId].artists) albums[albumId].artists = [];
+          if (!albums[albumId].artists.includes(mainArtistId)) {
+            // Replace mergeArtistId with mainArtistId
+            const index = albums[albumId].artists.indexOf(mergeArtistId);
+            if (index !== -1) {
+              albums[albumId].artists[index] = mainArtistId;
+            } else {
+              albums[albumId].artists.push(mainArtistId);
             }
           }
-        } catch (e) {}
-
-        const date = formatDate(song.uploaded);
-        const meta = await getMetadata(env, song.key);
-        const durationSeconds = meta?.duration || 0;
-        const durationFormatted = formatDuration(durationSeconds);
-        const artistDisplay = song.artists.join(', ');
-        const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
-
-        return `
-          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(
-            song.key + ".mp3"
-          )}'">
-            <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${song.title}" loading="lazy">` : ""}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${song.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${artistDisplay}</span>
-                <span class="song-duration">${durationFormatted}</span>
-                <span class="album-genre">${song.role === 'featured' ? 'Featured' : 'Song'}</span>
-              </div>
-              <span class="album-date">${date} ${roleBadge}</span>
-            </div>
-          </div>
-        `;
-      })
-    );
-
-    const albumsHtml = await Promise.all(
-      artistAlbums.slice(0, 3).map(async (alb) => {
-        let thumbUrl = "/images/placeholder.jpg";
-        let hasImage = false;
-        if (alb.thumbnail && alb.thumbnail !== "/images/placeholder.jpg") {
-          try {
-            const ext = alb.thumbnail.split(".").pop();
-            thumbUrl = `/albums/thumbnails/${encodeURIComponent(alb.id)}.${ext}`;
-            hasImage = true;
-          } catch (e) {}
-        }
-        const date = formatDate(alb.created);
-        return `
-          <div class="album-item" onclick="window.location='/album/${alb.id}'">
-            <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${alb.title}" loading="lazy">` : ""}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${artistName} - ${alb.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${artistName}</span>
-                <span class="album-genre">Album</span>
-              </div>
-              <span class="album-date">${date}</span>
-            </div>
-          </div>
-        `;
-      })
-    );
-
-    // Collaborations
-    const collabMap = new Map();
-    for (const alb of artistAlbums) {
-      if (alb.artists) {
-        for (const aid of alb.artists) {
-          if (aid !== artistId && artists[aid]) {
-            const count = collabMap.get(aid) || 0;
-            collabMap.set(aid, count + 1);
-          }
         }
       }
     }
-    for (const songKey of artist.songs) {
-      const meta = await getMetadata(env, songKey);
-      if (meta && meta.primaryArtist !== artistId && meta.featuredArtists.includes(artistId)) {
-        const primaryId = meta.primaryArtist;
-        if (primaryId && artists[primaryId]) {
-          const count = collabMap.get(primaryId) || 0;
-          collabMap.set(primaryId, count + 1);
-        }
+    
+    // Save updated albums
+    await saveAlbums(env, albums);
+    
+    // Delete merged artist if requested
+    if (deleteAfter === 'yes') {
+      // Delete thumbnail if exists
+      if (mergeArtist.thumbnail) {
+        await env.media.delete(mergeArtist.thumbnail).catch(() => {});
       }
+      delete artists[mergeArtistId];
     }
-    const collabArtists = Array.from(collabMap.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
+    
+    // Save main artist
+    await saveArtists(env, artists);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'merge', 'artist', mainArtistId, 
+      `Merged ${mergeArtistName} into ${mainArtist.name}`);
+    
+    return { success: true, redirect: '/admin/artists?merged=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
 
-    const collabHtml =
-      collabArtists.length > 0
-        ? await Promise.all(
-            collabArtists.map(async ([aid, count]) => {
-              const a = artists[aid];
-              let thumbUrl = "/images/placeholder.jpg";
-              let hasImage = false;
-              if (a.thumbnail) {
-                try {
-                  const ext = a.thumbnail.split(".").pop();
-                  thumbUrl = `/artists/thumbnails/${encodeURIComponent(a.id)}.${ext}`;
-                  hasImage = true;
-                } catch (e) {}
-              }
-              const bgStyle = hasImage
-                ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
-                : "";
-              return `
-                <div class="album-item" onclick="window.location='/artist/${a.id}'">
-                  <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-                  <div class="album-info">
-                    <span class="album-title">${a.name}</span>
-                    <div class="album-meta">
-                      <span class="album-artist">${count} Songs</span>
-                      <span class="album-genre">${a.genre || "Artist"}</span>
-                    </div>
-                    <span class="album-date">${count} collaboration${count > 1 ? "s" : ""}</span>
-                  </div>
-                </div>
-              `;
-            })
-          ).then((r) => r.join(""))
-        : `<div style="padding: 20px; text-align: center; color: #666;">No collaborations yet</div>`;
+// ===== HELPER FUNCTIONS =====
 
-    // Artist playlists HTML
-    const artistPlaylistsHtml = artistPlaylists.length > 0 
-      ? await Promise.all(artistPlaylists.slice(0, 3).map(async pl => {
-          let thumbUrl = "/images/placeholder.jpg";
-          let hasImage = false;
-          
-          if (pl.thumbnail) {
-            try {
-              const thumbObj = await env.media.get(pl.thumbnail);
-              if (thumbObj) {
-                const ext = pl.thumbnail.split(".").pop();
-                thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
-                hasImage = true;
-              }
-            } catch (e) {}
-          }
-          
-          const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
-          const thumbnailContent = hasImage 
-            ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` 
-            : '';
-          
-          return `
-            <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
-              <div class="album-thumbnail ${thumbnailClass}">
-                ${thumbnailContent}
-              </div>
-              <div class="album-info">
-                <span class="album-title">${pl.title}</span>
-                <div class="album-meta">
-                  <span class="album-artist playlist-songs">${pl.songCount} Songs</span>
-                  <span class="album-genre">${pl.artistSongCount} by ${artistName}</span>
-                </div>
-                <span class="album-date">Curated by ${pl.curator}</span>
-              </div>
+// Mobile card with views
+function generateMobileCard(artist) {
+  const date = new Date(artist.created).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+  
+  return `
+    <div class="mobile-card">
+        <div style="font-weight:700; margin-bottom:5px;">${artist.name}</div>
+        <div style="color:#9b59b6; margin-bottom:8px;">${artist.genre}</div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
+            <span><i class="fas fa-music"></i> ${artist.songCount} songs</span>
+            <span><i class="fas fa-compact-disc"></i> ${artist.albumCount} albums</span>
+            <span><i class="fas fa-headphones" style="color:#9b59b6;"></i> ${formatNumber(artist.monthlyListeners)}</span>
+            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
+        </div>
+        <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">Since ${date}</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="previewModal.show('artist', '${artist.id}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button onclick="editArtist('${artist.id}')" class="btn btn-primary btn-sm" style="flex:1; background: #9b59b6; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="mergeArtist('${artist.id}')" class="btn btn-secondary btn-sm" style="flex:1; background: #6c757d; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-compress"></i> Merge
+            </button>
+            <button onclick="deleteArtist('${artist.id}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+        </div>
+    </div>
+  `;
+}
+
+// Grid card with views
+function generateGridCard(artist) {
+  return `
+    <div class="artist-grid-card">
+        <div class="artist-thumbnail" onclick="viewArtist('${artist.id}')">
+            ${artist.thumbnail ? `<img src="/artists/thumbnails/${artist.id}.jpg">` : '🎤'}
+        </div>
+        <div class="artist-info">
+            <div class="artist-name" onclick="viewArtist('${artist.id}')">${artist.name}</div>
+            <div class="artist-genre" onclick="viewArtist('${artist.id}')">${artist.genre}</div>
+            <div class="artist-stats">
+                <span><i class="fas fa-music"></i> ${artist.songCount}</span>
+                <span><i class="fas fa-compact-disc"></i> ${artist.albumCount}</span>
+                <span><i class="fas fa-headphones"></i> ${formatNumber(artist.monthlyListeners)}</span>
+                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
             </div>
-          `;
-        })).then(results => results.join(''))
-      : `<div style="padding: 20px; text-align: center; color: #666;">No playlists featuring ${artistName} yet</div>`;
-
-    // Similar artists
-    const otherArtists = Object.values(artists).filter((a) => a.id !== artistId);
-    let similar = [];
-    if (artist.genre) {
-      similar = otherArtists
-        .filter((a) => a.genre === artist.genre)
-        .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
-        .slice(0, 3);
-    }
-    if (similar.length < 3) {
-      const needed = 3 - similar.length;
-      const randomOthers = otherArtists
-        .filter((a) => !similar.includes(a))
-        .sort(() => 0.5 - Math.random())
-        .slice(0, needed);
-      similar = [...similar, ...randomOthers];
-    }
-
-    const similarHtml =
-      similar.length > 0
-        ? await Promise.all(
-            similar.slice(0, 3).map(async (a) => {
-              let thumbUrl = "/images/placeholder.jpg";
-              let hasImage = false;
-              if (a.thumbnail) {
-                try {
-                  const ext = a.thumbnail.split(".").pop();
-                  thumbUrl = `/artists/thumbnails/${encodeURIComponent(a.id)}.${ext}`;
-                  hasImage = true;
-                } catch (e) {}
-              }
-              const bgStyle = hasImage
-                ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
-                : "";
-              const songCount = a.songs?.length || 0;
-              const since = a.created ? new Date(a.created).getFullYear() : "N/A";
-              return `
-                <div class="album-item" onclick="window.location='/artist/${a.id}'">
-                  <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-                  <div class="album-info">
-                    <span class="album-title">${a.name}</span>
-                    <div class="album-meta">
-                      <span class="album-artist">${songCount} Songs</span>
-                      <span class="album-genre">${a.genre || "Artist"}</span>
-                    </div>
-                    <span class="album-date">Since ${since}</span>
-                  </div>
-                </div>
-              `;
-            })
-          ).then((r) => r.join(""))
-        : `<div style="padding: 20px; text-align: center; color: #666;">No similar artists</div>`;
-
-    const infoHtml = `
-      <p><strong>Genre:</strong> ${genre}</p>
-      <p><strong>Active Since:</strong> ${sinceYear}</p>
-      <p><strong>Label:</strong> ${artist.label || "Independent"}</p>
-      <p><strong>Origin:</strong> ${artist.origin || "Zambia"}</p>
-      <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 3px;">
-        <i class="fas fa-info-circle" style="color: #ff6b6b;"></i>
-        <span style="margin-left: 5px;">All songs available for download</span>
-      </div>
-    `;
-
-    html = html
-      .replace(/<title>.*?<\/title>/, `<title>${artistName} - ZEDALBUMS</title>`)
-      .replace(/<!-- ARTIST_BREADCRUMB -->/, breadcrumbHtml)
-      .replace(/<h1 class="artist-title">.*?<\/h1>/, `<h1 class="artist-title">${artistName}</h1>`)
-      .replace(/<div class="artist-genre">.*?<\/div>/, `<div class="artist-genre">${genre}</div>`)
-      .replace(/<!-- ARTIST_DESCRIPTION -->/, description)
-      .replace(/<!-- ARTIST_COVER -->/, artistCoverHtml)
-      .replace(/<!-- ARTIST_SONGS_COUNT -->/, songCount.toString())
-      .replace(/<!-- ARTIST_SINCE -->/, sinceYear.toString())
-      .replace(/<!-- ARTIST_PLAYS -->/, plays)
-      .replace(/<!-- ARTIST_DOWNLOADS -->/, downloads)
-      .replace(/<!-- SONGS_LIST -->/, songsHtml.join(""))
-      .replace(/<!-- ALBUMS_BY_ARTIST -->/, albumsHtml.join(""))
-      .replace(/<!-- COLLABORATIONS_LIST -->/, collabHtml)
-      .replace(/<!-- ARTIST_PLAYLISTS_START -->[\s\S]*?<!-- ARTIST_PLAYLISTS_END -->/g,
-        `<!-- ARTIST_PLAYLISTS_START -->
-        <section class="section-block">
-          <div class="section-header">
-            <h2 class="section-title">Playlists featuring ${artistName}</h2>
-            <a href="/playlists?artist=${artistId}" class="view-all">View All ➔</a>
-          </div>
-          <div class="playlists-list">
-            ${artistPlaylistsHtml}
-          </div>
-        </section>
-        <!-- ARTIST_PLAYLISTS_END -->`
-      )
-      .replace(/<!-- SIMILAR_ARTISTS_LIST -->/, similarHtml)
-      .replace(/<!-- ARTIST_INFO_CONTENT -->/, infoHtml)
-      .replace(
-        /<a href="#" class="view-all">View All ➔<\/a>/g,
-        `<a href="/artist/${artistId}?view=albums" class="view-all">View All ➔</a>`
-      )
-      .replace(
-        /<a href="#" class="breadcrumb-link"><i class="fas fa-user"><\/i>Artists<\/a>/,
-        '<a href="/artists" class="breadcrumb-link"><i class="fas fa-user"></i>Artists</a>'
-      )
-      .replace(
-        /<a href="\/" class="breadcrumb-link"><i class="fas fa-home"><\/i>Home<\/a>/,
-        '<a href="/" class="breadcrumb-link"><i class="fas fa-home"></i>Home</a>'
-      );
-
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html",
-        "Cache-Control": "public, max-age=300",
-      },
-    });
-  }
-
-  // Artist create page
-  if (path === "/artist/create" && req.method === "GET") {
-    const html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Create Artist - ZEDALBUMS</title>
-      <style>
-        body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; }
-        .container { max-width:500px; margin:0 auto; background:white; padding:30px; border-radius:8px; }
-        h1 { color:#333; border-left:4px solid #9b59b6; padding-left:15px; }
-        label { display:block; margin-top:15px; font-weight:bold; }
-        input, textarea { width:100%; padding:12px; margin-top:5px; border:1px solid #ddd; border-radius:4px; }
-        button { margin-top:25px; padding:14px; background:#9b59b6; color:#fff; border:none; border-radius:4px; cursor:pointer; width:100%; font-size:16px; }
-        button:hover { background:#8e44ad; }
-        .back-link { margin-top:20px; text-align:center; }
-        .back-link a { color:#666; text-decoration:none; }
-        .back-link a:hover { color:#9b59b6; }
-      </style>
-      <script>
-        document.addEventListener('DOMContentLoaded', function() {
-          const urlParams = new URLSearchParams(window.location.search);
-          const fromUpload = urlParams.get('from') === 'upload';
-          
-          const backLink = document.querySelector('.back-link a');
-          if (fromUpload && backLink) {
-            backLink.href = '/upload';
-            backLink.innerHTML = '← Back to Upload';
-          }
-          
-          const newArtistName = sessionStorage.getItem('newArtistName');
-          if (newArtistName) {
-            document.querySelector('input[name="name"]').value = newArtistName;
-            sessionStorage.removeItem('newArtistName');
-          }
-        });
-      </script>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Create New Artist</h1>
-        <form action="/artist/create" method="POST" enctype="multipart/form-data">
-          <label>Artist Name</label>
-          <input type="text" name="name" required>
-          <label>Artist Bio (Optional)</label>
-          <textarea name="description" rows="3"></textarea>
-          <label>Genre (Optional)</label>
-          <input type="text" name="genre" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
-          <label>Artist Image (Optional)</label>
-          <input type="file" name="thumbnail" accept="image/*">
-          <button type="submit">Create Artist</button>
-        </form>
-        <div class="back-link">
-          <a href="/upload">← Back to Upload</a>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button onclick="previewModal.show('artist', '${artist.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button onclick="editArtist('${artist.id}')" class="btn btn-primary btn-sm" title="Edit" style="background: #9b59b6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="mergeArtist('${artist.id}')" class="btn btn-secondary btn-sm" title="Merge" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-compress"></i>
+                </button>
+                <button onclick="deleteArtist('${artist.id}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
         </div>
-      </div>
-    </body>
-    </html>
-    `;
-    return new Response(html, { headers: { "Content-Type": "text/html" } });
+    </div>
+  `;
+}
+
+// Pagination helper
+function generatePagination(currentPage, totalPages, search, sort) {
+  if (totalPages <= 1) return '';
+  let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
+  if (currentPage > 1) {
+    html += `<a href="?page=${currentPage-1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
+  } else {
+    html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
   }
-
-  if (path === "/artist/create" && req.method === "POST") {
-    const formData = await req.formData();
-    const name = formData.get("name");
-    const description = formData.get("description") || "";
-    const genre = formData.get("genre") || "";
-    const thumbnailFile = formData.get("thumbnail");
-
-    if (!name) {
-      return new Response("Missing artist name", { status: 400 });
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+      html += `<a href="?page=${i}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item ${i === currentPage ? 'active' : ''}">${i}</a>`;
+    } else if (i === currentPage - 3 || i === currentPage + 3) {
+      html += `<span class="pagination-ellipsis">...</span>`;
     }
-
-    const artistId = sanitize(name);
-    const artists = await getArtists(env);
-
-    let thumbnailKey = null;
-    if (thumbnailFile && thumbnailFile.size > 0) {
-      const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
-      thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
-      await env.media.put(thumbnailKey, thumbnailFile.stream());
-    }
-
-    if (!artists[artistId]) {
-      artists[artistId] = {
-        id: artistId,
-        name: name,
-        description: description,
-        genre: genre,
-        thumbnail: thumbnailKey,
-        created: Date.now(),
-        songs: [],
-        albums: []
-      };
-      await saveArtists(env, artists);
-    }
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Artist Created - ZEDALBUMS</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 50px; background: #f0f0f0; text-align: center; }
-          .success { background: white; padding: 30px; border-radius: 8px; max-width: 500px; margin: 0 auto; }
-          h1 { color: #9b59b6; }
-          .btn { display: inline-block; margin: 10px; padding: 12px 24px; background: #9b59b6; color: white; text-decoration: none; border-radius: 4px; }
-          .btn:hover { background: #8e44ad; }
-          .btn-upload { background: #ff5500; }
-        </style>
-      </head>
-      <body>
-        <div class="success">
-          <h1>✅ Artist Created!</h1>
-          <p style="font-size: 1.2rem;">${name}</p>
-          <a href="/artist/${artistId}" class="btn">View Artist</a>
-          <a href="/upload" class="btn btn-upload">Upload Songs</a>
-          <p style="margin-top: 20px;"><a href="/artist/create">Create Another Artist</a></p>
-        </div>
-      </body>
-      </html>
-    `;
-    return new Response(html, { headers: { "Content-Type": "text/html" } });
   }
-
-  return new Response("Not found", { status: 404 });
+  if (currentPage < totalPages) {
+    html += `<a href="?page=${currentPage+1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
+  } else {
+    html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
+  }
+  html += '</div>';
+  return html;
 }
