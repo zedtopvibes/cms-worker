@@ -28,6 +28,11 @@ database_id = "c1f2a231-d2aa-474d-9181-210a9fb11e7e"
 binding = "ADMIN_SESSIONS"
 id = "c05b34847d3b4d2c8102e60740e0f6d3"
 
+# ===== ADD THIS NEW KV NAMESPACE FOR ACTIVITY LOGS =====
+[[kv_namespaces]]
+binding = "ACTIVITY_LOGS"
+id = "c05b34847d3b4d2c8102e60740e0f6d3"  # You can use the same ID or create a new one
+
 # ===== CRON TRIGGERS =====
 [triggers]
 crons = ["0 0 * * *"]  # Runs at midnight every day
