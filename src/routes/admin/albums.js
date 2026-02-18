@@ -4,6 +4,7 @@ import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL ALBUMS =====
 export async function handleAdminAlbums(req, env, ctx, auth) {
@@ -258,7 +259,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
         window.editAlbum = function(id) { window.location.href = '/admin/albums/edit?id=' + id; };
         window.manageSongs = function(id) { window.location.href = '/admin/albums/songs?id=' + id; };
         window.deleteAlbum = function(id) {
-            if (confirm('Delete this album?')) window.location.href = '/admin/albums/delete?id=' + id;
+            if (confirm('Delete this album? It will be moved to trash.')) window.location.href = '/admin/albums/delete?id=' + id;
         };
     </script>
   `;
@@ -462,7 +463,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     
     await saveAlbums(env, albums);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'album', albumId, title);
     
     return { success: true, redirect: '/admin/albums?updated=1' };
@@ -471,7 +472,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ALBUM DELETION =====
+// ===== HANDLE ALBUM DELETION - UPDATED to use trash =====
 export async function handleAdminAlbumDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const albumId = url.searchParams.get('id');
@@ -482,22 +483,61 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
   
   try {
     const albums = await getAlbums(env);
-    const albumTitle = albums[albumId]?.title || 'Unknown album';
+    const album = albums[albumId];
+    const albumTitle = album?.title || 'Unknown album';
     
-    // Delete thumbnail if exists
-    if (albums[albumId]?.thumbnail) {
-      await env.media.delete(albums[albumId].thumbnail).catch(() => {});
+    // Get thumbnail path
+    let thumbnailPath = null;
+    if (album?.thumbnail) {
+      thumbnailPath = album.thumbnail;
     }
     
-    // Remove album from index
+    // Calculate total size (sum of all songs in album)
+    let totalSize = 0;
+    if (album?.songs) {
+      for (const songId of album.songs) {
+        try {
+          const songObj = await env.media.get(`songs/${songId}.mp3`);
+          totalSize += songObj?.size || 0;
+        } catch (e) {}
+      }
+    }
+    
+    // Prepare metadata
+    const itemData = {
+      title: album?.title,
+      description: album?.description,
+      artists: album?.artists,
+      songs: album?.songs,
+      created: album?.created,
+      thumbnail: album?.thumbnail
+    };
+    
+    // Move to trash
+    const result = await moveToTrash(
+      env,
+      auth.session.id,
+      'album',
+      albumId,
+      albumTitle,
+      itemData,
+      totalSize
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Remove from albums index
     delete albums[albumId];
     await saveAlbums(env, albums);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'delete', 'album', albumId, albumTitle);
     
     return { success: true };
   } catch (error) {
+    console.error('Error moving album to trash:', error);
     return { success: false, error: error.message };
   }
 }
@@ -642,7 +682,7 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
     albums[albumId].songs = selectedSongs;
     await saveAlbums(env, albums);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'update', 'album-songs', albumId, `Updated songs for ${albumTitle}`);
     
     return { success: true, redirect: '/admin/albums?updated=1' };
@@ -653,7 +693,7 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views (UPDATED with Preview button)
+// Mobile card with views
 function generateMobileCard(album) {
   const date = new Date(album.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -670,25 +710,16 @@ function generateMobileCard(album) {
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">${date}</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button onclick="previewModal.show('album', '${album.id}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
-                <i class="fas fa-eye"></i> Preview
-            </button>
-            <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1; background: #ff5500; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
-                <i class="fas fa-edit"></i> Edit
-            </button>
-            <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1; background: #6c757d; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
-                <i class="fas fa-music"></i> Songs
-            </button>
-            <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
-                <i class="fas fa-trash"></i> Delete
-            </button>
+        <div style="display:flex; gap:8px;">
+            <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
+            <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
+            <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
         </div>
     </div>
   `;
 }
 
-// Grid card with views (UPDATED with Preview button)
+// Grid card with views
 function generateGridCard(album) {
   return `
     <div class="album-grid-card">
@@ -704,19 +735,10 @@ function generateGridCard(album) {
                 <span><i class="fas fa-download"></i> ${formatNumber(album.downloads)}</span>
                 <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
             </div>
-            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
-                <button onclick="previewModal.show('album', '${album.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" title="Edit" style="background: #ff5500; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" title="Songs" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
-                    <i class="fas fa-music"></i>
-                </button>
-                <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
-                    <i class="fas fa-trash"></i>
-                </button>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+                <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
+                <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
+                <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
             </div>
         </div>
     </div>
