@@ -5,6 +5,7 @@ import { backfillPageViews } from '../../helpers/pageViewsEnhanced.js';
 
 export async function handleAdminMigrations(req, env, ctx, auth) {
   const url = new URL(req.url);
+  const path = url.pathname; // You need this for the backfill-progress endpoint
   const action = url.searchParams.get('action') || 'status';
 
   // Handle POST requests (run migrations, backfill)
@@ -59,7 +60,8 @@ export async function handleAdminMigrations(req, env, ctx, auth) {
         </div>
       `;
       
-      return new Response(adminLayout('Migration Results', content, auth, 'migrate'), {
+      // After running migrations, pending should be 0
+      return new Response(adminLayout('Migration Results', content, auth, 'migrate', 0), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -105,16 +107,16 @@ export async function handleAdminMigrations(req, env, ctx, auth) {
         </script>
       `;
       
-      return new Response(adminLayout('Backfill Progress', content, auth, 'migrate'), {
+      // During backfill, pending count remains the same
+      const pending = await getPendingMigrations(env);
+      return new Response(adminLayout('Backfill Progress', content, auth, 'migrate', pending.length), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
   }
 
   // Handle backfill progress endpoint
-  if (req.method === 'POST' && path === '/admin/migrate/backfill-progress') {
-    // This would be a streaming response in production
-    // For simplicity, we'll just run the backfill and return JSON
+  if (req.method === 'POST' && path.endsWith('/backfill-progress')) {
     const result = await backfillPageViews(env);
     
     return new Response(JSON.stringify({
@@ -234,7 +236,8 @@ export async function handleAdminMigrations(req, env, ctx, auth) {
     </div>
   `;
 
-  return new Response(adminLayout('Migrations', content, auth, 'migrate'), {
+  // ✅ Pass pending.length to show/hide the notification badge on the Migrations tab
+  return new Response(adminLayout('Migrations', content, auth, 'migrate', pending.length), {
     headers: { 'Content-Type': 'text/html' }
   });
 }
