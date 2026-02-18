@@ -2,7 +2,7 @@ name = "cms"
 main = "src/index.js"
 compatibility_date = "2025-02-01"
 
-# ===== OBSERVABILITY SETTINGS =====
+# ===== OBSERVABILITY  SETTINGS =====
 [observability]
 enabled = true
 
