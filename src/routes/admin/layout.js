@@ -627,6 +627,15 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
     document.addEventListener('DOMContentLoaded', function() {
         console.log('Preview modal initialized');
     });
+
+<!-- Test preview button -->
+
+    setTimeout(function() {
+        console.log('Preview modal available:', !!window.previewModal);
+        if (window.previewModal) {
+            console.log('Preview modal methods:', Object.keys(window.previewModal));
+        }
+    }, 1000);
 </script>
 </body>
 </html>
