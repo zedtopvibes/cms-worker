@@ -1,4 +1,4 @@
-// ==================== SHARED  ADMIN LAYOUT ====================
+// ==================== SHARED ADMIN LAYOUT ====================
 
 export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0) {
   const username = auth?.session?.username || 'Admin';
