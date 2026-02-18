@@ -1,4 +1,4 @@
-// ==================== MIGRATION 002: Plays and Downloads Tables ====================
+// ==================== MIGRATION 002:  Plays and Downloads Tables ====================
 
 export async function up(env) {
   console.log('Running migration 002: Creating plays and downloads tables...');
