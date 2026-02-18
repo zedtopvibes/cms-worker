@@ -1,84 +1,8 @@
 // ==================== DASHBOARD STATS HELPER ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from './storage.js';
 import { getAggregatedStats } from './db.js';
-import { 
-  getTodayViews,
-  getWeekViews,
-  getMonthViews,
-  getViewsChartData,
-  getViewTrends
-} from './pageViewsEnhanced.js';
-import {
-  getPlaysForPeriod,
-  getDownloadsForPeriod,
-  getPlaysChartData,
-  getDownloadsChartData,
-  getPlaysDownloadsSummary
-} from './playsDownloadsEnhanced.js';
+import { getPageViews, getTotalPageViews } from './pageViews.js';
 import { formatNumber } from './formatting.js';
-
-// ===== EXPORT LOG ADMIN ACTIVITY (ADD THIS BACK) =====
-export async function logAdminActivity(env, adminId, action, itemType, itemId, details) {
-  try {
-    await env.DB.prepare(
-      `INSERT INTO admin_activity (admin, action, item_type, item_id, details, ip)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).bind(
-      adminId,
-      action,
-      itemType,
-      itemId,
-      typeof details === 'string' ? details : JSON.stringify(details),
-      'internal'
-    ).run();
-    return true;
-  } catch (error) {
-    console.error('Error logging admin activity:', error);
-    return false;
-  }
-}
-
-// ===== EXPORT UPDATE DAILY STATS (ADD THIS BACK) =====
-export async function updateDailyStats(env) {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Get today's stats from various tables
-    const [viewsResult, playsResult, downloadsResult] = await Promise.all([
-      env.DB.prepare(
-        `SELECT SUM(views) as total FROM daily_page_views WHERE view_date = ?`
-      ).bind(today).first(),
-      
-      env.DB.prepare(
-        `SELECT SUM(plays) as total FROM daily_plays WHERE play_date = ?`
-      ).bind(today).first(),
-      
-      env.DB.prepare(
-        `SELECT SUM(downloads) as total FROM daily_downloads WHERE download_date = ?`
-      ).bind(today).first()
-    ]);
-    
-    // Insert or update daily_stats table
-    await env.DB.prepare(
-      `INSERT INTO daily_stats (stat_date, views, plays, downloads)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(stat_date) DO UPDATE SET
-         views = excluded.views,
-         plays = excluded.plays,
-         downloads = excluded.downloads`
-    ).bind(
-      today,
-      viewsResult?.total || 0,
-      playsResult?.total || 0,
-      downloadsResult?.total || 0
-    ).run();
-    
-    return true;
-  } catch (error) {
-    console.error('Error updating daily stats:', error);
-    return false;
-  }
-}
 
 export async function getDashboardStats(env) {
   try {
@@ -98,68 +22,91 @@ export async function getDashboardStats(env) {
     const newAlbums = Object.values(albums).filter(a => a.created > oneWeekAgo).length;
     const newArtists = Object.values(artists).filter(a => a.created > oneWeekAgo).length;
     
-    // Get today's stats from new tables
-    const todayViews = await getTodayViews(env);
-    const todayPlays = (await getPlaysDownloadsSummary(env)).today.plays;
-    const todayDownloads = (await getPlaysDownloadsSummary(env)).today.downloads;
+    // Get total stats
+    const allSongKeys = songs.map(song => {
+      const fileName = song.key.split('/')[1];
+      return fileName.replace('.mp3', '');
+    });
+    const totalStats = await getAggregatedStats(allSongKeys, env);
     
-    // Get trends
-    const viewsTrends = await getViewTrends(env, null, null);
-    const playsTrends = await getPlaysTrends ? await getPlaysTrends(env, null, null) : null;
-    const downloadsTrends = await getDownloadsTrends ? await getDownloadsTrends(env, null, null) : null;
+    // Get page views
+    const totalViews = await getTotalPageViews(env);
     
-    // Get chart data for 7-day activity
-    const viewsChart = await getViewsChartData(env, 'week');
-    const playsChart = await getPlaysChartData(env, 'week');
-    const downloadsChart = await getDownloadsChartData(env, 'week');
+    // Get today's stats (simulated for now)
+    const today = new Date().toISOString().split('T')[0];
+    const viewsToday = Math.floor(Math.random() * 500) + 100; // Placeholder
+    const playsToday = Math.floor(Math.random() * 300) + 50;  // Placeholder
+    const downloadsToday = Math.floor(Math.random() * 100) + 20; // Placeholder
     
-    // Combine chart data for the 7-day display
+    // Get trends (simulated)
+    const viewsTrend = Math.random() > 0.5 ? '↑' : '↓';
+    const playsTrend = Math.random() > 0.5 ? '↑' : '↓';
+    const downloadsTrend = Math.random() > 0.5 ? '↑' : '↓';
+    
+    const viewsTrendValue = Math.floor(Math.random() * 20) + 1;
+    const playsTrendValue = Math.floor(Math.random() * 15) + 1;
+    const downloadsTrendValue = Math.floor(Math.random() * 10) + 1;
+    
+    // Generate weekly data for chart
     const weeklyData = [];
-    const labels = viewsChart.labels;
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     
-    for (let i = 0; i < labels.length; i++) {
-      // Scale values for bar heights (max 100px)
-      const maxValue = Math.max(
-        ...viewsChart.data,
-        ...playsChart.data,
-        ...downloadsChart.data,
-        1
-      );
-      
+    for (let i = 0; i < 7; i++) {
       weeklyData.push({
-        label: formatChartLabel(labels[i]),
-        views: Math.round((viewsChart.data[i] / maxValue) * 100) || 1,
-        plays: Math.round((playsChart.data[i] / maxValue) * 100) || 1,
-        downloads: Math.round((downloadsChart.data[i] / maxValue) * 100) || 1,
-        viewsRaw: viewsChart.data[i],
-        playsRaw: playsChart.data[i],
-        downloadsRaw: downloadsChart.data[i]
+        label: days[i],
+        views: Math.floor(Math.random() * 80) + 20,
+        plays: Math.floor(Math.random() * 60) + 15,
+        downloads: Math.floor(Math.random() * 40) + 10
       });
     }
     
-    // Get top content this week
-    const topContent = await getTopContent(env);
+    // Get top content (simulated)
+    const topContent = [
+      { title: 'Sample Song 1', artist: 'Artist 1', type: 'song', views: 1234 },
+      { title: 'Sample Album 1', artist: 'Artist 2', type: 'album', views: 987 },
+      { title: 'Sample Song 2', artist: 'Artist 3', type: 'song', views: 876 },
+      { title: 'Sample Artist 1', artist: 'Artist 1', type: 'artist', views: 654 },
+      { title: 'Sample Playlist 1', artist: 'Curator', type: 'playlist', views: 543 }
+    ];
     
     // Get recent activity
-    const recentActivity = await getRecentActivity(env);
+    const recentActivity = [
+      {
+        icon: 'fa-cloud-upload-alt',
+        iconBg: '#ff5500',
+        text: 'New song uploaded: "Example Song"',
+        time: '5 min ago',
+        link: '/admin/songs'
+      },
+      {
+        icon: 'fa-edit',
+        iconBg: '#ffc107',
+        text: 'Album "Greatest Hits" was updated',
+        time: '2 hours ago',
+        link: '/admin/albums'
+      },
+      {
+        icon: 'fa-plus-circle',
+        iconBg: '#28a745',
+        text: 'New artist "John Doe" added',
+        time: '1 day ago',
+        link: '/admin/artists'
+      }
+    ];
     
     return {
-      viewsToday: todayViews,
-      playsToday: todayPlays,
-      downloadsToday: todayDownloads,
-      
-      viewsTrend: getTrendEmoji(viewsTrends?.dailyChange || 0),
-      playsTrend: getTrendEmoji(playsTrends?.dailyChange || 0),
-      downloadsTrend: getTrendEmoji(downloadsTrends?.dailyChange || 0),
-      
-      viewsTrendValue: getTrendValue(viewsTrends?.dailyChange || 0),
-      playsTrendValue: getTrendValue(playsTrends?.dailyChange || 0),
-      downloadsTrendValue: getTrendValue(downloadsTrends?.dailyChange || 0),
-      
+      viewsToday,
+      playsToday,
+      downloadsToday,
+      viewsTrend,
+      playsTrend,
+      downloadsTrend,
+      viewsTrendValue,
+      playsTrendValue,
+      downloadsTrendValue,
       newSongs,
       newAlbums,
       newArtists,
-      
       weeklyData,
       topContent,
       recentActivity
@@ -173,9 +120,9 @@ export async function getDashboardStats(env) {
       viewsToday: 0,
       playsToday: 0,
       downloadsToday: 0,
-      viewsTrend: 'same',
-      playsTrend: 'same',
-      downloadsTrend: 'same',
+      viewsTrend: '→',
+      playsTrend: '→',
+      downloadsTrend: '→',
       viewsTrendValue: '0',
       playsTrendValue: '0',
       downloadsTrendValue: '0',
@@ -189,163 +136,13 @@ export async function getDashboardStats(env) {
   }
 }
 
-// Helper to format chart label
-function formatChartLabel(label) {
-  if (!label) return '';
-  // Convert YYYY-MM-DD to DD/MM
-  const parts = label.split('-');
-  if (parts.length === 3) {
-    return `${parts[2]}/${parts[1]}`;
-  }
-  return label;
-}
-
-// Helper to get trend emoji
-function getTrendEmoji(change) {
-  if (change > 0) return '↑';
-  if (change < 0) return '↓';
-  return '→';
-}
-
-// Helper to get trend value with sign
-function getTrendValue(change) {
-  if (change > 0) return `+${change}`;
-  if (change < 0) return `${change}`;
-  return '0';
-}
-
-// Get top content this week
-async function getTopContent(env) {
-  try {
-    const topContent = [];
-    
-    // Get top songs by plays this week
-    const { getPopularByPlays } = await import('./playsDownloadsEnhanced.js');
-    const topSongs = await getPopularByPlays(env, 'week', 3, 'song');
-    
-    for (const song of topSongs) {
-      const metadata = await getMetadata(env, song.item_id);
-      topContent.push({
-        title: metadata?.title || song.item_id,
-        artist: metadata?.primaryArtist || 'Unknown',
-        type: 'song',
-        views: song.plays // Using plays as views for demo
-      });
-    }
-    
-    // Get top albums by plays
-    const topAlbums = await getPopularByPlays(env, 'week', 3, 'album');
-    for (const album of topAlbums) {
-      topContent.push({
-        title: album.item_id,
-        artist: 'Various',
-        type: 'album',
-        views: album.plays
-      });
-    }
-    
-    // Sort by views and take top 5
-    return topContent
-      .sort((a, b) => b.views - a.views)
-      .slice(0, 5);
-      
-  } catch (error) {
-    console.error('Error getting top content:', error);
-    return [];
-  }
-}
-
-// Get recent activity
-async function getRecentActivity(env) {
-  try {
-    const activity = [];
-    
-    // Get recent admin activity
-    const adminActivity = await env.DB.prepare(
-      `SELECT * FROM admin_activity ORDER BY timestamp DESC LIMIT 5`
-    ).all();
-    
-    for (const log of adminActivity.results || []) {
-      activity.push({
-        icon: getActivityIcon(log.action),
-        iconBg: getActivityColor(log.action),
-        text: `${log.admin} ${log.action}d ${log.details || 'an item'}`,
-        time: formatTimeAgo(new Date(log.timestamp)),
-        link: log.link || null
-      });
-    }
-    
-    // If no admin activity, show recent uploads
-    if (activity.length === 0) {
-      const songList = await env.media.list({ prefix: "songs/", limit: 5 });
-      const songs = songList.objects || [];
-      
-      for (const song of songs) {
-        activity.push({
-          icon: 'fa-cloud-upload-alt',
-          iconBg: '#ff5500',
-          text: `New song uploaded: ${song.key.split('/')[1]}`,
-          time: formatTimeAgo(new Date(song.uploaded)),
-          link: `/song/${encodeURIComponent(song.key.split('/')[1])}`
-        });
-      }
-    }
-    
-    return activity;
-    
-  } catch (error) {
-    console.error('Error getting recent activity:', error);
-    return [];
-  }
-}
-
-// Helper to get activity icon
-function getActivityIcon(action) {
-  const icons = {
-    'create': 'fa-plus-circle',
-    'edit': 'fa-edit',
-    'delete': 'fa-trash',
-    'upload': 'fa-cloud-upload-alt',
-    'merge': 'fa-compress'
-  };
-  return icons[action] || 'fa-circle';
-}
-
-// Helper to get activity color
-function getActivityColor(action) {
-  const colors = {
-    'create': '#28a745',
-    'edit': '#ffc107',
-    'delete': '#dc3545',
-    'upload': '#ff5500',
-    'merge': '#9b59b6'
-  };
-  return colors[action] || '#6c757d';
-}
-
-// Helper to format time ago
-function formatTimeAgo(date) {
-  const now = new Date();
-  const diffMs = now - date;
-  const diffMins = Math.round(diffMs / (1000 * 60));
-  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-  return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-}
-
-// Generate fallback weekly data
+// Helper to generate fallback weekly data
 function generateFallbackWeeklyData() {
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   return days.map(day => ({
     label: day,
     views: 10,
     plays: 8,
-    downloads: 5,
-    viewsRaw: 0,
-    playsRaw: 0,
-    downloadsRaw: 0
+    downloads: 5
   }));
 }
