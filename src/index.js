@@ -1,4 +1,4 @@
-// ==================== MAIN  ENTRY POINT ====================
+// ==================== MAIN ENTRY POINT ====================
 import { CORS_HEADERS } from './middleware/cors.js';
 import { handleHomepage } from './routes/home.js';
 import { handleAlbums } from './routes/albums.js';
