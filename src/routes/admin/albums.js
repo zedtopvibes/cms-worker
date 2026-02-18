@@ -771,4 +771,4 @@ function generatePagination(currentPage, totalPages, search, sort) {
 }
 
 // Import getMetadata for songs page
-import { getMetadata } from '../../helpers/storage.js';
+import { getMetadata } from '../../helpers/storage.js'; 
