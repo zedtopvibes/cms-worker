@@ -1,4 +1,4 @@
-// ==================== MIGRATION 001: Page Views Enhanced Tables ====================
+// ==================== MIGRATION 001:  Page Views Enhanced Tables ====================
 
 export async function up(env) {
   console.log('Running migration 001: Creating page views enhanced tables...');
