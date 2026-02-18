@@ -59,6 +59,8 @@ import { handleAdminBulk, executeBulkAction } from './bulk.js';
 // ===== ACTIVITY LOG IMPORTS =====
 import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
 
+import { handleAdminActivity } from './activity.js';
+
 // ===== DASHBOARD IMPORTS =====
 import { getDashboardStats } from '../../helpers/dashboardStats.js';
 import { formatNumber } from '../../helpers/formatting.js';
