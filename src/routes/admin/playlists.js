@@ -670,7 +670,7 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views
+// Mobile card with views (UPDATED with Preview button)
 function generateMobileCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short'
@@ -687,16 +687,25 @@ function generateMobileCard(playlist) {
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(playlist.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">Updated ${updated}</div>
-        <div style="display:flex; gap:8px;">
-            <button onclick="editPlaylist('${playlist.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-            <button onclick="manageSongs('${playlist.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
-            <button onclick="deletePlaylist('${playlist.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="previewModal.show('playlist', '${playlist.id}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button onclick="editPlaylist('${playlist.id}')" class="btn btn-primary btn-sm" style="flex:1; background: #4a90e2; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="manageSongs('${playlist.id}')" class="btn btn-secondary btn-sm" style="flex:1; background: #6c757d; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-music"></i> Songs
+            </button>
+            <button onclick="deletePlaylist('${playlist.id}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
         </div>
     </div>
   `;
 }
 
-// Grid card with views
+// Grid card with views (UPDATED with Preview button)
 function generateGridCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short'
@@ -717,10 +726,19 @@ function generateGridCard(playlist) {
                 <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(playlist.views || 0)}</span>
             </div>
             <div style="font-size:0.75rem; color:#999; margin-top:5px;">Updated ${updated}</div>
-            <div style="display:flex; gap:8px; margin-top:12px;">
-                <button onclick="editPlaylist('${playlist.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-                <button onclick="manageSongs('${playlist.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
-                <button onclick="deletePlaylist('${playlist.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button onclick="previewModal.show('playlist', '${playlist.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button onclick="editPlaylist('${playlist.id}')" class="btn btn-primary btn-sm" title="Edit" style="background: #4a90e2; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="manageSongs('${playlist.id}')" class="btn btn-secondary btn-sm" title="Songs" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-music"></i>
+                </button>
+                <button onclick="deletePlaylist('${playlist.id}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     </div>
