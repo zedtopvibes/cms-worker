@@ -1,4 +1,4 @@
-// ==================== R2 TRASH HELPER - DEBUG VERSION ====================
+// ==================== R2 TRASH HELPER ====================
 import { getAlbums, saveAlbums } from './storage.js';
 import { getArtists, saveArtists } from './storage.js';
 import { getPlaylists, savePlaylists } from './storage.js';
@@ -6,7 +6,7 @@ import { getMetadata, saveMetadata } from './storage.js';
 
 // Move item to trash
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
-  console.log('🗑️ moveToTrash called:', { itemType, itemId, itemName });
+  console.log('🗑️ Moving to trash:', { itemType, itemId, itemName });
   
   try {
     const settings = await getTrashSettings(env);
@@ -22,11 +22,9 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
     // Handle different item types
     switch (itemType) {
       case 'song':
-        console.log('Moving song to trash:', itemId);
         const files = await moveSongToTrash(env, itemId);
         trashPaths = files.paths || [];
         totalSize = files.totalSize || 0;
-        console.log('Song files moved:', trashPaths);
         break;
       case 'album':
         trashPaths = [`albums/thumbnails/${itemId}.jpg`];
@@ -39,7 +37,7 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
         break;
     }
 
-    // SAFETY CHECKS - ensure NO undefined values
+    // Safety checks
     const safeValues = {
       id: trashId || '',
       item_type: itemType || '',
@@ -52,13 +50,6 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
       expires_at: expiresAt.toISOString() || new Date().toISOString(),
       size_bytes: typeof totalSize === 'number' ? totalSize : 0
     };
-
-    console.log('Inserting into database:', {
-      id: safeValues.id,
-      type: safeValues.item_type,
-      name: safeValues.item_name,
-      trash_path: safeValues.trash_path.substring(0, 100) + '...'
-    });
 
     // Store in database
     await env.DB.prepare(
@@ -79,128 +70,94 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
       safeValues.size_bytes
     ).run();
 
-    console.log('✅ Item moved to trash successfully:', trashId);
-    return { success: true, trashId };
+    return { success: true, trashId, message: '✅ Item moved to trash' };
   } catch (error) {
     console.error('❌ Error moving to trash:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, message: `❌ Error: ${error.message}` };
   }
 }
 
-// Restore from trash - DEBUG VERSION WITH DETAILED LOGGING
+// Restore from trash - WITH ALERT MESSAGES
 export async function restoreFromTrash(env, adminId, trashId) {
-  console.log('🔄 ===== RESTORE FUNCTION CALLED =====');
-  console.log('Parameters:', { adminId, trashId });
+  console.log('🔄 Restoring:', trashId);
   
   try {
-    // STEP 1: Get the item from database
-    console.log('📥 STEP 1: Fetching item from database...');
+    // STEP 1: Get item from database
+    console.log('Step 1: Fetching from database...');
     const item = await env.DB.prepare(
       `SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL`
     ).bind(trashId).first();
 
     if (!item) {
-      console.error('❌ STEP 1 FAILED: Item not found in trash');
-      console.log('Available trash items:');
-      const allItems = await env.DB.prepare(`SELECT id, item_name FROM trash_items WHERE restored_at IS NULL LIMIT 5`).all();
-      console.log(allItems.results);
-      return { success: false, error: 'Item not found in trash' };
+      return { 
+        success: false, 
+        error: 'Item not found in trash',
+        message: '❌ Item not found in trash. It may have been already restored or permanently deleted.'
+      };
     }
 
-    console.log('✅ STEP 1 SUCCESS: Item found', {
-      id: item.id,
-      type: item.item_type,
-      name: item.item_name,
-      deleted_at: item.deleted_at,
-      expires_at: item.expires_at
-    });
+    console.log('✅ Item found:', { type: item.item_type, name: item.item_name });
 
     // STEP 2: Parse trash paths
-    console.log('📦 STEP 2: Parsing trash paths...');
+    console.log('Step 2: Parsing paths...');
     let trashPaths = [];
     try {
       trashPaths = JSON.parse(item.trash_path || '[]');
-      console.log('Raw trash_path:', item.trash_path);
-      console.log('Parsed trashPaths:', trashPaths);
+      console.log('Paths:', trashPaths);
     } catch (e) {
-      console.error('❌ STEP 2 FAILED: Could not parse trash_path', e);
-      trashPaths = [];
+      return {
+        success: false,
+        error: 'Invalid trash paths',
+        message: '❌ Could not parse trash paths. The trash item may be corrupted.'
+      };
     }
 
-    // STEP 3: Restore files from R2
-    console.log('📁 STEP 3: Restoring files from R2 trash folder...');
+    // STEP 3: Restore files
+    console.log('Step 3: Restoring files...');
     let filesRestored = 0;
     let filesFailed = 0;
-    
-    if (trashPaths.length === 0) {
-      console.log('⚠️ No files to restore (trashPaths is empty)');
-    } else {
-      for (let i = 0; i < trashPaths.length; i++) {
-        const trashPath = trashPaths[i];
-        console.log(`  Processing file ${i + 1}/${trashPaths.length}: ${trashPath}`);
-        
-        try {
-          // Check if file exists in trash
-          console.log(`    Checking existence: ${trashPath}`);
-          const file = await env.media.get(trashPath);
-          
-          if (file) {
-            // Determine original path by removing 'trash/' prefix
-            const originalPath = trashPath.replace('trash/', '');
-            console.log(`    ✅ File found! Size: ${file.size} bytes`);
-            console.log(`    Restoring to: ${originalPath}`);
-            
-            // Copy file back from trash
-            await env.media.put(originalPath, file.body, {
-              httpMetadata: file.httpMetadata,
-              customMetadata: file.customMetadata
-            });
-            console.log(`    ✅ File copied to original location`);
-            
-            // Delete from trash
-            await env.media.delete(trashPath);
-            console.log(`    ✅ File deleted from trash folder`);
-            
-            filesRestored++;
-            console.log(`    ✅ File ${i + 1} restored successfully`);
-          } else {
-            console.log(`    ❌ File not found in trash: ${trashPath}`);
-            filesFailed++;
-          }
-        } catch (fileError) {
-          console.error(`    ❌ Error restoring file ${trashPath}:`, fileError);
+
+    for (const trashPath of trashPaths) {
+      try {
+        const file = await env.media.get(trashPath);
+        if (file) {
+          const originalPath = trashPath.replace('trash/', '');
+          await env.media.put(originalPath, file.body);
+          await env.media.delete(trashPath);
+          filesRestored++;
+          console.log(`✅ Restored: ${originalPath}`);
+        } else {
+          console.log(`❌ Not found: ${trashPath}`);
           filesFailed++;
         }
+      } catch (e) {
+        console.error(`❌ Error restoring ${trashPath}:`, e);
+        filesFailed++;
       }
     }
-    
-    console.log(`📊 STEP 3 complete: ${filesRestored} files restored, ${filesFailed} failed`);
 
-    // STEP 4: Parse and restore metadata
-    console.log('📝 STEP 4: Restoring metadata...');
-    let metadata = {};
-    try {
-      metadata = JSON.parse(item.metadata || '{}');
-      console.log('Metadata parsed:', metadata);
-    } catch (e) {
-      console.error('❌ Could not parse metadata:', e);
-      metadata = {};
+    if (filesRestored === 0 && trashPaths.length > 0) {
+      return {
+        success: false,
+        error: 'No files restored',
+        message: '❌ Could not restore any files. The files may be missing from trash.'
+      };
     }
+
+    // STEP 4: Restore metadata
+    console.log('Step 4: Restoring metadata...');
+    const metadata = JSON.parse(item.metadata || '{}');
     
     try {
       switch (item.item_type) {
         case 'song':
-          console.log('Restoring song metadata...');
           if (Object.keys(metadata).length > 0) {
             await saveMetadata(env, item.item_id, metadata);
             console.log('✅ Song metadata restored');
-          } else {
-            console.log('⚠️ No metadata to restore for song');
           }
           break;
           
         case 'album':
-          console.log('Restoring album metadata...');
           const albums = await getAlbums(env);
           albums[item.item_id] = { 
             ...metadata, 
@@ -212,7 +169,6 @@ export async function restoreFromTrash(env, adminId, trashId) {
           break;
           
         case 'artist':
-          console.log('Restoring artist metadata...');
           const artists = await getArtists(env);
           artists[item.item_id] = { 
             ...metadata, 
@@ -225,7 +181,6 @@ export async function restoreFromTrash(env, adminId, trashId) {
           break;
           
         case 'playlist':
-          console.log('Restoring playlist metadata...');
           const playlists = await getPlaylists(env);
           playlists[item.item_id] = { 
             ...metadata, 
@@ -236,38 +191,43 @@ export async function restoreFromTrash(env, adminId, trashId) {
           await savePlaylists(env, playlists);
           console.log('✅ Playlist metadata restored');
           break;
-          
-        default:
-          console.log('Unknown item type:', item.item_type);
       }
     } catch (metaError) {
-      console.error('❌ Error restoring metadata:', metaError);
+      console.error('❌ Metadata restore error:', metaError);
+      return {
+        success: false,
+        error: metaError.message,
+        message: '❌ Failed to restore metadata: ' + metaError.message
+      };
     }
 
-    // STEP 5: Mark as restored in database
-    console.log('💾 STEP 5: Marking item as restored in database...');
-    const updateResult = await env.DB.prepare(
+    // STEP 5: Mark as restored
+    console.log('Step 5: Marking as restored...');
+    await env.DB.prepare(
       `UPDATE trash_items SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?`
     ).bind(adminId, trashId).run();
-    
-    console.log('Update result:', updateResult);
-    console.log('✅ STEP 5 complete');
 
-    console.log('🎉 ===== RESTORE COMPLETE =====');
-    console.log(`Restored: ${item.item_type} - ${item.item_name}`);
+    console.log('✅ Restore complete!');
     
-    return { success: true, item };
+    return { 
+      success: true, 
+      item,
+      message: `✅ Successfully restored ${item.item_name} (${filesRestored} files restored)`
+    };
     
   } catch (error) {
-    console.error('💥 CATASTROPHIC ERROR in restoreFromTrash:', error);
-    console.error('Error stack:', error.stack);
-    return { success: false, error: error.message };
+    console.error('❌ Restore error:', error);
+    return { 
+      success: false, 
+      error: error.message,
+      message: `❌ Error: ${error.message}`
+    };
   }
 }
 
 // Permanently delete
 export async function deletePermanently(env, trashId) {
-  console.log('🗑️ deletePermanently called:', trashId);
+  console.log('🗑️ Deleting permanently:', trashId);
   
   try {
     const item = await env.DB.prepare(
@@ -275,37 +235,34 @@ export async function deletePermanently(env, trashId) {
     ).bind(trashId).first();
 
     if (!item) {
-      console.error('Item not found:', trashId);
-      return { success: false, error: 'Item not found' };
+      return { success: false, error: 'Item not found', message: '❌ Item not found' };
     }
 
     const trashPaths = JSON.parse(item.trash_path || '[]');
-    console.log('Deleting files:', trashPaths);
 
-    // Delete files from trash folder
+    // Delete files
     for (const path of trashPaths) {
       try {
         await env.media.delete(path);
-        console.log('Deleted:', path);
+        console.log('✅ Deleted:', path);
       } catch (e) {
-        console.error('Error deleting:', path, e);
+        console.error('❌ Error deleting:', path, e);
       }
     }
 
     // Remove from database
     await env.DB.prepare(`DELETE FROM trash_items WHERE id = ?`).bind(trashId).run();
-    console.log('✅ Item permanently deleted');
-
-    return { success: true };
+    
+    return { success: true, message: '✅ Item permanently deleted' };
   } catch (error) {
-    console.error('Error deleting permanently:', error);
-    return { success: false, error: error.message };
+    console.error('❌ Error:', error);
+    return { success: false, error: error.message, message: `❌ Error: ${error.message}` };
   }
 }
 
 // Empty trash
 export async function emptyTrash(env, itemType = 'all') {
-  console.log('🧹 emptyTrash called:', itemType);
+  console.log('🧹 Emptying trash:', itemType);
   
   try {
     let query = `SELECT * FROM trash_items WHERE restored_at IS NULL`;
@@ -317,28 +274,24 @@ export async function emptyTrash(env, itemType = 'all') {
     }
     
     const items = await env.DB.prepare(query).bind(...(itemType !== 'all' ? [itemType] : [])).all();
-    console.log(`Found ${items.results.length} items to delete`);
     
-    // Delete files from R2
+    // Delete files
     for (const item of items.results) {
       const trashPaths = JSON.parse(item.trash_path || '[]');
       for (const path of trashPaths) {
         try {
           await env.media.delete(path);
-        } catch (e) {
-          console.error('Error deleting:', path, e);
-        }
+        } catch (e) {}
       }
     }
     
     // Delete from database
     await env.DB.prepare(deleteQuery).bind(...(itemType !== 'all' ? [itemType] : [])).run();
     
-    console.log(`✅ Trash emptied: ${items.results.length} items deleted`);
-    return { success: true, count: items.results.length };
+    return { success: true, count: items.results.length, message: `✅ Emptied ${items.results.length} items` };
   } catch (error) {
-    console.error('Error emptying trash:', error);
-    return { success: false, error: error.message };
+    console.error('❌ Error:', error);
+    return { success: false, error: error.message, message: `❌ Error: ${error.message}` };
   }
 }
 
@@ -363,17 +316,14 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
       params.push(`%${search}%`);
     }
     
-    // Get total count
     const countResult = await env.DB.prepare(countQuery).bind(...params).first();
     const total = countResult?.total || 0;
     
-    // Get paginated items
     const queryParams = [...params, limit, offset];
     const { results } = await env.DB.prepare(
       `${query} ORDER BY deleted_at DESC LIMIT ? OFFSET ?`
     ).bind(...queryParams).all();
     
-    // Calculate days left
     const now = new Date();
     const items = results.map(item => {
       const expiresAt = new Date(item.expires_at);
@@ -478,14 +428,14 @@ export async function updateTrashSettings(env, adminId, settings) {
       adminId
     ).run();
     
-    return { success: true };
+    return { success: true, message: '✅ Settings updated' };
   } catch (error) {
     console.error('Error updating trash settings:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, message: `❌ Error: ${error.message}` };
   }
 }
 
-// Cleanup expired items (for cron job)
+// Cleanup expired items
 export async function cleanupExpiredTrash(env) {
   try {
     const settings = await getTrashSettings(env);
@@ -494,32 +444,25 @@ export async function cleanupExpiredTrash(env) {
       return { success: true, message: 'Auto cleanup disabled' };
     }
     
-    // Get expired items
     const expired = await env.DB.prepare(
       `SELECT * FROM trash_items 
        WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
     ).all();
     
-    console.log(`Cleaning up ${expired.results.length} expired items`);
-    
-    // Delete files from R2
     for (const item of expired.results) {
       const trashPaths = JSON.parse(item.trash_path || '[]');
       for (const path of trashPaths) {
         try {
           await env.media.delete(path);
-        } catch (e) {
-          console.error('Error deleting:', path, e);
-        }
+        } catch (e) {}
       }
     }
     
-    // Delete from database
     await env.DB.prepare(
       `DELETE FROM trash_items WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
     ).run();
     
-    return { success: true, deleted: expired.results.length };
+    return { success: true, deleted: expired.results.length, message: `✅ Cleaned up ${expired.results.length} items` };
   } catch (error) {
     console.error('Error cleaning up trash:', error);
     return { success: false, error: error.message };
@@ -540,30 +483,18 @@ async function moveSongToTrash(env, songId) {
     try {
       const file = await env.media.get(originalPath);
       if (file) {
-        console.log(`Moving to trash: ${originalPath} (${file.size} bytes)`);
-        
-        // Move to trash
-        await env.media.put(trashPath, file.body, {
-          httpMetadata: file.httpMetadata,
-          customMetadata: file.customMetadata
-        });
-        // Delete original
+        await env.media.put(trashPath, file.body);
         await env.media.delete(originalPath);
-        
         paths.push(trashPath);
         totalSize += file.size || 0;
         console.log(`✅ Moved: ${trashPath}`);
       }
     } catch (e) {
       // File doesn't exist, ignore
-      console.log(`File not found: ${originalPath}`);
     }
   }
 
-  return { 
-    paths: paths || [], 
-    totalSize: totalSize || 0 
-  };
+  return { paths: paths || [], totalSize: totalSize || 0 };
 }
 
 function getOriginalPath(type, id) {
@@ -584,10 +515,4 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Test function for browser console
-export async function testRestore(env, trashId) {
-  console.log('🧪 Running test restore for:', trashId);
-  return await restoreFromTrash(env, 'test-admin', trashId);
 }
