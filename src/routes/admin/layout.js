@@ -529,6 +529,12 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
                <a href="/admin/bulk" class="tab-btn ${activePage === 'bulk' ? 'active' : ''}">
     <i class="fas fa-tasks"></i> Bulk Ops
 </a>
+
+<a href="/admin/migrate" class="nav-link ${active === 'migrate' ? 'active' : ''}">
+  <i class="fas fa-database"></i>
+  <span>Migrations</span>
+  ${pendingMigrations > 0 ? '<span class="badge" style="background: #ff5500;">!</span>' : ''}
+</a>
             </div>
         </div>
         
