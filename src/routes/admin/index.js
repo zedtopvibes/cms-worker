@@ -66,6 +66,15 @@ import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
 // ===== PAGE VIEWS MIGRATIONS =====
 import { handleAdminMigrations } from './migrate.js';
 
+// ===== TRASH IMPORTS =====
+import { 
+  handleAdminTrash,
+  handleTrashRestore,
+  handleTrashDelete,
+  handleTrashEmpty,
+  handleTrashSettings
+} from './trash.js';
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
@@ -799,6 +808,30 @@ if (path === '/activity/export') {
 // ===== MIGRATIONS =====
 if (path === '/migrate' || path.startsWith('/migrate/')) {
   return await handleAdminMigrations(req, env, ctx, auth);
+}
+
+// ===== TRASH / RECYCLE BIN =====
+if (path === '/trash') {
+  const result = await handleAdminTrash(req, env, ctx, auth);
+  return new Response(adminLayout(result.title, result.content, auth, 'trash'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+if (path === '/trash/restore' && req.method === 'POST') {
+  return await handleTrashRestore(req, env, ctx, auth);
+}
+
+if (path === '/trash/delete' && req.method === 'POST') {
+  return await handleTrashDelete(req, env, ctx, auth);
+}
+
+if (path === '/trash/empty' && req.method === 'POST') {
+  return await handleTrashEmpty(req, env, ctx, auth);
+}
+
+if (path === '/trash/settings' && req.method === 'POST') {
+  return await handleTrashSettings(req, env, ctx, auth);
 }
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
