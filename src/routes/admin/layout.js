@@ -616,6 +616,10 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     <i class="fas fa-database"></i> Migrations
                     ${pendingMigrations > 0 ? '<span class="tab-badge">!</span>' : ''}
                 </a>
+                <!-- TRASH TAB ADDED HERE -->
+                <a href="/admin/trash" class="tab-btn ${activePage === 'trash' ? 'active' : ''}">
+                    <i class="fas fa-trash-alt"></i> Trash
+                </a>
             </div>
         </div>
         
