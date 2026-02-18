@@ -4,6 +4,7 @@ import { getSongStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
 
 export async function handleAdminSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -229,7 +230,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
         });
         
         window.deleteSong = function(baseName) {
-            if (confirm('Are you sure you want to delete this song? This action cannot be undone.')) {
+            if (confirm('Are you sure you want to delete this song? It will be moved to trash.')) {
                 window.location.href = '/admin/songs/delete?name=' + encodeURIComponent(baseName);
             }
         };
@@ -245,7 +246,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
 
 // ===== EDIT/DELETE FUNCTIONS WITH ACTIVITY LOGGING =====
 
-// Handle song deletion
+// Handle song deletion - UPDATED to use trash
 export async function handleAdminSongDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const baseName = url.searchParams.get('name');
@@ -255,22 +256,59 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
   }
   
   try {
-    // Get song title for logging
+    // Get song metadata
     const meta = await getMetadata(env, baseName);
     const title = meta?.title || baseName;
     
-    // Delete from R2
-    await env.media.delete(`songs/${baseName}.mp3`).catch(() => {});
-    await env.media.delete(`images/${baseName}.jpg`).catch(() => {});
-    await env.media.delete(`images/${baseName}.png`).catch(() => {});
-    await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
-    await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
+    // Get thumbnail path
+    let thumbnailPath = null;
+    try {
+      const jpgObj = await env.media.get(`images/${baseName}.jpg`);
+      if (jpgObj) thumbnailPath = `images/${baseName}.jpg`;
+      else {
+        const pngObj = await env.media.get(`images/${baseName}.png`);
+        if (pngObj) thumbnailPath = `images/${baseName}.png`;
+      }
+    } catch (e) {}
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Get file size
+    let totalSize = 0;
+    try {
+      const songObj = await env.media.get(`songs/${baseName}.mp3`);
+      totalSize = songObj?.size || 0;
+    } catch (e) {}
+    
+    // Prepare metadata for trash
+    const itemData = {
+      title: meta?.title,
+      primaryArtist: meta?.primaryArtist,
+      featuredArtists: meta?.featuredArtists,
+      description: meta?.description,
+      duration: meta?.duration,
+      thumbnail: thumbnailPath
+    };
+    
+    // Move to trash instead of deleting
+    const result = await moveToTrash(
+      env, 
+      auth.session.id, 
+      'song', 
+      baseName, 
+      title, 
+      itemData,
+      totalSize
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
     
     return { success: true };
   } catch (error) {
+    console.error('Error moving song to trash:', error);
     return { success: false, error: error.message };
   }
 }
@@ -394,7 +432,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
     
     return { success: true, redirect: '/admin/songs?updated=1' };
@@ -403,7 +441,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
   }
 }
 
-// Mobile card with views (UPDATED with Preview button)
+// Mobile card with views
 function generateMobileCard(song) {
   const date = song.uploaded.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -442,7 +480,7 @@ function generateMobileCard(song) {
   `;
 }
 
-// Table row with views (UPDATED with Preview button)
+// Table row with views
 function generateTableRow(song) {
   const date = song.uploaded.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
