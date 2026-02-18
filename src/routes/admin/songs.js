@@ -351,15 +351,12 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
       
       try {
         console.log('🔍 20. Executing logAdminActivity...');
-        const logResult = await logAdminActivity(
-          env, 
-          auth.session.id, 
-          'delete', 
-          'song', 
-          baseName, 
-          title
-        );
-        
+        const adminId = auth?.session?.userId;
+if (adminId) {
+  await logAdminActivity(env, adminId, 'delete', 'song', baseName, title);
+} else {
+  console.log('⚠️ No admin session userId found, skipping activity log for delete');
+}
         console.log('🔍 21. logAdminActivity result:', logResult);
         console.log('🔍 22. Result type:', typeof logResult);
         
@@ -516,12 +513,13 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
     
-    // ✅ LOG ADMIN ACTIVITY
-    if (auth?.session?.id) {
-      await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
-    } else {
-      console.log('⚠️ No admin session ID found, skipping activity log for edit');
-    }
+  // ✅ LOG ADMIN ACTIVITY
+const adminId = auth?.session?.userId;
+if (adminId) {
+  await logAdminActivity(env, adminId, 'edit', 'song', baseName, title);
+} else {
+  console.log('⚠️ No admin session userId found, skipping activity log for edit');
+}
     
     return { success: true, redirect: '/admin/songs?updated=1' };
   } catch (error) {
