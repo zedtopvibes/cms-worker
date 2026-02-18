@@ -1,4 +1,4 @@
-// ==================== MIGRATION 003: Trash/Recycle Bin ====================
+// ==================== MIGRATION 003:  Trash/Recycle Bin ====================
 
 export async function up(env) {
   console.log('Running migration 003: Creating trash tables...');
