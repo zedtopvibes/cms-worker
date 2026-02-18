@@ -88,7 +88,7 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
   }
 }
 
-// DEBUG VERSION - Restore from trash with detailed logging
+// FIXED RESTORE FUNCTION - Matches your R2 structure
 export async function restoreFromTrash(env, adminId, trashId) {
   console.log('🔄 Restoring from R2:', trashId);
 
@@ -119,7 +119,7 @@ export async function restoreFromTrash(env, adminId, trashId) {
     let trashPaths = [];
     try {
       trashPaths = JSON.parse(item.trash_path || '[]');
-      console.log('📁 R2 trash paths:', trashPaths);
+      console.log('📁 R2 trash paths from DB:', trashPaths);
     } catch (e) {
       console.error('❌ Failed to parse trash_path:', e);
       return { 
@@ -142,26 +142,47 @@ export async function restoreFromTrash(env, adminId, trashId) {
     console.log('Step 3: Restoring files from R2...');
     let filesRestored = 0;
     let filesFailed = 0;
-    const debugInfo = [];
+    const restoredFiles = [];
 
     for (const trashPath of trashPaths) {
       try {
         console.log(`🔍 Checking R2 for: ${trashPath}`);
+        
+        // Get the file from R2 trash location
         const file = await env.media.get(trashPath);
         
         if (file) {
           console.log(`📦 Found file in R2:`, {
             size: file.size,
-            key: trashPath,
-            httpMetadata: file.httpMetadata ? 'present' : 'none',
-            customMetadata: file.customMetadata ? 'present' : 'none'
+            path: trashPath
           });
           
-          // Construct the original R2 path (remove 'trash/' prefix)
-          const originalPath = trashPath.replace('trash/', '');
+          // Determine original path based on file type
+          let originalPath;
+          
+          if (trashPath.startsWith('trash/songs/')) {
+            // For songs: trash/songs/123.mp3 -> songs/123.mp3
+            originalPath = trashPath.replace('trash/', '');
+          } else if (trashPath.startsWith('trash/images/')) {
+            // For images: trash/images/123.jpg -> images/123.jpg
+            originalPath = trashPath.replace('trash/', '');
+          } else if (trashPath.startsWith('trash/albums/')) {
+            // For album thumbnails: trash/albums/thumbnails/123.jpg -> albums/thumbnails/123.jpg
+            originalPath = trashPath.replace('trash/', '');
+          } else if (trashPath.startsWith('trash/artists/')) {
+            // For artist thumbnails: trash/artists/thumbnails/123.jpg -> artists/thumbnails/123.jpg
+            originalPath = trashPath.replace('trash/', '');
+          } else if (trashPath.startsWith('trash/playlists/')) {
+            // For playlist thumbnails: trash/playlists/thumbnails/123.jpg -> playlists/thumbnails/123.jpg
+            originalPath = trashPath.replace('trash/', '');
+          } else {
+            // Fallback: just remove trash/ prefix
+            originalPath = trashPath.replace('trash/', '');
+          }
+          
           console.log(`📋 Original path will be: ${originalPath}`);
           
-          // Copy back to original location in R2 with metadata
+          // Copy back to original location in R2
           console.log(`📤 Copying to R2: ${originalPath}`);
           await env.media.put(originalPath, file.body, {
             httpMetadata: file.httpMetadata,
@@ -173,40 +194,32 @@ export async function restoreFromTrash(env, adminId, trashId) {
           await env.media.delete(trashPath);
           
           filesRestored++;
-          debugInfo.push({ 
-            success: true, 
-            trashPath, 
-            originalPath, 
+          restoredFiles.push({ 
+            from: trashPath, 
+            to: originalPath, 
             size: file.size 
           });
           console.log(`✅ Successfully restored: ${trashPath} -> ${originalPath}`);
         } else {
           console.log(`❌ File NOT found in R2: ${trashPath}`);
           filesFailed++;
-          debugInfo.push({ 
-            success: false, 
-            trashPath, 
-            error: 'File not found in R2' 
-          });
         }
       } catch (e) {
         console.error(`❌ Error restoring from R2 ${trashPath}:`, e);
         filesFailed++;
-        debugInfo.push({ 
-          success: false, 
-          trashPath, 
-          error: e.message 
-        });
       }
     }
 
     if (filesRestored === 0 && trashPaths.length > 0) {
-      console.log('❌ No files restored. Debug info:', JSON.stringify(debugInfo, null, 2));
       return { 
         success: false, 
         error: 'No files restored from R2', 
         message: '❌ Could not restore any files. The files may be missing from trash.',
-        debug: debugInfo
+        debug: {
+          trashPaths,
+          filesFailed,
+          item
+        }
       };
     }
 
@@ -257,17 +270,13 @@ export async function restoreFromTrash(env, adminId, trashId) {
           await savePlaylists(env, playlists);
           console.log('✅ Playlist metadata restored');
           break;
-          
-        default:
-          console.log('⚠️ Unknown item type for metadata restore:', item.item_type);
       }
     } catch (metaError) {
       console.error('❌ Metadata restore error:', metaError);
       return { 
         success: false, 
         error: metaError.message, 
-        message: '❌ Failed to restore metadata: ' + metaError.message,
-        debug: debugInfo
+        message: '❌ Failed to restore metadata: ' + metaError.message 
       };
     }
 
@@ -277,13 +286,13 @@ export async function restoreFromTrash(env, adminId, trashId) {
       `UPDATE trash_items SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?`
     ).bind(adminId, trashId).run();
 
-    console.log('✅ Restore complete!');
+    console.log('✅ Restore complete! Restored files:', restoredFiles);
     
     return { 
       success: true, 
       item, 
       message: `✅ Successfully restored ${item.item_name} from R2 (${filesRestored} files restored)`,
-      debug: debugInfo
+      restoredFiles
     };
 
   } catch (error) {
@@ -291,8 +300,7 @@ export async function restoreFromTrash(env, adminId, trashId) {
     return {
       success: false,
       error: error.message,
-      message: `❌ Error: ${error.message}`,
-      stack: error.stack
+      message: `❌ Error: ${error.message}`
     };
   }
 }
@@ -604,50 +612,6 @@ export async function cleanupExpiredTrash(env) {
   }
 }
 
-// DEBUG FUNCTION - Check R2 paths
-export async function debugR2Paths(env, itemId) {
-  console.log('🔍 Debugging R2 paths for item ID:', itemId);
-  
-  const pathsToCheck = [
-    `songs/${itemId}.mp3`,
-    `images/${itemId}.jpg`,
-    `images/${itemId}.png`,
-    `trash/songs/${itemId}.mp3`,
-    `trash/images/${itemId}.jpg`,
-    `trash/images/${itemId}.png`,
-    `albums/thumbnails/${itemId}.jpg`,
-    `artists/thumbnails/${itemId}.jpg`,
-    `playlists/thumbnails/${itemId}.jpg`,
-    `trash/albums/thumbnails/${itemId}.jpg`,
-    `trash/artists/thumbnails/${itemId}.jpg`,
-    `trash/playlists/thumbnails/${itemId}.jpg`
-  ];
-  
-  const results = {};
-  
-  for (const path of pathsToCheck) {
-    try {
-      const file = await env.media.get(path);
-      results[path] = file ? { 
-        exists: true, 
-        size: file.size,
-        metadata: file.customMetadata 
-      } : { exists: false };
-      
-      if (file) {
-        console.log(`✅ Found: ${path} (${file.size} bytes)`);
-      } else {
-        console.log(`❌ Not found: ${path}`);
-      }
-    } catch (e) {
-      results[path] = { exists: false, error: e.message };
-      console.log(`❌ Error checking ${path}:`, e.message);
-    }
-  }
-  
-  return results;
-}
-
 // ===== HELPER FUNCTIONS =====
 
 async function moveSongToTrash(env, songId) {
@@ -656,7 +620,7 @@ async function moveSongToTrash(env, songId) {
   let totalSize = 0;
 
   for (const ext of extensions) {
-    // Define R2 paths
+    // Define R2 paths - MATCHING YOUR STRUCTURE
     let originalPath;
     let trashPath;
     
