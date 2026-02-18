@@ -1,7 +1,7 @@
 // ==================== R2 TRASH HELPER ====================
 
 // Move item to trash
-export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}) {
+export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
   try {
     const settings = await getTrashSettings(env);
     const retentionDays = settings?.retention_days || 30;
@@ -10,7 +10,7 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
     expiresAt.setDate(expiresAt.getDate() + retentionDays);
     
     const trashId = `${itemType}_${itemId}_${Date.now()}`;
-    let totalSize = 0;
+    let totalSize = sizeBytes;
     let trashPaths = [];
 
     // Handle different item types
@@ -136,17 +136,224 @@ export async function deletePermanently(env, trashId) {
   }
 }
 
-// Move song files to trash
+// EMPTY TRASH - ADD THIS FUNCTION
+export async function emptyTrash(env, itemType = 'all') {
+  try {
+    let query = `SELECT * FROM trash_items WHERE restored_at IS NULL`;
+    let deleteQuery = `DELETE FROM trash_items WHERE restored_at IS NULL`;
+    
+    if (itemType !== 'all') {
+      query += ` AND item_type = ?`;
+      deleteQuery += ` AND item_type = ?`;
+    }
+    
+    const items = await env.DB.prepare(query).bind(...(itemType !== 'all' ? [itemType] : [])).all();
+    
+    // Delete files from R2
+    for (const item of items.results) {
+      const trashPaths = JSON.parse(item.trash_path || '[]');
+      for (const path of trashPaths) {
+        await env.media.delete(path).catch(() => {});
+      }
+    }
+    
+    // Delete from database
+    await env.DB.prepare(deleteQuery).bind(...(itemType !== 'all' ? [itemType] : [])).run();
+    
+    return { success: true, count: items.results.length };
+  } catch (error) {
+    console.error('Error emptying trash:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Get trash items
+export async function getTrashItems(env, type = 'all', page = 1, limit = 20, search = '') {
+  try {
+    const offset = (page - 1) * limit;
+    const params = [];
+    
+    let query = `SELECT * FROM trash_items WHERE restored_at IS NULL`;
+    let countQuery = `SELECT COUNT(*) as total FROM trash_items WHERE restored_at IS NULL`;
+    
+    if (type !== 'all') {
+      query += ` AND item_type = ?`;
+      countQuery += ` AND item_type = ?`;
+      params.push(type);
+    }
+    
+    if (search) {
+      query += ` AND item_name LIKE ?`;
+      countQuery += ` AND item_name LIKE ?`;
+      params.push(`%${search}%`);
+    }
+    
+    // Get total count
+    const countResult = await env.DB.prepare(countQuery).bind(...params).first();
+    const total = countResult?.total || 0;
+    
+    // Get paginated items
+    const queryParams = [...params, limit, offset];
+    const { results } = await env.DB.prepare(
+      `${query} ORDER BY deleted_at DESC LIMIT ? OFFSET ?`
+    ).bind(...queryParams).all();
+    
+    // Calculate days left
+    const now = new Date();
+    const items = results.map(item => {
+      const expiresAt = new Date(item.expires_at);
+      const daysLeft = Math.max(0, Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24)));
+      const itemData = JSON.parse(item.metadata || '{}');
+      
+      return {
+        ...item,
+        daysLeft,
+        itemData,
+        thumbnail: itemData.thumbnail || null,
+        formattedSize: formatBytes(item.size_bytes || 0),
+        deletedDate: new Date(item.deleted_at).toLocaleDateString('en-GB', {
+          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        })
+      };
+    });
+    
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  } catch (error) {
+    console.error('Error getting trash items:', error);
+    return { items: [], total: 0, page: 1, totalPages: 1 };
+  }
+}
+
+// Get trash stats
+export async function getTrashStats(env) {
+  try {
+    const stats = await env.DB.prepare(`
+      SELECT 
+        COUNT(CASE WHEN item_type = 'song' THEN 1 END) as songs,
+        COUNT(CASE WHEN item_type = 'album' THEN 1 END) as albums,
+        COUNT(CASE WHEN item_type = 'artist' THEN 1 END) as artists,
+        COUNT(CASE WHEN item_type = 'playlist' THEN 1 END) as playlists,
+        COUNT(*) as total,
+        SUM(size_bytes) as total_size
+      FROM trash_items
+      WHERE restored_at IS NULL
+    `).first();
+    
+    const settings = await getTrashSettings(env);
+    
+    return {
+      songs: stats?.songs || 0,
+      albums: stats?.albums || 0,
+      artists: stats?.artists || 0,
+      playlists: stats?.playlists || 0,
+      total: stats?.total || 0,
+      totalSize: stats?.total_size || 0,
+      formattedSize: formatBytes(stats?.total_size || 0),
+      retentionDays: settings?.retention_days || 30
+    };
+  } catch (error) {
+    console.error('Error getting trash stats:', error);
+    return {
+      songs: 0, albums: 0, artists: 0, playlists: 0,
+      total: 0, totalSize: 0, formattedSize: '0 B', retentionDays: 30
+    };
+  }
+}
+
+// Get trash settings
+export async function getTrashSettings(env) {
+  try {
+    const settings = await env.DB.prepare(
+      `SELECT * FROM trash_settings WHERE id = 1`
+    ).first();
+    
+    return settings || {
+      retention_days: 30,
+      auto_cleanup: 1,
+      max_trash_size_mb: 1024,
+      notify_before_delete: 1
+    };
+  } catch (error) {
+    return {
+      retention_days: 30,
+      auto_cleanup: 1,
+      max_trash_size_mb: 1024,
+      notify_before_delete: 1
+    };
+  }
+}
+
+// Update trash settings
+export async function updateTrashSettings(env, adminId, settings) {
+  try {
+    await env.DB.prepare(
+      `UPDATE trash_settings SET
+        retention_days = ?,
+        auto_cleanup = ?,
+        max_trash_size_mb = ?,
+        notify_before_delete = ?,
+        updated_at = CURRENT_TIMESTAMP,
+        updated_by = ?
+       WHERE id = 1`
+    ).bind(
+      settings.retention_days,
+      settings.auto_cleanup ? 1 : 0,
+      settings.max_trash_size_mb,
+      settings.notify_before_delete ? 1 : 0,
+      adminId
+    ).run();
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating trash settings:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Cleanup expired items (for cron job)
+export async function cleanupExpiredTrash(env) {
+  try {
+    const settings = await getTrashSettings(env);
+    
+    if (!settings.auto_cleanup) {
+      return { success: true, message: 'Auto cleanup disabled' };
+    }
+    
+    // Get expired items
+    const expired = await env.DB.prepare(
+      `SELECT * FROM trash_items 
+       WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
+    ).all();
+    
+    // Delete files from R2
+    for (const item of expired.results) {
+      const trashPaths = JSON.parse(item.trash_path || '[]');
+      for (const path of trashPaths) {
+        await env.media.delete(path).catch(() => {});
+      }
+    }
+    
+    // Delete from database
+    await env.DB.prepare(
+      `DELETE FROM trash_items WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
+    ).run();
+    
+    return { success: true, deleted: expired.results.length };
+  } catch (error) {
+    console.error('Error cleaning up trash:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== HELPER FUNCTIONS =====
+
 async function moveSongToTrash(env, songId) {
   const extensions = ['.mp3', '.jpg', '.png'];
   const paths = [];
   let totalSize = 0;
 
   for (const ext of extensions) {
-    const originalPath = ext === '.mp3' ? `songs/${songId}${ext}` : 
-                        ext === '.txt' ? `descriptions/${songId}.txt` :
-                        `images/${songId}${ext}`;
-    
+    const originalPath = ext === '.mp3' ? `songs/${songId}${ext}` : `images/${songId}${ext}`;
     const trashPath = `trash/${originalPath}`;
     
     try {
@@ -171,7 +378,6 @@ async function moveSongToTrash(env, songId) {
   return { paths, totalSize };
 }
 
-// Helper functions
 function getOriginalPath(type, id) {
   switch (type) {
     case 'song': return `songs/${id}.mp3`;
@@ -182,55 +388,10 @@ function getOriginalPath(type, id) {
   }
 }
 
-// Get trash items (same as before)
-export async function getTrashItems(env, type = 'all', page = 1, limit = 20, search = '') {
-  // ... same as previous implementation
-}
-
-// Get trash stats
-export async function getTrashStats(env) {
-  // ... same as previous implementation
-}
-
-// Get settings
-export async function getTrashSettings(env) {
-  try {
-    const settings = await env.DB.prepare(
-      `SELECT * FROM trash_settings WHERE id = 1`
-    ).first();
-    return settings || { retention_days: 30, auto_cleanup: 1 };
-  } catch (error) {
-    return { retention_days: 30, auto_cleanup: 1 };
-  }
-}
-
-// Update settings
-export async function updateTrashSettings(env, adminId, settings) {
-  await env.DB.prepare(
-    `UPDATE trash_settings SET
-      retention_days = ?, auto_cleanup = ?, updated_by = ?
-     WHERE id = 1`
-  ).bind(settings.retention_days, settings.auto_cleanup ? 1 : 0, adminId).run();
-  return { success: true };
-}
-
-// Cleanup expired items
-export async function cleanupExpiredTrash(env) {
-  const expired = await env.DB.prepare(
-    `SELECT * FROM trash_items 
-     WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
-  ).all();
-
-  for (const item of expired.results) {
-    const paths = JSON.parse(item.trash_path || '[]');
-    for (const path of paths) {
-      await env.media.delete(path).catch(() => {});
-    }
-  }
-
-  await env.DB.prepare(
-    `DELETE FROM trash_items WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
-  ).run();
-
-  return { deleted: expired.results.length };
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
