@@ -1,4 +1,4 @@
-// ==================== MASTER MIGRATION RUNNER ====================
+// ==================== MASTER  MIGRATION RUNNER ====================
 
 import { up as migration001 } from './001_create_page_views_tables.js';
 import { up as migration002 } from './002_create_plays_downloads_tables.js';
