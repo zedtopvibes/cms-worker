@@ -1,4 +1,4 @@
-// ==================== ADMIN  MAIN ROUTER ====================
+// ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
@@ -96,6 +96,7 @@ export async function handleAdmin(req, env, ctx) {
               <p style="color: #666;">${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
           
+          <!-- ===== NEW ENHANCED STATS SECTION ===== -->
           <!-- Real-time Stats Grid -->
           <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
               <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
@@ -126,7 +127,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Second Row Stats -->
+          <!-- Second Row Stats - KEPT EXACTLY AS IS -->
           <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px;">
               <div class="stat-card" style="padding: 12px;">
                   <h3 style="font-size: 0.7rem; color: #666;">🎵 New Songs</h3>
@@ -147,7 +148,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Quick Actions Panel -->
+          <!-- Quick Actions Panel - KEPT EXACTLY AS IS -->
           <div style="background: white; border-radius: 12px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
                   <i class="fas fa-bolt" style="color: #ff5500;"></i> 
@@ -182,7 +183,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- 7-Day Trend Chart -->
+          <!-- 7-Day Trend Chart - UPDATED WITH NEW COLORS -->
           <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                   <h4 style="font-size: 1rem;"><i class="fas fa-chart-line" style="color: #ff5500;"></i> 7-Day Activity</h4>
@@ -206,7 +207,7 @@ export async function handleAdmin(req, env, ctx) {
                   `).join('')}
               </div>
               
-              <!-- Mini Stats Row -->
+              <!-- Mini Stats Row - NEW -->
               <div style="display: flex; justify-content: space-around; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0;">
                   <div style="text-align: center;">
                       <div style="font-size: 0.6rem; color: #666;">Total Views</div>
@@ -223,7 +224,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Top Content This Week -->
+          <!-- Top Content This Week - KEPT EXACTLY AS IS -->
           <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <h4 style="margin-bottom: 15px; font-size: 1rem;"><i class="fas fa-fire" style="color: #ff5500;"></i> Top Content This Week</h4>
               
@@ -250,7 +251,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Recent Activity Feed -->
+          <!-- Recent Activity Feed - KEPT EXACTLY AS IS -->
           <div style="background: white; border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
               <h4 style="margin-bottom: 15px; font-size: 1rem;"><i class="fas fa-clock" style="color: #ff5500;"></i> Recent Activity</h4>
               
@@ -275,10 +276,10 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Quick Actions (Mobile) -->
+          <!-- Quick Actions (Mobile) - KEPT EXACTLY AS IS -->
           <h2 style="margin: 20px 0 15px; font-size: 1.1rem;"><i class="fas fa-bolt" style="color: #ff5500;"></i> Quick Actions</h2>
           
-          <!-- Mobile Cards -->
+          <!-- Mobile Cards - KEPT EXACTLY AS IS -->
           <div class="mobile-cards">
               <div class="mobile-card" onclick="window.location='/admin/upload'" style="cursor: pointer;">
                   <div class="mobile-card-row">
@@ -318,7 +319,7 @@ export async function handleAdmin(req, env, ctx) {
               </div>
           </div>
           
-          <!-- Desktop Grid -->
+          <!-- Desktop Grid - KEPT EXACTLY AS IS -->
           <div class="desktop-actions" style="display: none;">
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
                   <a href="/admin/upload" class="btn btn-primary">Upload Song</a>
