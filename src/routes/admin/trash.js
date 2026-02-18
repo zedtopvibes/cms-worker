@@ -52,10 +52,10 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                 </div>
                 <select id="typeSelect" class="form-control" style="width: auto; min-width: 150px;">
                     <option value="all" ${type === 'all' ? 'selected' : ''}>All Types (${stats.total})</option>
-                    <option value="song" ${type === 'song' ? 'selected' : ''}>🎵 Songs (${stats.songs})</option>
-                    <option value="album" ${type === 'album' ? 'selected' : ''}>💿 Albums (${stats.albums})</option>
-                    <option value="artist" ${type === 'artist' ? 'selected' : ''}>🎤 Artists (${stats.artists})</option>
-                    <option value="playlist" ${type === 'playlist' ? 'selected' : ''}>📋 Playlists (${stats.playlists})</option>
+                    <option value="song" ${type === 'song' ? 'selected' : ''}>Songs (${stats.songs})</option>
+                    <option value="album" ${type === 'album' ? 'selected' : ''}>Albums (${stats.albums})</option>
+                    <option value="artist" ${type === 'artist' ? 'selected' : ''}>Artists (${stats.artists})</option>
+                    <option value="playlist" ${type === 'playlist' ? 'selected' : ''}>Playlists (${stats.playlists})</option>
                 </select>
                 <button onclick="applyFilters()" class="btn btn-primary">
                     <i class="fas fa-filter"></i> Apply
@@ -287,13 +287,13 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert(result.message || '✅ Item restored!');
+                        alert('Item restored successfully');
                         location.reload();
                     } else {
-                        alert(result.message || '❌ Failed to restore item');
+                        alert(result.message || 'Failed to restore item');
                     }
                 } catch (error) {
-                    alert('❌ Error: ' + error.message);
+                    alert('Error: ' + error.message);
                 }
             }
         }
@@ -310,13 +310,13 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert(result.message || '✅ Item permanently deleted');
+                        alert('Item permanently deleted');
                         location.reload();
                     } else {
-                        alert(result.message || '❌ Failed to delete item');
+                        alert(result.message || 'Failed to delete item');
                     }
                 } catch (error) {
-                    alert('❌ Error: ' + error.message);
+                    alert('Error: ' + error.message);
                 }
             }
         }
@@ -333,13 +333,13 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert(result.message || ` Emptied trash`);
+                        alert('Trash emptied successfully');
                         location.reload();
                     } else {
-                        alert(result.message || '❌ Failed to empty trash');
+                        alert(result.message || 'Failed to empty trash');
                     }
                 } catch (error) {
-                    alert('❌ Error: ' + error.message);
+                    alert('Error: ' + error.message);
                 }
             }
         }
@@ -503,23 +503,22 @@ function truncate(str, length) {
 export async function handleTrashRestore(req, env, ctx, auth) {
   try {
     const { id } = await req.json();
-    console.log('🔄 Restore request for:', id);
+    console.log('Restore request for:', id);
     
     const result = await restoreFromTrash(env, auth.session.id, id);
     
-    // Add a message to the response
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? '✅ Item restored successfully!' : '❌ Failed to restore item'),
+      message: result.message || (result.success ? 'Item restored successfully' : 'Failed to restore item'),
       error: result.error
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
-    console.error('❌ Restore handler error:', error);
+    console.error('Restore handler error:', error);
     return new Response(JSON.stringify({
       success: false,
-      message: '❌ Error: ' + error.message,
+      message: 'Error: ' + error.message,
       error: error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
@@ -534,7 +533,7 @@ export async function handleTrashDelete(req, env, ctx, auth) {
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? '✅ Item permanently deleted' : '❌ Failed to delete'),
+      message: result.message || (result.success ? 'Item permanently deleted' : 'Failed to delete'),
       error: result.error
     }), {
       headers: { 'Content-Type': 'application/json' }
@@ -542,7 +541,7 @@ export async function handleTrashDelete(req, env, ctx, auth) {
   } catch (error) {
     return new Response(JSON.stringify({
       success: false,
-      message: '❌ Error: ' + error.message
+      message: 'Error: ' + error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -556,7 +555,7 @@ export async function handleTrashEmpty(req, env, ctx, auth) {
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? `✅ Emptied ${result.count} items` : '❌ Failed to empty trash'),
+      message: result.message || (result.success ? 'Trash emptied successfully' : 'Failed to empty trash'),
       count: result.count
     }), {
       headers: { 'Content-Type': 'application/json' }
@@ -564,7 +563,7 @@ export async function handleTrashEmpty(req, env, ctx, auth) {
   } catch (error) {
     return new Response(JSON.stringify({
       success: false,
-      message: '❌ Error: ' + error.message
+      message: 'Error: ' + error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -578,14 +577,14 @@ export async function handleTrashSettings(req, env, ctx, auth) {
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? '✅ Settings saved' : '❌ Failed to save settings')
+      message: result.message || (result.success ? 'Settings saved' : 'Failed to save settings')
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     return new Response(JSON.stringify({
       success: false,
-      message: '❌ Error: ' + error.message
+      message: 'Error: ' + error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
