@@ -3,8 +3,7 @@ import { getArtists, getAlbums, getMetadata, saveMetadata } from '../../helpers/
 import { getSongStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
-import { logAdminActivity } from '../../helpers/dashboardStats.js';
-
+import { logAdminActivity } from '../../helpers/activityLog.js';
 export async function handleAdminSongs(req, env, ctx, auth) {
 const url = new URL(req.url);
 const page = parseInt(url.searchParams.get('page')) || 1;
