@@ -1,10 +1,13 @@
 // ==================== MASTER MIGRATION RUNNER ====================
 
 import { up as migration001 } from './001_create_page_views_tables.js';
+import { up as migration002 } from './002_create_plays_downloads_tables.js';
 
 const migrations = [
-  { name: '001_create_page_views_tables', up: migration001 }
+  { name: '001_create_page_views_tables', up: migration001 },
+  { name: '002_create_plays_downloads_tables', up: migration002 }
 ];
+
 
 // Helper to ensure migrations table exists (run this FIRST in every function)
 async function ensureMigrationsTable(env) {
