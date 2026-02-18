@@ -4,6 +4,7 @@ import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL PLAYLISTS =====
 export async function handleAdminPlaylists(req, env, ctx, auth) {
@@ -261,7 +262,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
         window.editPlaylist = function(id) { window.location.href = '/admin/playlists/edit?id=' + id; };
         window.manageSongs = function(id) { window.location.href = '/admin/playlists/songs?id=' + id; };
         window.deletePlaylist = function(id) {
-            if (confirm('Delete this playlist?')) window.location.href = '/admin/playlists/delete?id=' + id;
+            if (confirm('Delete this playlist? It will be moved to trash.')) window.location.href = '/admin/playlists/delete?id=' + id;
         };
     </script>
   `;
@@ -472,7 +473,7 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
     
     await savePlaylists(env, playlists);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'playlist', playlistId, title);
     
     return { success: true, redirect: '/admin/playlists?updated=1' };
@@ -481,7 +482,7 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE PLAYLIST DELETION =====
+// ===== HANDLE PLAYLIST DELETION - UPDATED to use trash =====
 export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const playlistId = url.searchParams.get('id');
@@ -492,22 +493,51 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
   
   try {
     const playlists = await getPlaylists(env);
-    const playlistTitle = playlists[playlistId]?.title || 'Unknown playlist';
+    const playlist = playlists[playlistId];
+    const playlistTitle = playlist?.title || 'Unknown playlist';
     
-    // Delete thumbnail if exists
-    if (playlists[playlistId]?.thumbnail) {
-      await env.media.delete(playlists[playlistId].thumbnail).catch(() => {});
+    // Get thumbnail path
+    let thumbnailPath = null;
+    if (playlist?.thumbnail) {
+      thumbnailPath = playlist.thumbnail;
     }
     
-    // Remove playlist from index
+    // Prepare metadata
+    const itemData = {
+      title: playlist?.title,
+      description: playlist?.description,
+      curator: playlist?.curator,
+      songs: playlist?.songs,
+      created: playlist?.created,
+      updated: playlist?.updated,
+      thumbnail: playlist?.thumbnail
+    };
+    
+    // Move to trash
+    const result = await moveToTrash(
+      env,
+      auth.session.id,
+      'playlist',
+      playlistId,
+      playlistTitle,
+      itemData,
+      0 // Playlists don't have size
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Remove from playlists index
     delete playlists[playlistId];
     await savePlaylists(env, playlists);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'delete', 'playlist', playlistId, playlistTitle);
     
     return { success: true };
   } catch (error) {
+    console.error('Error moving playlist to trash:', error);
     return { success: false, error: error.message };
   }
 }
@@ -658,7 +688,7 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
     playlists[playlistId].updated = Date.now();
     await savePlaylists(env, playlists);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'update', 'playlist-songs', playlistId, 
       `Updated songs for ${playlistTitle}`);
     
