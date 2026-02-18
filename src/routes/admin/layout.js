@@ -1,6 +1,6 @@
 // ==================== SHARED ADMIN LAYOUT ====================
 
-export function adminLayout(title, content, auth, activePage = 'dashboard') {
+export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0) {
   const username = auth?.session?.username || 'Admin';
   
   return `
@@ -136,6 +136,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            text-decoration: none;
         }
         
         .tab-btn i {
@@ -150,6 +151,17 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
         .tab-btn.active {
             background: var(--orange);
             color: white;
+        }
+        
+        /* Badge for notifications */
+        .tab-badge {
+            background: var(--orange);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 5px;
         }
         
         /* Content Area */
@@ -207,7 +219,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
         .admin-table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 600px; /* Forces scroll on mobile, but table is usable */
+            min-width: 600px;
         }
         
         .admin-table th {
@@ -231,7 +243,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             background: #f9f9f9;
         }
         
-        /* Card View for Mobile (Alternative to tables) */
+        /* Card View for Mobile */
         .mobile-cards {
             display: flex;
             flex-direction: column;
@@ -276,7 +288,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             cursor: pointer;
             transition: all 0.3s;
             text-decoration: none;
-            min-height: 44px; /* Touch-friendly */
+            min-height: 44px;
         }
         
         .btn-primary {
@@ -299,6 +311,11 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
         
         .btn-danger {
             background: #dc3545;
+            color: white;
+        }
+        
+        .btn-success {
+            background: #28a745;
             color: white;
         }
         
@@ -375,6 +392,12 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             border: 1px solid #bee5eb;
         }
         
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        
         /* Empty State */
         .empty-state {
             text-align: center;
@@ -418,7 +441,57 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             color: white;
         }
         
-        /* Desktop Styles (Min-width 768px) */
+        .badge-info {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        /* Pagination */
+        .pagination {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .pagination-item {
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            color: #333;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+        
+        .pagination-item:hover {
+            background: #f0f0f0;
+            border-color: var(--orange);
+        }
+        
+        .pagination-item.active {
+            background: var(--orange);
+            color: white;
+            border-color: var(--orange);
+        }
+        
+        .pagination-item.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        .pagination-prev, .pagination-next {
+            font-weight: 600;
+        }
+        
+        .pagination-ellipsis {
+            padding: 8px 12px;
+            color: #999;
+        }
+        
+        /* Desktop Styles */
         @media (min-width: 768px) {
             .admin-container {
                 padding: 20px;
@@ -449,7 +522,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             }
             
             .mobile-cards {
-                display: none; /* Hide mobile cards on desktop */
+                display: none;
             }
             
             .table-responsive {
@@ -480,6 +553,11 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
             
             .stat-card .number {
                 font-size: 1.5rem;
+            }
+            
+            .tab-btn {
+                padding: 8px 12px;
+                font-size: 0.8rem;
             }
         }
     </style>
@@ -523,18 +601,16 @@ export function adminLayout(title, content, auth, activePage = 'dashboard') {
                 <a href="/admin/stats" class="tab-btn ${activePage === 'stats' ? 'active' : ''}">
                     <i class="fas fa-chart-line"></i> Stats
                 </a>
-<a href="/admin/activity" class="tab-btn ${activePage === 'activity' ? 'active' : ''}">
-    <i class="fas fa-history"></i> Activity
-</a>
-               <a href="/admin/bulk" class="tab-btn ${activePage === 'bulk' ? 'active' : ''}">
-    <i class="fas fa-tasks"></i> Bulk Ops
-</a>
-
-<a href="/admin/migrate" class="nav-link ${active === 'migrate' ? 'active' : ''}">
-  <i class="fas fa-database"></i>
-  <span>Migrations</span>
-  ${pendingMigrations > 0 ? '<span class="badge" style="background: #ff5500;">!</span>' : ''}
-</a>
+                <a href="/admin/activity" class="tab-btn ${activePage === 'activity' ? 'active' : ''}">
+                    <i class="fas fa-history"></i> Activity
+                </a>
+                <a href="/admin/bulk" class="tab-btn ${activePage === 'bulk' ? 'active' : ''}">
+                    <i class="fas fa-tasks"></i> Bulk Ops
+                </a>
+                <a href="/admin/migrate" class="tab-btn ${activePage === 'migrate' ? 'active' : ''}">
+                    <i class="fas fa-database"></i> Migrations
+                    ${pendingMigrations > 0 ? '<span class="tab-badge">!</span>' : ''}
+                </a>
             </div>
         </div>
         
