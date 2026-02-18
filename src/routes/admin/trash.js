@@ -1,4 +1,4 @@
-// ==================== ADMIN TRASH/RECYCLE BIN ====================
+// ==================== ADMIN  TRASH/RECYCLE BIN ====================
 import { 
   getTrashItems, 
   getTrashStats, 
