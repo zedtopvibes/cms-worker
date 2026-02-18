@@ -618,6 +618,16 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
             ${content}
         </div>
     </div>
+<!-- Quick Preview Modal Script -->
+<script src="/static/js/preview-modal.js"></script>
+
+<!-- Initialize preview modal -->
+<script>
+    // Make sure previewModal is available globally
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Preview modal initialized');
+    });
+</script>
 </body>
 </html>
   `;
