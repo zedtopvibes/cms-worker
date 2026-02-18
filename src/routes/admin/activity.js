@@ -24,7 +24,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
     params.push(filter);
   }
 
-  // Get total count for pagination (fixed: use .first())
+  // Get total count for pagination
   const countResult = await env.DB.prepare(
     `SELECT COUNT(*) as total FROM admin_activity ${whereClause}`
   ).bind(...params).first();
@@ -46,24 +46,15 @@ export async function handleAdminActivity(req, env, ctx, auth) {
 
   // Get unique actions for filter dropdown
   const { results: actionResults } = await env.DB.prepare(
-    `SELECT DISTINCT action FROM admin_activity ORDER BY action`
+    `SELECT DISTINCT action FROM admin_activity WHERE action IS NOT NULL ORDER BY action`
   ).all();
   
   const actions = actionResults || [];
 
-  // Format activities with icons (maintaining original design)
+  // Format activities with icons
   const activityRows = activities.map(log => {
     const timeAgo = getTimeAgo(new Date(log.timestamp));
     const iconInfo = getActionIcon(log.action);
-    
-    // Parse details if it's JSON
-    let displayDetails = log.details || '';
-    try {
-      const parsed = JSON.parse(log.details);
-      displayDetails = parsed.item_name || parsed.title || log.item_id || '';
-    } catch (e) {
-      // Not JSON, use as is
-    }
     
     return `
       <div class="activity-item">
@@ -72,9 +63,9 @@ export async function handleAdminActivity(req, env, ctx, auth) {
         </div>
         <div class="activity-content">
           <div class="activity-text">
-            <strong>${log.admin || 'Admin'}</strong> ${log.action} 
+            <strong>${log.admin_id || 'Admin'}</strong> ${log.action} 
             ${log.item_type ? `<strong>${log.item_type}</strong>` : ''}
-            "${displayDetails}"
+            ${log.item_name ? `"${log.item_name}"` : ''}
           </div>
           <div class="activity-time">${timeAgo}</div>
         </div>
@@ -91,7 +82,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
             </a>
         </div>
         
-        <!-- Filters (maintaining original design) -->
+        <!-- Filters -->
         <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                 <div style="flex: 1; min-width: 150px;">
@@ -127,7 +118,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
             </div>
         </div>
         
-        <!-- Results Summary (fixed count display) -->
+        <!-- Results Summary -->
         <div style="background: #e8f4fd; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
             <span><i class="fas fa-list"></i> Showing <strong>${activities.length}</strong> of <strong>${totalItems}</strong> activities</span>
             <span><i class="fas fa-clock"></i> Page ${page} of ${totalPages}</span>
@@ -138,7 +129,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
             ${activityRows || getEmptyState()}
         </div>
         
-        <!-- Pagination (maintaining original design) -->
+        <!-- Pagination -->
         ${generatePagination(page, totalPages, filter, days)}
     </div>
     
@@ -241,7 +232,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
   return { content, title: 'Activity Log' };
 }
 
-// Helper function to get icon based on action (maintaining original)
+// Helper function to get icon based on action
 function getActionIcon(action) {
   const icons = {
     'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
@@ -250,12 +241,15 @@ function getActionIcon(action) {
     'create': { icon: 'fa-plus-circle', bg: '#28a745' },
     'merge': { icon: 'fa-compress', bg: '#9b59b6' },
     'update': { icon: 'fa-sync', bg: '#00b894' },
-    'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' }
+    'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' },
+    'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
+    'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
+    'test': { icon: 'fa-vial', bg: '#666' }
   };
-  return icons[action] || { icon: 'fa-circle', bg: '#666' };
+  return icons[action] || { icon: 'fa-history', bg: '#666' };
 }
 
-// Helper function to format time ago (maintaining original)
+// Helper function to format time ago
 function getTimeAgo(date) {
   const seconds = Math.floor((new Date() - date) / 1000);
   
@@ -266,7 +260,7 @@ function getTimeAgo(date) {
   return `${Math.floor(seconds / 604800)} weeks ago`;
 }
 
-// Generate empty state (maintaining original)
+// Generate empty state
 function getEmptyState() {
   return `
     <div class="empty-state">
@@ -277,7 +271,7 @@ function getEmptyState() {
   `;
 }
 
-// Generate pagination (maintaining original design)
+// Generate pagination
 function generatePagination(currentPage, totalPages, filter, days) {
   if (totalPages <= 1) return '';
 
@@ -308,7 +302,7 @@ function generatePagination(currentPage, totalPages, filter, days) {
   return html;
 }
 
-// Export activity log as CSV (fixed)
+// Export activity log as CSV
 export async function handleAdminActivityExport(req, env, ctx, auth) {
   const url = new URL(req.url);
   const days = parseInt(url.searchParams.get('days')) || 30;
@@ -328,21 +322,11 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
      ORDER BY timestamp DESC`
   ).bind(...params).all();
 
-  // Generate CSV (maintaining original format)
-  let csv = 'Timestamp,Admin,Action,Item Type,Item ID,Details\n';
+  // Generate CSV
+  let csv = 'Timestamp,Admin ID,Action,Item Type,Item ID,Item Name\n';
   
   for (const log of results || []) {
-    // Clean details for CSV
-    let details = log.details || '';
-    try {
-      const parsed = JSON.parse(log.details);
-      details = parsed.item_name || parsed.title || log.item_id || '';
-    } catch (e) {
-      // Keep as is
-    }
-    details = details.replace(/,/g, ';').replace(/\n/g, ' ');
-    
-    csv += `"${log.timestamp}","${log.admin || 'Admin'}","${log.action}","${log.item_type || ''}","${log.item_id || ''}","${details}"\n`;
+    csv += `"${log.timestamp}","${log.admin_id || ''}","${log.action || ''}","${log.item_type || ''}","${log.item_id || ''}","${log.item_name || ''}"\n`;
   }
 
   return new Response(csv, {
