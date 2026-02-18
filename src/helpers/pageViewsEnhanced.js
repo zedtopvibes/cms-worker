@@ -625,18 +625,3 @@ export async function cleanupOldViews(env, daysToKeep = 90) {
     return { success: false, error: error.message };
   }
 }
-
-// ===== EXPORT ALL FUNCTIONS =====
-export {
-  incrementPageView,
-  getPageViewsForPeriod,
-  getTodayViews,
-  getWeekViews,
-  getMonthViews,
-  getPopularPagesForPeriod,
-  getViewTrends,
-  getViewsChartData,
-  getViewsSummary,
-  backfillPageViews,
-  cleanupOldViews
-};
