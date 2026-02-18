@@ -474,6 +474,178 @@ export async function getDownloadsTrends(env, itemType, itemId) {
   }
 }
 
+// ===== GET PLAYS CHART DATA =====
+export async function getPlaysChartData(env, range = 'week', itemType = null, itemId = null) {
+  try {
+    const now = new Date();
+    let query = '';
+    let params = [];
+    let labels = [];
+    
+    if (range === 'week') {
+      // Last 7 days
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        const parts = getDateParts(date);
+        labels.push(parts.date);
+      }
+      
+      query = `SELECT play_date, SUM(plays) as plays 
+               FROM daily_plays 
+               WHERE play_date BETWEEN ? AND ?`;
+      
+      const endDate = getDateParts(now).date;
+      const startDate = getDateParts(new Date(now.setDate(now.getDate() - 6))).date;
+      params = [startDate, endDate];
+      
+    } else if (range === 'month') {
+      // Last 4 weeks
+      for (let i = 4; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - (i * 7));
+        const parts = getDateParts(date);
+        labels.push(`Week ${parts.weekNumber}`);
+      }
+      
+      query = `SELECT year_week, SUM(plays) as plays 
+               FROM weekly_plays 
+               WHERE year_week >= ?`;
+      
+      const startWeek = getDateParts(new Date(now.setDate(now.getDate() - 28))).yearWeek;
+      params = [startWeek];
+      
+    } else if (range === 'year') {
+      // Last 12 months
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(now);
+        date.setMonth(date.getMonth() - i);
+        const parts = getDateParts(date);
+        labels.push(parts.yearMonth);
+      }
+      
+      query = `SELECT year_month, SUM(plays) as plays 
+               FROM monthly_plays 
+               WHERE year_month >= ?`;
+      
+      const startMonth = getDateParts(new Date(now.setMonth(now.getMonth() - 11))).yearMonth;
+      params = [startMonth];
+    }
+    
+    if (itemType && itemId) {
+      query += ` AND item_type = ? AND item_id = ?`;
+      params.push(itemType, itemId);
+    }
+    
+    query += ` GROUP BY ${range === 'week' ? 'play_date' : range === 'month' ? 'year_week' : 'year_month'} 
+               ORDER BY ${range === 'week' ? 'play_date' : range === 'month' ? 'year_week' : 'year_month'} ASC`;
+    
+    const { results } = await env.DB.prepare(query).bind(...params).all();
+    
+    // Map results to labels
+    const data = labels.map(label => {
+      const found = results.find(r => {
+        if (range === 'week') return r.play_date === label;
+        if (range === 'month') return r.year_week === label;
+        return r.year_month === label;
+      });
+      return found?.plays || 0;
+    });
+    
+    return { labels, data };
+    
+  } catch (error) {
+    console.error('Error getting plays chart data:', error);
+    return { labels: [], data: [] };
+  }
+}
+
+// ===== GET DOWNLOADS CHART DATA =====
+export async function getDownloadsChartData(env, range = 'week', itemType = null, itemId = null) {
+  try {
+    const now = new Date();
+    let query = '';
+    let params = [];
+    let labels = [];
+    
+    if (range === 'week') {
+      // Last 7 days
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        const parts = getDateParts(date);
+        labels.push(parts.date);
+      }
+      
+      query = `SELECT download_date, SUM(downloads) as downloads 
+               FROM daily_downloads 
+               WHERE download_date BETWEEN ? AND ?`;
+      
+      const endDate = getDateParts(now).date;
+      const startDate = getDateParts(new Date(now.setDate(now.getDate() - 6))).date;
+      params = [startDate, endDate];
+      
+    } else if (range === 'month') {
+      // Last 4 weeks
+      for (let i = 4; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - (i * 7));
+        const parts = getDateParts(date);
+        labels.push(`Week ${parts.weekNumber}`);
+      }
+      
+      query = `SELECT year_week, SUM(downloads) as downloads 
+               FROM weekly_downloads 
+               WHERE year_week >= ?`;
+      
+      const startWeek = getDateParts(new Date(now.setDate(now.getDate() - 28))).yearWeek;
+      params = [startWeek];
+      
+    } else if (range === 'year') {
+      // Last 12 months
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(now);
+        date.setMonth(date.getMonth() - i);
+        const parts = getDateParts(date);
+        labels.push(parts.yearMonth);
+      }
+      
+      query = `SELECT year_month, SUM(downloads) as downloads 
+               FROM monthly_downloads 
+               WHERE year_month >= ?`;
+      
+      const startMonth = getDateParts(new Date(now.setMonth(now.getMonth() - 11))).yearMonth;
+      params = [startMonth];
+    }
+    
+    if (itemType && itemId) {
+      query += ` AND item_type = ? AND item_id = ?`;
+      params.push(itemType, itemId);
+    }
+    
+    query += ` GROUP BY ${range === 'week' ? 'download_date' : range === 'month' ? 'year_week' : 'year_month'} 
+               ORDER BY ${range === 'week' ? 'download_date' : range === 'month' ? 'year_week' : 'year_month'} ASC`;
+    
+    const { results } = await env.DB.prepare(query).bind(...params).all();
+    
+    // Map results to labels
+    const data = labels.map(label => {
+      const found = results.find(r => {
+        if (range === 'week') return r.download_date === label;
+        if (range === 'month') return r.year_week === label;
+        return r.year_month === label;
+      });
+      return found?.downloads || 0;
+    });
+    
+    return { labels, data };
+    
+  } catch (error) {
+    console.error('Error getting downloads chart data:', error);
+    return { labels: [], data: [] };
+  }
+}
+
 // ===== GET SUMMARY =====
 export async function getPlaysDownloadsSummary(env) {
   try {
@@ -528,6 +700,11 @@ export async function getPlaysDownloadsSummary(env) {
     
   } catch (error) {
     console.error('Error getting summary:', error);
-    return null;
+    return {
+      total: { plays: 0, downloads: 0 },
+      today: { plays: 0, downloads: 0 },
+      week: { plays: 0, downloads: 0 },
+      month: { plays: 0, downloads: 0 }
+    };
   }
 }
