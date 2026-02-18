@@ -1,4 +1,4 @@
-// ==================== ADMIN  ALBUMS MANAGEMENT ====================
+// ==================== ADMIN ALBUMS MANAGEMENT ====================
 import { getAlbums, getArtists, saveAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
@@ -653,7 +653,7 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views
+// Mobile card with views (UPDATED with Preview button)
 function generateMobileCard(album) {
   const date = new Date(album.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -670,16 +670,25 @@ function generateMobileCard(album) {
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">${date}</div>
-        <div style="display:flex; gap:8px;">
-            <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-            <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
-            <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="previewModal.show('album', '${album.id}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1; background: #ff5500; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1; background: #6c757d; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-music"></i> Songs
+            </button>
+            <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
         </div>
     </div>
   `;
 }
 
-// Grid card with views
+// Grid card with views (UPDATED with Preview button)
 function generateGridCard(album) {
   return `
     <div class="album-grid-card">
@@ -695,10 +704,19 @@ function generateGridCard(album) {
                 <span><i class="fas fa-download"></i> ${formatNumber(album.downloads)}</span>
                 <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
             </div>
-            <div style="display:flex; gap:8px; margin-top:12px;">
-                <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-                <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
-                <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button onclick="previewModal.show('album', '${album.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" title="Edit" style="background: #ff5500; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" title="Songs" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-music"></i>
+                </button>
+                <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     </div>
