@@ -1,4 +1,4 @@
-// ==================== ALBUMS  ROUTES ====================
+// ==================== ALBUMS ROUTES ====================
 // ALL IMPORTS AT THE TOP
 import { getAlbums, getArtists, getMetadata, saveAlbums } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
