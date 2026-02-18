@@ -1,4 +1,8 @@
 // ==================== R2 TRASH HELPER ====================
+import { getAlbums, saveAlbums } from './storage.js';
+import { getArtists, saveArtists } from './storage.js';
+import { getPlaylists, savePlaylists } from './storage.js';
+import { getMetadata, saveMetadata } from './storage.js';
 
 // Move item to trash
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
@@ -16,21 +20,16 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
     // Handle different item types
     switch (itemType) {
       case 'song':
-        // Move song file and associated files to trash
         const files = await moveSongToTrash(env, itemId);
         trashPaths = files.paths || [];
         totalSize = files.totalSize || 0;
         break;
-        
       case 'album':
-        // Just track album metadata, don't move files (songs are handled separately)
         trashPaths = [`albums/thumbnails/${itemId}.jpg`];
         break;
-        
       case 'artist':
         trashPaths = [`artists/thumbnails/${itemId}.jpg`];
         break;
-        
       case 'playlist':
         trashPaths = [`playlists/thumbnails/${itemId}.jpg`];
         break;
@@ -83,45 +82,111 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
   }
 }
 
-// Restore from trash
+// Restore from trash - FIXED VERSION
 export async function restoreFromTrash(env, adminId, trashId) {
   try {
+    console.log('Attempting to restore:', trashId);
+    
     const item = await env.DB.prepare(
       `SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL`
     ).bind(trashId).first();
 
     if (!item) {
+      console.error('Item not found in trash:', trashId);
       return { success: false, error: 'Item not found in trash' };
     }
 
+    console.log('Found item to restore:', {
+      type: item.item_type,
+      id: item.item_id,
+      name: item.item_name
+    });
+
     const trashPaths = JSON.parse(item.trash_path || '[]');
+    console.log('Trash paths to restore:', trashPaths);
 
     // Restore files from trash folder
     for (const trashPath of trashPaths) {
-      if (trashPath.startsWith('trash/')) {
-        const originalPath = trashPath.replace('trash/', '');
-        try {
+      try {
+        // Check if file exists in trash
+        const file = await env.media.get(trashPath);
+        if (file) {
+          // Determine original path by removing 'trash/' prefix
+          const originalPath = trashPath.replace('trash/', '');
+          
+          console.log(`Restoring: ${trashPath} → ${originalPath}`);
+          
           // Copy file back from trash
-          const file = await env.media.get(trashPath);
-          if (file) {
-            await env.media.put(originalPath, file.body, {
-              httpMetadata: file.httpMetadata,
-              customMetadata: file.customMetadata
-            });
-            // Delete from trash
-            await env.media.delete(trashPath);
-          }
-        } catch (e) {
-          console.error('Error restoring file:', e);
+          await env.media.put(originalPath, file.body, {
+            httpMetadata: file.httpMetadata,
+            customMetadata: file.customMetadata
+          });
+          
+          // Delete from trash
+          await env.media.delete(trashPath);
+          console.log(`Successfully restored: ${originalPath}`);
+        } else {
+          console.log(`File not found in trash: ${trashPath}`);
         }
+      } catch (e) {
+        console.error('Error restoring file:', e);
+        // Continue with other files even if one fails
       }
     }
 
-    // Mark as restored
+    // Restore metadata based on item type
+    const metadata = JSON.parse(item.metadata || '{}');
+    
+    switch (item.item_type) {
+      case 'song':
+        // Restore song metadata
+        if (metadata.title) {
+          await saveMetadata(env, item.item_id, metadata);
+        }
+        break;
+        
+      case 'album':
+        // Restore album metadata
+        const albums = await getAlbums(env);
+        albums[item.item_id] = { 
+          ...metadata, 
+          id: item.item_id,
+          songs: metadata.songs || [] 
+        };
+        await saveAlbums(env, albums);
+        break;
+        
+      case 'artist':
+        // Restore artist metadata
+        const artists = await getArtists(env);
+        artists[item.item_id] = { 
+          ...metadata, 
+          id: item.item_id,
+          songs: metadata.songs || [],
+          albums: metadata.albums || []
+        };
+        await saveArtists(env, artists);
+        break;
+        
+      case 'playlist':
+        // Restore playlist metadata
+        const playlists = await getPlaylists(env);
+        playlists[item.item_id] = { 
+          ...metadata, 
+          id: item.item_id,
+          songs: metadata.songs || [],
+          updated: Date.now()
+        };
+        await savePlaylists(env, playlists);
+        break;
+    }
+
+    // Mark as restored in database
     await env.DB.prepare(
       `UPDATE trash_items SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?`
     ).bind(adminId, trashId).run();
 
+    console.log('Successfully restored item:', trashId);
     return { success: true, item };
   } catch (error) {
     console.error('Error restoring from trash:', error);
