@@ -40,6 +40,8 @@ class PreviewModal {
   }
 
   async show(type, id) {
+    console.log('Preview clicked:', type, id); // Debug log
+    
     // Show loading state
     this.modal.innerHTML = this.getLoadingHTML();
     this.modal.style.display = 'flex';
@@ -53,6 +55,8 @@ class PreviewModal {
         throw new Error(data.error || 'Failed to load preview');
       }
 
+      console.log('Preview data:', data); // Debug log
+
       // Render content based on type
       this.modal.innerHTML = this.getContentHTML(data);
       
@@ -61,6 +65,7 @@ class PreviewModal {
       setTimeout(() => content.classList.add('show'), 10);
 
     } catch (error) {
+      console.error('Preview error:', error);
       this.modal.innerHTML = this.getErrorHTML(error.message);
     }
   }
@@ -119,7 +124,7 @@ class PreviewModal {
         <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
         <h3 style="margin-bottom: 10px; color: #333;">Oops!</h3>
         <p style="color: #666; margin-bottom: 25px;">${message}</p>
-        <button onclick="previewModal.close()" class="btn btn-primary" style="padding: 12px 30px;">
+        <button onclick="window.previewModal.close()" class="btn btn-primary" style="padding: 12px 30px;">
           <i class="fas fa-times"></i> Close
         </button>
       </div>
@@ -165,7 +170,7 @@ class PreviewModal {
           border-radius: 20px 20px 0 0;
           position: relative;
         ">
-          <button onclick="previewModal.close()" style="
+          <button onclick="window.previewModal.close()" style="
             position: absolute;
             top: 15px;
             right: 15px;
@@ -352,7 +357,7 @@ class PreviewModal {
             " onmouseover="this.style.background='#ff6a1a'" onmouseout="this.style.background='#ff5500'">
               <i class="fas fa-external-link-alt"></i> View Full Page
             </a>
-            <button onclick="previewModal.close()" class="btn btn-secondary" style="
+            <button onclick="window.previewModal.close()" class="btn btn-secondary" style="
               flex: 1;
               padding: 14px;
               background: #f0f0f0;
@@ -418,5 +423,8 @@ class PreviewModal {
   }
 }
 
-// Initialize global instance
+// Initialize and attach to window
 const previewModal = new PreviewModal();
+window.previewModal = previewModal;  // Make it globally available
+
+console.log('Preview modal initialized and attached to window');
