@@ -57,8 +57,6 @@ import { handleAdminSearch } from './search.js';
 import { handleAdminBulk, executeBulkAction } from './bulk.js';
 
 // ===== ACTIVITY LOG IMPORTS =====
-import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
-
 import { handleAdminActivity } from './activity.js';
 
 // ===== DASHBOARD IMPORTS =====
