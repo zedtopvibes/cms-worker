@@ -10,8 +10,10 @@ import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
 import { handleAdmin } from './routes/admin/index.js';
 import { handleCron } from './helpers/cron.js';
-// ===== NEW API IMPORTS =====
+
+// ===== API IMPORTS =====
 import { handleTrackPlay, handleTrackPlayOptions } from './routes/api/play.js';
+import { handlePreview } from './routes/api/preview.js';  // 👈 NEW PREVIEW API
 
 export default {
   async fetch(req, env, ctx) {
@@ -30,12 +32,11 @@ export default {
       }
       
       // ===== API ROUTES =====
+      // Play tracking API
       if (path.startsWith("/api/play/")) {
-        // Handle CORS preflight for API
         if (req.method === "OPTIONS") {
           return await handleTrackPlayOptions(req, env, ctx);
         }
-        // Only allow POST for play tracking
         if (req.method === "POST") {
           return await handleTrackPlay(req, env, ctx);
         }
@@ -43,6 +44,11 @@ export default {
           status: 405,
           headers: CORS_HEADERS
         });
+      }
+      
+      // 👇 NEW PREVIEW API ROUTE
+      if (path.startsWith("/api/preview")) {
+        return await handlePreview(req, env, ctx);
       }
       
       // ===== USER ROUTES (Reserved for future user system) =====
@@ -148,4 +154,4 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(handleCron(event, env, ctx));
   }
-}; 
+};
