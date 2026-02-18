@@ -542,4 +542,4 @@ function generatePagination(currentPage, totalPages, search, sort) {
   
   html += '</div>';
   return html;
-}
+} 
