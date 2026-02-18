@@ -17,6 +17,69 @@ import {
 } from './playsDownloadsEnhanced.js';
 import { formatNumber } from './formatting.js';
 
+// ===== EXPORT LOG ADMIN ACTIVITY (ADD THIS BACK) =====
+export async function logAdminActivity(env, adminId, action, itemType, itemId, details) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO admin_activity (admin, action, item_type, item_id, details, ip)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(
+      adminId,
+      action,
+      itemType,
+      itemId,
+      typeof details === 'string' ? details : JSON.stringify(details),
+      'internal'
+    ).run();
+    return true;
+  } catch (error) {
+    console.error('Error logging admin activity:', error);
+    return false;
+  }
+}
+
+// ===== EXPORT UPDATE DAILY STATS (ADD THIS BACK) =====
+export async function updateDailyStats(env) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Get today's stats from various tables
+    const [viewsResult, playsResult, downloadsResult] = await Promise.all([
+      env.DB.prepare(
+        `SELECT SUM(views) as total FROM daily_page_views WHERE view_date = ?`
+      ).bind(today).first(),
+      
+      env.DB.prepare(
+        `SELECT SUM(plays) as total FROM daily_plays WHERE play_date = ?`
+      ).bind(today).first(),
+      
+      env.DB.prepare(
+        `SELECT SUM(downloads) as total FROM daily_downloads WHERE download_date = ?`
+      ).bind(today).first()
+    ]);
+    
+    // Insert or update daily_stats table
+    await env.DB.prepare(
+      `INSERT INTO daily_stats (stat_date, views, plays, downloads)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(stat_date) DO UPDATE SET
+         views = excluded.views,
+         plays = excluded.plays,
+         downloads = excluded.downloads`
+    ).bind(
+      today,
+      viewsResult?.total || 0,
+      playsResult?.total || 0,
+      downloadsResult?.total || 0
+    ).run();
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating daily stats:', error);
+    return false;
+  }
+}
+
 export async function getDashboardStats(env) {
   try {
     // Get counts
