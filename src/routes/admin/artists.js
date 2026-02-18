@@ -4,6 +4,7 @@ import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL ARTISTS =====
 export async function handleAdminArtists(req, env, ctx, auth) {
@@ -256,7 +257,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
         window.editArtist = function(id) { window.location.href = '/admin/artists/edit?id=' + id; };
         window.mergeArtist = function(id) { window.location.href = '/admin/artists/merge?id=' + id; };
         window.deleteArtist = function(id) {
-            if (confirm('Delete this artist?')) window.location.href = '/admin/artists/delete?id=' + id;
+            if (confirm('Delete this artist? It will be moved to trash.')) window.location.href = '/admin/artists/delete?id=' + id;
         };
     </script>
   `;
@@ -478,7 +479,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
     
     await saveArtists(env, artists);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
     
     return { success: true, redirect: '/admin/artists?updated=1' };
@@ -487,7 +488,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ARTIST DELETION =====
+// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -498,22 +499,63 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
   
   try {
     const artists = await getArtists(env);
-    const artistName = artists[artistId]?.name || 'Unknown artist';
+    const artist = artists[artistId];
+    const artistName = artist?.name || 'Unknown artist';
     
-    // Delete thumbnail if exists
-    if (artists[artistId]?.thumbnail) {
-      await env.media.delete(artists[artistId].thumbnail).catch(() => {});
+    // Get thumbnail path
+    let thumbnailPath = null;
+    if (artist?.thumbnail) {
+      thumbnailPath = artist.thumbnail;
     }
     
-    // Remove artist from index
+    // Calculate total size (sum of all songs by artist)
+    let totalSize = 0;
+    if (artist?.songs) {
+      for (const songId of artist.songs) {
+        try {
+          const songObj = await env.media.get(`songs/${songId}.mp3`);
+          totalSize += songObj?.size || 0;
+        } catch (e) {}
+      }
+    }
+    
+    // Prepare metadata
+    const itemData = {
+      name: artist?.name,
+      description: artist?.description,
+      genre: artist?.genre,
+      origin: artist?.origin,
+      songs: artist?.songs,
+      albums: artist?.albums,
+      created: artist?.created,
+      thumbnail: artist?.thumbnail
+    };
+    
+    // Move to trash
+    const result = await moveToTrash(
+      env,
+      auth.session.id,
+      'artist',
+      artistId,
+      artistName,
+      itemData,
+      totalSize
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Remove from artists index
     delete artists[artistId];
     await saveArtists(env, artists);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'delete', 'artist', artistId, artistName);
     
     return { success: true };
   } catch (error) {
+    console.error('Error moving artist to trash:', error);
     return { success: false, error: error.message };
   }
 }
@@ -675,7 +717,7 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     // Save main artist
     await saveArtists(env, artists);
     
-    // ✅ LOG ADMIN ACTIVITY
+    // Log activity
     await logAdminActivity(env, auth.session.id, 'merge', 'artist', mainArtistId, 
       `Merged ${mergeArtistName} into ${mainArtist.name}`);
     
@@ -687,7 +729,7 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views (UPDATED with Preview button)
+// Mobile card with views
 function generateMobileCard(artist) {
   const date = new Date(artist.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -722,7 +764,7 @@ function generateMobileCard(artist) {
   `;
 }
 
-// Grid card with views (UPDATED with Preview button)
+// Grid card with views
 function generateGridCard(artist) {
   return `
     <div class="artist-grid-card">
