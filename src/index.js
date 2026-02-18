@@ -148,4 +148,4 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(handleCron(event, env, ctx));
   }
-};
+}; 
