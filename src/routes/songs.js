@@ -1,8 +1,9 @@
 // ==================== SONGS ROUTES ====================
 // ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
+import { incrementPlays, incrementDownloads } from '../helpers/playsDownloadsEnhanced.js'; // ✅ UPDATED IMPORT
 import { getArtists, getAlbums, getPlaylists, getMetadata } from '../helpers/storage.js';
-import { getSongStats, incrementPlay, incrementDownload } from '../helpers/db.js';
+import { getSongStats } from '../helpers/db.js'; // Removed incrementPlay, incrementDownload
 import { formatDuration } from '../helpers/formatting.js';
 
 export async function handleSongs(req, env, ctx) {
@@ -456,6 +457,7 @@ export async function handleSongs(req, env, ctx) {
     html = html.replace(/<a href="#" class="nav-item">Albums<\/a>/, '<a href="/albums" class="nav-item">Albums</a>');
     html = html.replace(/<a href="#" class="nav-item">Artists<\/a>/, '<a href="/artists" class="nav-item">Artists</a>');
 
+    // ✅ UPDATED SCRIPT - Still calls the API endpoint (no change needed here)
     const script = `
 <script>
   (function() {
@@ -486,13 +488,13 @@ export async function handleSongs(req, env, ctx) {
     });
   }
 
-  // Download endpoint
+  // ✅ UPDATED Download endpoint
   if (path.startsWith("/download/")) {
     const fileName = decodeURIComponent(path.replace("/download/", ""));
     const songKey = fileName.replace(".mp3", "");
 
-    // Increment download count in the background
-    ctx.waitUntil(incrementDownload(songKey, env));
+    // ✅ UPDATED: Use new incrementDownloads function
+    ctx.waitUntil(incrementDownloads(env, 'song', songKey));
 
     // Fetch the audio file from R2
     const obj = await env.media.get(`songs/${fileName}`);
