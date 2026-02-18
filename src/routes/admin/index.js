@@ -63,6 +63,9 @@ import { formatNumber } from '../../helpers/formatting.js';
 // ===== ACTIVITY LOG IMPORTS =====
 import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
 
+// ===== PAGE VIEWS MIGRATIONS =====
+import { handleAdminMigrations } from './migrate.js';
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
@@ -791,6 +794,11 @@ if (path === '/activity') {
 
 if (path === '/activity/export') {
   return await handleAdminActivityExport(req, env, ctx, auth);
+}
+
+// ===== MIGRATIONS =====
+if (path === '/migrate' || path.startsWith('/migrate/')) {
+  return await handleAdminMigrations(req, env, ctx, auth);
 }
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
