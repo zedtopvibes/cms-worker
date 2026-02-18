@@ -333,7 +333,7 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert(result.message || `✅ Emptied trash`);
+                        alert(result.message || ` Emptied trash`);
                         location.reload();
                     } else {
                         alert(result.message || '❌ Failed to empty trash');
