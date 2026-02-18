@@ -266,7 +266,7 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
     await env.media.delete(`descriptions/${baseName}.txt`).catch(() => {});
     await env.media.delete(`metadata/${baseName}.json`).catch(() => {});
     
-    // ✅ LOG ADMIN ACTIVITY (ALREADY HERE)
+    // ✅ LOG ADMIN ACTIVITY
     await logAdminActivity(env, auth.session.id, 'delete', 'song', baseName, title);
     
     return { success: true };
@@ -361,7 +361,7 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   return { content };
 }
 
-// Handle edit submission (ADDED LOGGING HERE)
+// Handle edit submission
 export async function handleAdminSongEditPost(req, env, ctx, auth) {
   const formData = await req.formData();
   const baseName = formData.get('baseName');
@@ -394,7 +394,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
     
-    // ✅ ADDED: LOG ADMIN ACTIVITY FOR EDIT
+    // ✅ LOG ADMIN ACTIVITY
     await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
     
     return { success: true, redirect: '/admin/songs?updated=1' };
@@ -403,7 +403,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
   }
 }
 
-// Mobile card with views
+// Mobile card with views (UPDATED with Preview button)
 function generateMobileCard(song) {
   const date = song.uploaded.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -427,16 +427,22 @@ function generateMobileCard(song) {
             <span><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(song.views || 0)}</span>
         </div>
         <div style="font-size: 0.75rem; color: #999; margin-bottom: 10px;">Added: ${date}</div>
-        <div style="display: flex; gap: 8px;">
-            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
-            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
-            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1;">View</a>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button onclick="previewModal.show('song', '${song.baseName}')" class="btn btn-info btn-sm" style="flex:1; background: #00b894; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" style="flex:1; background: #ff5500; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" style="flex:1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <i class="fas fa-trash"></i> Delete
+            </button>
         </div>
     </div>
   `;
 }
 
-// Table row with views
+// Table row with views (UPDATED with Preview button)
 function generateTableRow(song) {
   const date = song.uploaded.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -452,10 +458,19 @@ function generateTableRow(song) {
         <td>${formatNumber(song.downloads)}</td>
         <td><span style="color: #4a90e2; font-weight: 600;">${formatNumber(song.views || 0)}</span></td>
         <td>${date}</td>
-        <td>
-            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" title="Edit"><i class="fas fa-edit"></i></button>
-            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete"><i class="fas fa-trash"></i></button>
-            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" title="View"><i class="fas fa-eye"></i></a>
+        <td style="white-space: nowrap;">
+            <button onclick="previewModal.show('song', '${song.baseName}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
+                <i class="fas fa-eye"></i>
+            </button>
+            <button onclick="editSong('${song.baseName}')" class="btn btn-primary btn-sm" title="Edit" style="background: #ff5500; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
+                <i class="fas fa-edit"></i>
+            </button>
+            <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
+                <i class="fas fa-trash"></i>
+            </button>
+            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
         </td>
     </tr>
   `;
