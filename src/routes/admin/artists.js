@@ -1,4 +1,4 @@
-// ==================== ADMIN ARTISTS MANAGEMENT ====================
+// ==================== ADMIN ARTISTS  MANAGEMENT ====================
 import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
