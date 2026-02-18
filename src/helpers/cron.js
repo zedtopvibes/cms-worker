@@ -1,4 +1,4 @@
-// ==================== CRON JOB HANDLER ====================
+// ==================== CRON JOB  HANDLER ====================
 import { cleanupExpiredTrash } from './trash.js';
 
 export async function handleCron(event, env, ctx) {
