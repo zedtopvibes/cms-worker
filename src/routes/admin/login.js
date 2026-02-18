@@ -1,5 +1,6 @@
 // ==================== ADMIN LOGIN HANDLERS ====================
 import { createSession, deleteSession } from '../../middleware/adminAuth.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';  // ✅ ADD IMPORT
 
 // Login page (GET)
 export async function handleAdminLogin(req, env, ctx) {
@@ -58,6 +59,9 @@ export async function handleAdminLoginPost(req, env, ctx) {
   if (username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) {
     const sessionId = await createSession(env, username);
 
+    // ✅ LOG ADMIN LOGIN (non-blocking)
+    ctx.waitUntil(logAdminActivity(env, username, 'login', 'admin', username, `${username} logged in`));
+
     return new Response(null, {
       status: 302,
       headers: {
@@ -67,6 +71,7 @@ export async function handleAdminLoginPost(req, env, ctx) {
     });
   }
 
+  // Failed login - no logging to avoid filling logs with failed attempts
   return new Response(null, {
     status: 302,
     headers: { 'Location': '/admin/login?error=invalid' }
@@ -79,7 +84,14 @@ export async function handleAdminLogout(req, env, ctx) {
   const sessionId = cookieHeader?.match(/admin_session=([^;]+)/)?.[1];
   
   if (sessionId) {
+    // Get username from session before deleting
+    const session = await env.ADMIN_SESSIONS.get(sessionId);
+    const username = session ? JSON.parse(session).username : 'Unknown';
+    
     await deleteSession(env, sessionId);
+    
+    // ✅ LOG ADMIN LOGOUT (non-blocking)
+    ctx.waitUntil(logAdminActivity(env, username, 'logout', 'admin', username, `${username} logged out`));
   }
 
   return new Response(null, {
