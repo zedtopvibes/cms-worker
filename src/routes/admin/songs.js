@@ -424,7 +424,7 @@ break;
 // Get description
 let description = '';
 try {
-const descObj = await env.media.get('descriptions/${baseName}.txt);
+const descObj = await env.media.get('descriptions/${baseName}.txt');
 if (descObj) description = await descObj.text();
 } catch (e) {}
 
