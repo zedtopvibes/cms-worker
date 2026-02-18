@@ -1,5 +1,6 @@
 // ==================== ADMIN MIGRATION ROUTE ====================
 
+import { adminLayout } from './layout.js';  // ✅ IMPORT ADDED HERE
 import { runMigrations, getMigrationStatus, getPendingMigrations } from '../../migrations/index.js';
 import { backfillPageViews } from '../../helpers/pageViewsEnhanced.js';
 
