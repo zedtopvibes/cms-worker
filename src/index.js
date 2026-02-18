@@ -9,7 +9,9 @@ import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
 import { handleAdmin } from './routes/admin/index.js';
-import { handleCron } from './helpers/cron.js';  // Add this line
+import { handleCron } from './helpers/cron.js';
+// ===== NEW API IMPORTS =====
+import { handleTrackPlay, handleTrackPlayOptions } from './routes/api/play.js';
 
 export default {
   async fetch(req, env, ctx) {
@@ -25,6 +27,22 @@ export default {
       // ===== ADMIN ROUTES (Highest priority) =====
       if (path.startsWith("/admin")) {
         return await handleAdmin(req, env, ctx);
+      }
+      
+      // ===== API ROUTES =====
+      if (path.startsWith("/api/play/")) {
+        // Handle CORS preflight for API
+        if (req.method === "OPTIONS") {
+          return await handleTrackPlayOptions(req, env, ctx);
+        }
+        // Only allow POST for play tracking
+        if (req.method === "POST") {
+          return await handleTrackPlay(req, env, ctx);
+        }
+        return new Response("Method not allowed", { 
+          status: 405,
+          headers: CORS_HEADERS
+        });
       }
       
       // ===== USER ROUTES (Reserved for future user system) =====
