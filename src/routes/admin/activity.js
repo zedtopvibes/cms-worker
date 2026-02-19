@@ -1,10 +1,5 @@
-
 // ==================== ADMIN ACTIVITY LOG ROUTE ====================
-// FIXED: Correct import paths (from helpers folder, not current directory)
 import { getActivities } from '../../helpers/activity.js';
-
-// These imports are NOT needed in activity.js - remove them!
-// The activity page doesn't need storage, db, stats etc.
 
 export async function handleAdminActivity(req, env, ctx) {
   const url = new URL(req.url);
@@ -23,19 +18,46 @@ export async function handleAdminActivity(req, env, ctx) {
       const iconInfo = getActionIcon(log.action);
       const details = log.details || {};
       
+      // Format text to match original design
+      let actionText = '';
+      const admin = log.admin || 'Admin';
+      const itemName = log.file ? `"${log.file}"` : '';
+      const itemType = details.type || '';
+      
+      switch (log.action) {
+        case 'create':
+          actionText = `${admin} create ${itemType} ${itemName}`;
+          break;
+        case 'edit':
+          actionText = `${admin} edit ${itemType} ${itemName}`;
+          break;
+        case 'delete':
+          actionText = `${admin} delete ${itemType} ${itemName}`;
+          break;
+        case 'restore':
+          actionText = `${admin} restore ${itemType} ${itemName}`;
+          break;
+        case 'upload':
+          actionText = `${admin} upload ${itemType} ${itemName}`;
+          break;
+        case 'login':
+          actionText = `${admin} login admin "${admin} logged in"`;
+          break;
+        case 'logout':
+          actionText = `${admin} logout`;
+          break;
+        default:
+          actionText = `${admin} ${log.action} ${itemType} ${itemName}`;
+      }
+      
       return `
         <div class="activity-item">
           <div class="activity-icon" style="background: ${iconInfo.bg};">
             <i class="fas ${iconInfo.icon}"></i>
           </div>
           <div class="activity-content">
-            <div class="activity-text">
-              <strong>${log.admin || 'System'}</strong> ${log.action} 
-              ${log.file ? `<strong>${log.file}</strong>` : ''}
-              ${details.type ? `(${details.type})` : ''}
-            </div>
-            <div class="activity-time">${timeAgo} • ${new Date(log.time).toLocaleString()}</div>
-            ${Object.keys(details).length > 0 ? `<div class="activity-details">${JSON.stringify(details)}</div>` : ''}
+            <div class="activity-text">${actionText}</div>
+            <div class="activity-time">${timeAgo}</div>
           </div>
         </div>
       `;
@@ -71,7 +93,6 @@ export async function handleAdminActivity(req, env, ctx) {
                           <option value="1" ${days === 1 ? 'selected' : ''}>Last 24 Hours</option>
                           <option value="7" ${days === 7 ? 'selected' : ''}>Last 7 Days</option>
                           <option value="30" ${days === 30 ? 'selected' : ''}>Last 30 Days</option>
-                          <option value="90" ${days === 90 ? 'selected' : ''}>Last 90 Days</option>
                           <option value="0" ${days === 0 ? 'selected' : ''}>All Time</option>
                       </select>
                   </div>
@@ -151,16 +172,6 @@ export async function handleAdminActivity(req, env, ctx) {
               color: #999;
           }
           
-          .activity-details {
-              font-size: 0.7rem;
-              color: #666;
-              margin-top: 5px;
-              padding: 3px 8px;
-              background: #f5f5f5;
-              border-radius: 4px;
-              display: inline-block;
-          }
-          
           .empty-state {
               text-align: center;
               padding: 60px 20px;
@@ -199,7 +210,7 @@ export async function handleAdminActivity(req, env, ctx) {
           function applyFilters() {
               const filter = document.getElementById('filterSelect').value;
               const days = document.getElementById('daysSelect').value;
-              window.location.href = '/admin/activity?filter=' + encodeURIComponent(filter) + '&days=' + days;
+              window.location.href = '/admin/activity?filter=' + filter + '&days=' + days;
           }
           
           function clearFilters() {
@@ -208,23 +219,22 @@ export async function handleAdminActivity(req, env, ctx) {
       </script>
     `;
 
-    // Return the response with admin layout
-    return new Response(adminLayout(content, 'Activity Log'), {
-      headers: { 'Content-Type': 'text/html' }
-    });
+    // Return as { content, title } - let main router handle the layout
+    return { content, title: 'Activity Log' };
 
   } catch (error) {
     console.error('Error in activity log:', error);
-    return new Response(adminLayout(`
-      <div style="padding: 40px; text-align: center;">
-        <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
-        <h3>Error Loading Activity Log</h3>
-        <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
-        <a href="/admin" class="btn btn-primary">Back to Dashboard</a>
-      </div>
-    `, 'Error'), {
-      headers: { 'Content-Type': 'text/html' }
-    });
+    return { 
+      content: `
+        <div style="padding: 40px; text-align: center;">
+          <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
+          <h3>Error Loading Activity Log</h3>
+          <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+          <a href="/admin" class="btn btn-primary">Back to Dashboard</a>
+        </div>
+      `, 
+      title: 'Error' 
+    };
   }
 }
 
@@ -291,8 +301,7 @@ function getTimeAgo(date) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
   if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
-  if (seconds < 2592000) return `${Math.floor(seconds / 604800)} weeks ago`;
-  return `${Math.floor(seconds / 2592000)} months ago`;
+  return `${Math.floor(seconds / 604800)} weeks ago`;
 }
 
 // Generate empty state
@@ -313,7 +322,7 @@ function generatePagination(currentPage, totalPages, filter, days) {
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
   
   if (currentPage > 1) {
-    html += `<a href="/admin/activity?page=${currentPage-1}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
+    html += `<a href="/admin/activity?page=${currentPage-1}&filter=${filter}&days=${days}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
   } else {
     html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
   }
@@ -321,116 +330,18 @@ function generatePagination(currentPage, totalPages, filter, days) {
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
       const active = i === currentPage ? 'active' : '';
-      html += `<a href="/admin/activity?page=${i}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item ${active}">${i}</a>`;
+      html += `<a href="/admin/activity?page=${i}&filter=${filter}&days=${days}" class="pagination-item ${active}">${i}</a>`;
     } else if (i === currentPage - 3 || i === currentPage + 3) {
       html += `<span class="pagination-ellipsis">...</span>`;
     }
   }
 
   if (currentPage < totalPages) {
-    html += `<a href="/admin/activity?page=${currentPage+1}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
+    html += `<a href="/admin/activity?page=${currentPage+1}&filter=${filter}&days=${days}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
   } else {
     html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
   }
 
   html += '</div>';
   return html;
-}
-
-// You need an adminLayout function - add this or import it
-function adminLayout(content, title) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title} - Admin</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #f5f5f5;
-        }
-        .admin-container {
-            display: flex;
-            min-height: 100vh;
-        }
-        .sidebar {
-            width: 250px;
-            background: white;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
-        }
-        .main-content {
-            flex: 1;
-            padding: 20px;
-        }
-        .top-bar {
-            background: white;
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .btn {
-            display: inline-block;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            transition: all 0.2s;
-        }
-        .btn-primary {
-            background: #ff5500;
-            color: white;
-        }
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-        .form-control {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 0.9rem;
-        }
-        .pagination {
-            display: flex;
-            gap: 5px;
-            margin-top: 20px;
-        }
-        .pagination-item {
-            padding: 5px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            text-decoration: none;
-            color: #333;
-        }
-        .pagination-item.active {
-            background: #ff5500;
-            color: white;
-            border-color: #ff5500;
-        }
-    </style>
-</head>
-<body>
-    <div class="admin-container">
-        <div class="sidebar">
-            <!-- Your sidebar content -->
-        </div>
-        <div class="main-content">
-            <div class="top-bar">
-                <h2>${title}</h2>
-                <div>Admin</div>
-            </div>
-            ${content}
-        </div>
-    </div>
-</body>
-</html>`;
 }
