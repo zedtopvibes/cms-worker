@@ -1,236 +1,261 @@
-// ==================== ADMIN ACTIVITY LOG (PURE R2) ====================
+// ==================== ADMIN ACTIVITY LOG ROUTE ====================
+import { getActivities } from '../../helpers/activity.js';
+import { adminLayout } from '../../layouts/admin.js';
 
-export async function handleAdminActivity(req, env, ctx, auth) {
+export async function handleAdminActivity(req, env, ctx) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
   const filter = url.searchParams.get('filter') || 'all';
   const days = parseInt(url.searchParams.get('days')) || 7;
   const ITEMS_PER_PAGE = 20;
 
-  // Get logs from R2
-  const logFile = await env.media.get('_logs/activity.json');
-  let allLogs = [];
-  
-  if (logFile) {
-    allLogs = JSON.parse(await logFile.text());
-  }
+  try {
+    // Get activities from R2
+    const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-  // Apply filters
-  let filteredLogs = [...allLogs];
-  
-  // Date filter
-  if (days > 0) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    filteredLogs = filteredLogs.filter(log => new Date(log.time) >= cutoffDate);
-  }
-
-  // Action filter
-  if (filter !== 'all') {
-    filteredLogs = filteredLogs.filter(log => log.action === filter);
-  }
-
-  // Get unique actions for filter dropdown
-  const actions = [...new Set(allLogs.map(log => log.action))].filter(Boolean);
-
-  // Pagination
-  const totalItems = filteredLogs.length;
-  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-  const startIdx = (page - 1) * ITEMS_PER_PAGE;
-  const paginatedLogs = filteredLogs.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
-  // Format activities with icons
-  const activityRows = paginatedLogs.map(log => {
-    const timeAgo = getTimeAgo(new Date(log.time));
-    const iconInfo = getActionIcon(log.action);
-    const details = log.details || {};
-    
-    return `
-      <div class="activity-item">
-        <div class="activity-icon" style="background: ${iconInfo.bg};">
-          <i class="fas ${iconInfo.icon}"></i>
-        </div>
-        <div class="activity-content">
-          <div class="activity-text">
-            <strong>${log.admin || log.user || 'System'}</strong> ${log.action} 
-            ${log.file ? `<strong>${log.file}</strong>` : ''}
-            ${details.type ? `(${details.type})` : ''}
+    // Format activities with icons
+    const activityRows = logs.map(log => {
+      const timeAgo = getTimeAgo(new Date(log.time));
+      const iconInfo = getActionIcon(log.action);
+      const details = log.details || {};
+      
+      return `
+        <div class="activity-item">
+          <div class="activity-icon" style="background: ${iconInfo.bg};">
+            <i class="fas ${iconInfo.icon}"></i>
           </div>
-          <div class="activity-time">${timeAgo} • ${new Date(log.time).toLocaleString()}</div>
-          ${log.details ? `<div class="activity-details">${JSON.stringify(log.details)}</div>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  const content = `
-    <div style="margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-            <h2 style="margin:0;"><i class="fas fa-history" style="color: #ff5500;"></i> Activity Log</h2>
-            <a href="/admin/activity/export?days=${days}&filter=${filter}" class="btn btn-secondary">
-                <i class="fas fa-download"></i> Export Log
-            </a>
-        </div>
-        
-        <!-- Filters -->
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <div style="flex: 1; min-width: 150px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.8rem; color: #666;">Action</label>
-                    <select id="filterSelect" class="form-control">
-                        <option value="all" ${filter === 'all' ? 'selected' : ''}>All Actions</option>
-                        ${actions.map(action => `
-                            <option value="${action}" ${filter === action ? 'selected' : ''}>
-                                ${action.charAt(0).toUpperCase() + action.slice(1)}
-                            </option>
-                        `).join('')}
-                    </select>
-                </div>
-                
-                <div style="width: 150px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.8rem; color: #666;">Time Period</label>
-                    <select id="daysSelect" class="form-control">
-                        <option value="1" ${days === 1 ? 'selected' : ''}>Last 24 Hours</option>
-                        <option value="7" ${days === 7 ? 'selected' : ''}>Last 7 Days</option>
-                        <option value="30" ${days === 30 ? 'selected' : ''}>Last 30 Days</option>
-                        <option value="90" ${days === 90 ? 'selected' : ''}>Last 90 Days</option>
-                        <option value="0" ${days === 0 ? 'selected' : ''}>All Time</option>
-                    </select>
-                </div>
-                
-                <div style="display: flex; align-items: flex-end; gap: 10px;">
-                    <button onclick="applyFilters()" class="btn btn-primary">
-                        <i class="fas fa-filter"></i> Apply
-                    </button>
-                    <button onclick="clearFilters()" class="btn btn-secondary">
-                        <i class="fas fa-times"></i> Clear
-                    </button>
-                </div>
+          <div class="activity-content">
+            <div class="activity-text">
+              <strong>${log.admin || 'System'}</strong> ${log.action} 
+              ${log.file ? `<strong>${log.file}</strong>` : ''}
+              ${details.type ? `(${details.type})` : ''}
             </div>
+            <div class="activity-time">${timeAgo} • ${new Date(log.time).toLocaleString()}</div>
+            ${Object.keys(details).length > 0 ? `<div class="activity-details">${JSON.stringify(details)}</div>` : ''}
+          </div>
         </div>
-        
-        <!-- Results Summary -->
-        <div style="background: #e8f4fd; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-            <span><i class="fas fa-list"></i> Showing <strong>${paginatedLogs.length}</strong> of <strong>${totalItems}</strong> activities</span>
-            <span><i class="fas fa-clock"></i> Page ${page} of ${totalPages}</span>
-        </div>
-        
-        <!-- Activity List -->
-        <div class="activity-list">
-            ${activityRows || getEmptyState()}
-        </div>
-        
-        <!-- Pagination -->
-        ${generatePagination(page, totalPages, filter, days)}
-    </div>
-    
-    <style>
-        .activity-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        
-        .activity-item {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            padding: 15px;
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #e8e8e8;
-            transition: all 0.2s;
-        }
-        
-        .activity-item:hover {
-            border-color: #ff5500;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        
-        .activity-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.2rem;
-            flex-shrink: 0;
-        }
-        
-        .activity-content {
-            flex: 1;
-        }
-        
-        .activity-text {
-            font-size: 0.95rem;
-            margin-bottom: 4px;
-        }
-        
-        .activity-time {
-            font-size: 0.75rem;
-            color: #999;
-        }
-        
-        .activity-details {
-            font-size: 0.7rem;
-            color: #666;
-            margin-top: 5px;
-            padding: 3px 8px;
-            background: #f5f5f5;
-            border-radius: 4px;
-            display: inline-block;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            background: white;
-            border-radius: 12px;
-        }
-        
-        .empty-state i {
-            font-size: 3rem;
-            color: #ccc;
-            margin-bottom: 15px;
-        }
-        
-        .empty-state h3 {
-            margin-bottom: 10px;
-            color: #333;
-        }
-        
-        .empty-state p {
-            color: #666;
-        }
-        
-        @media (max-width: 480px) {
-            .activity-item {
-                flex-wrap: wrap;
-            }
-            .activity-icon {
-                width: 35px;
-                height: 35px;
-                font-size: 1rem;
-            }
-        }
-    </style>
-    
-    <script>
-        function applyFilters() {
-            const filter = document.getElementById('filterSelect').value;
-            const days = document.getElementById('daysSelect').value;
-            window.location.href = '/admin/activity?filter=' + encodeURIComponent(filter) + '&days=' + days;
-        }
-        
-        function clearFilters() {
-            window.location.href = '/admin/activity';
-        }
-    </script>
-  `;
+      `;
+    }).join('');
 
-  return { content, title: 'Activity Log' };
+    const content = `
+      <div style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+              <h2 style="margin:0;"><i class="fas fa-history" style="color: #ff5500;"></i> Activity Log</h2>
+              <a href="/admin/activity/export?days=${days}&filter=${filter}" class="btn btn-secondary">
+                  <i class="fas fa-download"></i> Export Log
+              </a>
+          </div>
+          
+          <!-- Filters -->
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+              <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                  <div style="flex: 1; min-width: 150px;">
+                      <label style="display: block; margin-bottom: 5px; font-size: 0.8rem; color: #666;">Action</label>
+                      <select id="filterSelect" class="form-control">
+                          <option value="all" ${filter === 'all' ? 'selected' : ''}>All Actions</option>
+                          ${actions.map(action => `
+                              <option value="${action}" ${filter === action ? 'selected' : ''}>
+                                  ${action.charAt(0).toUpperCase() + action.slice(1)}
+                              </option>
+                          `).join('')}
+                      </select>
+                  </div>
+                  
+                  <div style="width: 150px;">
+                      <label style="display: block; margin-bottom: 5px; font-size: 0.8rem; color: #666;">Time Period</label>
+                      <select id="daysSelect" class="form-control">
+                          <option value="1" ${days === 1 ? 'selected' : ''}>Last 24 Hours</option>
+                          <option value="7" ${days === 7 ? 'selected' : ''}>Last 7 Days</option>
+                          <option value="30" ${days === 30 ? 'selected' : ''}>Last 30 Days</option>
+                          <option value="90" ${days === 90 ? 'selected' : ''}>Last 90 Days</option>
+                          <option value="0" ${days === 0 ? 'selected' : ''}>All Time</option>
+                      </select>
+                  </div>
+                  
+                  <div style="display: flex; align-items: flex-end; gap: 10px;">
+                      <button onclick="applyFilters()" class="btn btn-primary">
+                          <i class="fas fa-filter"></i> Apply
+                      </button>
+                      <button onclick="clearFilters()" class="btn btn-secondary">
+                          <i class="fas fa-times"></i> Clear
+                      </button>
+                  </div>
+              </div>
+          </div>
+          
+          <!-- Results Summary -->
+          <div style="background: #e8f4fd; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+              <span><i class="fas fa-list"></i> Showing <strong>${logs.length}</strong> of <strong>${total}</strong> activities</span>
+              <span><i class="fas fa-clock"></i> Page ${page} of ${totalPages}</span>
+          </div>
+          
+          <!-- Activity List -->
+          <div class="activity-list">
+              ${activityRows || getEmptyState()}
+          </div>
+          
+          <!-- Pagination -->
+          ${generatePagination(page, totalPages, filter, days)}
+      </div>
+      
+      <style>
+          .activity-list {
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+          }
+          
+          .activity-item {
+              display: flex;
+              align-items: center;
+              gap: 15px;
+              padding: 15px;
+              background: white;
+              border-radius: 8px;
+              border: 1px solid #e8e8e8;
+              transition: all 0.2s;
+          }
+          
+          .activity-item:hover {
+              border-color: #ff5500;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+          }
+          
+          .activity-icon {
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-size: 1.2rem;
+              flex-shrink: 0;
+          }
+          
+          .activity-content {
+              flex: 1;
+          }
+          
+          .activity-text {
+              font-size: 0.95rem;
+              margin-bottom: 4px;
+          }
+          
+          .activity-time {
+              font-size: 0.75rem;
+              color: #999;
+          }
+          
+          .activity-details {
+              font-size: 0.7rem;
+              color: #666;
+              margin-top: 5px;
+              padding: 3px 8px;
+              background: #f5f5f5;
+              border-radius: 4px;
+              display: inline-block;
+          }
+          
+          .empty-state {
+              text-align: center;
+              padding: 60px 20px;
+              background: white;
+              border-radius: 12px;
+          }
+          
+          .empty-state i {
+              font-size: 3rem;
+              color: #ccc;
+              margin-bottom: 15px;
+          }
+          
+          .empty-state h3 {
+              margin-bottom: 10px;
+              color: #333;
+          }
+          
+          .empty-state p {
+              color: #666;
+          }
+          
+          @media (max-width: 480px) {
+              .activity-item {
+                  flex-wrap: wrap;
+              }
+              .activity-icon {
+                  width: 35px;
+                  height: 35px;
+                  font-size: 1rem;
+              }
+          }
+      </style>
+      
+      <script>
+          function applyFilters() {
+              const filter = document.getElementById('filterSelect').value;
+              const days = document.getElementById('daysSelect').value;
+              window.location.href = '/admin/activity?filter=' + encodeURIComponent(filter) + '&days=' + days;
+          }
+          
+          function clearFilters() {
+              window.location.href = '/admin/activity';
+          }
+      </script>
+    `;
+
+    // Return the response with admin layout
+    return new Response(adminLayout(content, 'Activity Log'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+
+  } catch (error) {
+    console.error('Error in activity log:', error);
+    return new Response(adminLayout(`
+      <div style="padding: 40px; text-align: center;">
+        <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
+        <h3>Error Loading Activity Log</h3>
+        <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+        <a href="/admin" class="btn btn-primary">Back to Dashboard</a>
+      </div>
+    `, 'Error'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+// Export handler
+export async function handleAdminActivityExport(req, env, ctx) {
+  try {
+    const url = new URL(req.url);
+    const days = parseInt(url.searchParams.get('days')) || 30;
+    const filter = url.searchParams.get('filter') || 'all';
+
+    // Get logs from R2
+    const { logs } = await getActivities(env, filter, days, 1, 1000);
+
+    // Generate CSV
+    let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
+    
+    for (const log of logs) {
+      const details = JSON.stringify(log.details || {});
+      csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || ''}","${log.ip || ''}","${details}"\n`;
+    }
+
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="activity-log-${Date.now()}.csv"`
+      }
+    });
+
+  } catch (error) {
+    console.error('Error exporting activity log:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
 
 // Helper function to get icon based on action
@@ -248,6 +273,7 @@ function getActionIcon(action) {
     'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
     'play': { icon: 'fa-play', bg: '#ff5500' },
     'download': { icon: 'fa-download', bg: '#ff5500' },
+    'cron': { icon: 'fa-clock', bg: '#6c757d' },
     'test': { icon: 'fa-vial', bg: '#666' }
   };
   return icons[action] || { icon: 'fa-history', bg: '#666' };
@@ -305,78 +331,4 @@ function generatePagination(currentPage, totalPages, filter, days) {
 
   html += '</div>';
   return html;
-}
-
-// Export activity log as CSV
-export async function handleAdminActivityExport(req, env, ctx, auth) {
-  const url = new URL(req.url);
-  const days = parseInt(url.searchParams.get('days')) || 30;
-  const filter = url.searchParams.get('filter') || 'all';
-
-  // Get logs from R2
-  const logFile = await env.media.get('_logs/activity.json');
-  let logs = [];
-  
-  if (logFile) {
-    logs = JSON.parse(await logFile.text());
-  }
-
-  // Apply filters
-  let filteredLogs = [...logs];
-  
-  // Date filter
-  if (days > 0) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    filteredLogs = filteredLogs.filter(log => new Date(log.time) >= cutoffDate);
-  }
-
-  // Action filter
-  if (filter !== 'all') {
-    filteredLogs = filteredLogs.filter(log => log.action === filter);
-  }
-
-  // Generate CSV
-  let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
-  
-  for (const log of filteredLogs) {
-    const details = JSON.stringify(log.details || {});
-    csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || log.user || ''}","${log.ip || ''}","${details}"\n`;
-  }
-
-  return new Response(csv, {
-    headers: {
-      'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="activity-log-${Date.now()}.csv"`
-    }
-  });
-}
-
-// Helper function to log activities (add this to your log helper)
-export async function logActivity(env, action, file, adminId, details = {}, ip = 'unknown') {
-  const logKey = '_logs/activity.json';
-  const existing = await env.media.get(logKey);
-  
-  let logs = [];
-  if (existing) {
-    logs = JSON.parse(await existing.text());
-  }
-  
-  logs.unshift({
-    action,
-    file,
-    admin: adminId,
-    ip,
-    time: new Date().toISOString(),
-    details
-  });
-  
-  // Keep only latest 500 logs (you can adjust this)
-  logs = logs.slice(0, 500);
-  
-  await env.media.put(logKey, JSON.stringify(logs, null, 2), {
-    httpMetadata: { contentType: 'application/json' }
-  });
-  
-  return { success: true };
 }
