@@ -19,7 +19,6 @@ SITE_NAME = "ZEDALBUMS.TOP"
 binding = "media"
 bucket_name = "media"
 
-# ===== D1 DATABASE (FOR STATS ONLY) =====
 [[d1_databases]]
 binding = "DB"
 database_name = "music-stats"
@@ -29,6 +28,11 @@ database_id = "c1f2a231-d2aa-474d-9181-210a9fb11e7e"
 binding = "ADMIN_SESSIONS"
 id = "c05b34847d3b4d2c8102e60740e0f6d3"
 
+# ===== NEW KV FOR ACTIVITY LOGS =====
+[[kv_namespaces]]
+binding = "ACTIVITY_LOGS"
+id = "c05b34847d3b4d2c8102e60740e0f6d3"  # You can use same ID or create new
+
 # ===== CRON TRIGGERS =====
 [triggers]
-crons = ["0 0 * * *"]  # Runs at midnight every day - for trash cleanup
+crons = ["0 0 * * *"]
