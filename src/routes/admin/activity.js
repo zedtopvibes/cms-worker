@@ -3,7 +3,7 @@ import { getActivities } from '../../helpers/activity.js';
 
 export async function handleAdminActivity(req, env, ctx, auth) {
   const url = new URL(req.url);
-  const page = parseInt(url.searchParams.get('page')) || 1;
+  const page = parseInt(url.searchParams.get('page') || 1;
   const filter = url.searchParams.get('filter') || 'all';
   const days = parseInt(url.searchParams.get('days')) || 7;
   const ITEMS_PER_PAGE = 20;
