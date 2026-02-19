@@ -287,19 +287,20 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('Item restored successfully');
+                        alert('✅ ' + (result.message || 'Item restored successfully'));
                         location.reload();
                     } else {
-                        alert(result.message || 'Failed to restore item');
+                        alert('❌ ' + (result.message || 'Failed to restore item'));
+                        console.error('Restore failed:', result);
                     }
                 } catch (error) {
-                    alert('Error: ' + error.message);
+                    alert('❌ Error: ' + error.message);
                 }
             }
         }
         
         async function deletePermanently(id) {
-            if (confirm('Permanently delete this item? This cannot be undone.')) {
+            if (confirm('⚠️ Permanently delete this item? This cannot be undone.')) {
                 try {
                     const response = await fetch('/admin/trash/delete', {
                         method: 'POST',
@@ -310,19 +311,19 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('Item permanently deleted');
+                        alert('✅ ' + (result.message || 'Item permanently deleted'));
                         location.reload();
                     } else {
-                        alert(result.message || 'Failed to delete item');
+                        alert('❌ ' + (result.message || 'Failed to delete item'));
                     }
                 } catch (error) {
-                    alert('Error: ' + error.message);
+                    alert('❌ Error: ' + error.message);
                 }
             }
         }
         
         async function emptyTrash(type) {
-            if (confirm('Permanently delete all items in trash?')) {
+            if (confirm('⚠️ Permanently delete ALL items in trash? This cannot be undone.')) {
                 try {
                     const response = await fetch('/admin/trash/empty', {
                         method: 'POST',
@@ -333,13 +334,13 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('Trash emptied successfully');
+                        alert('✅ ' + (result.message || 'Trash emptied successfully'));
                         location.reload();
                     } else {
-                        alert(result.message || 'Failed to empty trash');
+                        alert('❌ ' + (result.message || 'Failed to empty trash'));
                     }
                 } catch (error) {
-                    alert('Error: ' + error.message);
+                    alert('❌ Error: ' + error.message);
                 }
             }
         }
@@ -498,28 +499,47 @@ function truncate(str, length) {
   return str.length > length ? str.substring(0, length) + '...' : str;
 }
 
-// ===== API HANDLERS =====
+// ===== FIXED API HANDLERS =====
 
 export async function handleTrashRestore(req, env, ctx, auth) {
   try {
     const { id } = await req.json();
-    console.log('Restore request for:', id);
+    console.log('🔄 Restore request for:', id);
+    console.log('👤 Auth session:', auth?.session);
     
-    const result = await restoreFromTrash(env, auth.session.id, id);
+    // FIX: Provide a default value if auth.session.id is undefined
+    const adminId = auth?.session?.id || 'system';
+    console.log('👤 Using adminId:', adminId);
+    
+    if (!id) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: '❌ Missing trash item ID'
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const result = await restoreFromTrash(env, adminId, id);
+    
+    // Log the full result for debugging
+    console.log('Restore result:', JSON.stringify(result, null, 2));
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? 'Item restored successfully' : 'Failed to restore item'),
-      error: result.error
+      message: result.message || (result.success ? '✅ Item restored successfully' : '❌ Failed to restore item'),
+      error: result.error,
+      details: result.debug || null
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
-    console.error('Restore handler error:', error);
+    console.error('❌ Restore handler error:', error);
     return new Response(JSON.stringify({
       success: false,
-      message: 'Error: ' + error.message,
-      error: error.message
+      message: '❌ Error: ' + error.message,
+      error: error.message,
+      stack: error.stack
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -529,19 +549,31 @@ export async function handleTrashRestore(req, env, ctx, auth) {
 export async function handleTrashDelete(req, env, ctx, auth) {
   try {
     const { id } = await req.json();
+    console.log('🗑️ Permanent delete request for:', id);
+    
+    if (!id) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: '❌ Missing trash item ID'
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
     const result = await deletePermanently(env, id);
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? 'Item permanently deleted' : 'Failed to delete'),
+      message: result.message || (result.success ? '✅ Item permanently deleted' : '❌ Failed to delete'),
       error: result.error
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
+    console.error('❌ Delete handler error:', error);
     return new Response(JSON.stringify({
       success: false,
-      message: 'Error: ' + error.message
+      message: '❌ Error: ' + error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -551,19 +583,22 @@ export async function handleTrashDelete(req, env, ctx, auth) {
 export async function handleTrashEmpty(req, env, ctx, auth) {
   try {
     const { type } = await req.json();
-    const result = await emptyTrash(env, type);
+    console.log('🧹 Empty trash request for type:', type);
+    
+    const result = await emptyTrash(env, type || 'all');
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? 'Trash emptied successfully' : 'Failed to empty trash'),
+      message: result.message || (result.success ? '✅ Trash emptied successfully' : '❌ Failed to empty trash'),
       count: result.count
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
+    console.error('❌ Empty trash error:', error);
     return new Response(JSON.stringify({
       success: false,
-      message: 'Error: ' + error.message
+      message: '❌ Error: ' + error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -573,18 +608,24 @@ export async function handleTrashEmpty(req, env, ctx, auth) {
 export async function handleTrashSettings(req, env, ctx, auth) {
   try {
     const settings = await req.json();
-    const result = await updateTrashSettings(env, auth.session.id, settings);
+    console.log('⚙️ Update settings request:', settings);
+    
+    // FIX: Provide a default value if auth.session.id is undefined
+    const adminId = auth?.session?.id || 'system';
+    
+    const result = await updateTrashSettings(env, adminId, settings);
     
     return new Response(JSON.stringify({
       success: result.success,
-      message: result.message || (result.success ? 'Settings saved' : 'Failed to save settings')
+      message: result.message || (result.success ? '✅ Settings saved' : '❌ Failed to save settings')
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
+    console.error('❌ Settings error:', error);
     return new Response(JSON.stringify({
       success: false,
-      message: 'Error: ' + error.message
+      message: '❌ Error: ' + error.message
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
