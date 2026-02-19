@@ -61,7 +61,8 @@ import { getDashboardStats } from '../../helpers/dashboardStats.js';
 import { formatNumber } from '../../helpers/formatting.js';
 
 // ===== ACTIVITY LOG IMPORTS =====
-import { handleAdminActivity } from './activity.js';
+// KEEP THIS - it's for the VIEWER page
+import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
 
 // ===== PAGE VIEWS MIGRATIONS =====
 import { handleAdminMigrations } from './migrate.js';
