@@ -1,4 +1,4 @@
-// ==================== ADMIN ACTIVITY LOG ====================
+// ==================== ADMIN  ACTIVITY LOG ====================
 import { formatNumber } from '../../helpers/formatting.js';
 
 export async function handleAdminActivity(req, env, ctx, auth) {
