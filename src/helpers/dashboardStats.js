@@ -1,4 +1,4 @@
-// ==================== DASHBOARD STATS HELPER (PURE R2 LOGS) ====================
+// ==================== DASHBOARD STATS HELPER ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from './storage.js';
 import { getAggregatedStats } from './db.js';
 import { 
@@ -15,26 +15,29 @@ import {
   getPlaysDownloadsSummary
 } from './playsDownloadsEnhanced.js';
 import { formatNumber } from './formatting.js';
-import { logActivity } from './activity.js';  // R2-based logging
 
-// ===== LOG ADMIN ACTIVITY (NOW ONLY R2) =====
-export async function logAdminActivity(env, adminId, action, itemType, itemId, itemName, details = {}) {
+// ===== LOG ADMIN ACTIVITY (KEPT FOR OTHER FILES) =====
+export async function logAdminActivity(env, adminId, action, itemType, itemId, details) {
   try {
-    // Log to R2 only
-    await logActivity(env, action, itemName || itemId, adminId, {
-      ...details,
-      type: itemType,
-      id: itemId
-    }, 'internal');
-    
+    await env.DB.prepare(
+      `INSERT INTO admin_activity (admin, action, item_type, item_id, details, ip)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(
+      adminId,
+      action,
+      itemType,
+      itemId,
+      typeof details === 'string' ? details : JSON.stringify(details),
+      'internal'
+    ).run();
     return true;
   } catch (error) {
-    console.error('Error logging admin activity to R2:', error);
+    console.error('Error logging admin activity:', error);
     return false;
   }
 }
 
-// ===== UPDATE DAILY STATS (KEPT FOR CRON - D1 STAYS FOR STATS) =====
+// ===== UPDATE DAILY STATS (KEPT FOR CRON) =====
 export async function updateDailyStats(env) {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -81,12 +84,6 @@ export async function updateDailyStats(env) {
       downloadsResult?.total || 0
     ).run();
     
-    // Log this activity to R2 (optional)
-    await logActivity(env, 'cron', 'daily_stats', 'system', {
-      action: 'update_daily_stats',
-      date: today
-    }, 'system');
-    
     console.log(`✅ Daily stats updated for ${today}`);
     return true;
   } catch (error) {
@@ -95,7 +92,6 @@ export async function updateDailyStats(env) {
   }
 }
 
-// ===== GET DASHBOARD STATS =====
 export async function getDashboardStats(env) {
   try {
     // Get counts
@@ -114,7 +110,7 @@ export async function getDashboardStats(env) {
     const newAlbums = Object.values(albums).filter(a => a.created > oneWeekAgo).length;
     const newArtists = Object.values(artists).filter(a => a.created > oneWeekAgo).length;
     
-    // ===== REAL DATA FROM D1 TABLES =====
+    // ===== REAL DATA FROM NEW TABLES =====
     // Get today's stats
     const summary = await getPlaysDownloadsSummary(env);
     const todayViews = await getTodayViews(env);
@@ -151,11 +147,11 @@ export async function getDashboardStats(env) {
       });
     }
     
-    // Get top content this week by VIEWS
+    // Get top content this week by VIEWS (not plays)
     const topContent = await getTopContentByViews(env);
     
-    // Get recent activity (FROM R2 LOGS)
-    const recentActivity = await getRecentActivityFromR2(env);
+    // Get recent activity (REAL DATA from admin_activity table)
+    const recentActivity = await getRecentActivity(env);
     
     return {
       // Today's stats
@@ -183,7 +179,7 @@ export async function getDashboardStats(env) {
       // Top content by VIEWS
       topContent,
       
-      // Recent activity (from R2)
+      // Recent activity
       recentActivity
     };
     
@@ -208,40 +204,6 @@ export async function getDashboardStats(env) {
       topContent: [],
       recentActivity: []
     };
-  }
-}
-
-// ===== GET RECENT ACTIVITY FROM R2 LOGS =====
-async function getRecentActivityFromR2(env) {
-  try {
-    const activity = [];
-    
-    // Get logs from R2
-    const logFile = await env.media.get('_logs/activity.json');
-    let logs = [];
-    
-    if (logFile) {
-      logs = JSON.parse(await logFile.text());
-    }
-    
-    // Take first 5 most recent logs
-    const recentLogs = logs.slice(0, 5);
-    
-    for (const log of recentLogs) {
-      activity.push({
-        icon: getActivityIcon(log.action),
-        iconBg: getActivityColor(log.action),
-        text: `${log.admin || 'System'} ${log.action} ${log.file || ''}`,
-        time: formatTimeAgo(new Date(log.time)),
-        link: log.details?.link || null
-      });
-    }
-    
-    return activity;
-    
-  } catch (error) {
-    console.error('Error getting recent activity from R2:', error);
-    return [];
   }
 }
 
@@ -290,6 +252,7 @@ async function getYesterdayDownloads(env) {
 // Format chart label
 function formatChartLabel(label) {
   if (!label) return '';
+  // Convert YYYY-MM-DD to DD/MM
   const parts = label.split('-');
   if (parts.length === 3) {
     return `${parts[2]}/${parts[1]}`;
@@ -311,7 +274,7 @@ function getTrendValue(change) {
   return '0';
 }
 
-// Get top content this week by VIEWS
+// Get top content this week by VIEWS (UPDATED)
 async function getTopContentByViews(env) {
   try {
     const topContent = [];
@@ -380,6 +343,51 @@ async function getTopContentByViews(env) {
   }
 }
 
+// Get recent activity (REAL DATA from admin_activity)
+async function getRecentActivity(env) {
+  try {
+    const activity = [];
+    
+    // Get recent admin activity from database
+    const adminActivity = await env.DB.prepare(
+      `SELECT * FROM admin_activity ORDER BY timestamp DESC LIMIT 5`
+    ).all();
+    
+    for (const log of adminActivity.results || []) {
+      activity.push({
+        icon: getActivityIcon(log.action),
+        iconBg: getActivityColor(log.action),
+        text: `${log.admin} ${log.action}d ${log.details || 'an item'}`,
+        time: formatTimeAgo(new Date(log.timestamp)),
+        link: log.link || null
+      });
+    }
+    
+    // If no admin activity, show recent uploads
+    if (activity.length === 0) {
+      const songList = await env.media.list({ prefix: "songs/", limit: 5 });
+      const songs = songList.objects || [];
+      
+      for (const song of songs) {
+        const fileName = song.key.split('/')[1];
+        activity.push({
+          icon: 'fa-cloud-upload-alt',
+          iconBg: '#ff5500',
+          text: `New song uploaded: ${fileName}`,
+          time: formatTimeAgo(new Date(song.uploaded)),
+          link: `/song/${encodeURIComponent(fileName)}`
+        });
+      }
+    }
+    
+    return activity;
+    
+  } catch (error) {
+    console.error('Error getting recent activity:', error);
+    return [];
+  }
+}
+
 // Helper to get activity icon
 function getActivityIcon(action) {
   const icons = {
@@ -387,14 +395,7 @@ function getActivityIcon(action) {
     'edit': 'fa-edit',
     'delete': 'fa-trash',
     'upload': 'fa-cloud-upload-alt',
-    'merge': 'fa-compress',
-    'restore': 'fa-undo',
-    'cron': 'fa-clock',
-    'play': 'fa-play',
-    'download': 'fa-download',
-    'login': 'fa-sign-in-alt',
-    'logout': 'fa-sign-out-alt',
-    'test': 'fa-vial'
+    'merge': 'fa-compress'
   };
   return icons[action] || 'fa-circle';
 }
@@ -406,14 +407,7 @@ function getActivityColor(action) {
     'edit': '#ffc107',
     'delete': '#dc3545',
     'upload': '#ff5500',
-    'merge': '#9b59b6',
-    'restore': '#28a745',
-    'cron': '#6c757d',
-    'play': '#ff5500',
-    'download': '#ff5500',
-    'login': '#6c5ce7',
-    'logout': '#6c5ce7',
-    'test': '#666'
+    'merge': '#9b59b6'
   };
   return colors[action] || '#6c757d';
 }
@@ -428,8 +422,7 @@ function formatTimeAgo(date) {
   
   if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
   if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-  return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) !== 1 ? 's' : ''} ago`;
+  return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
 }
 
 // Generate fallback weekly data
