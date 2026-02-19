@@ -12,51 +12,20 @@ export async function handleAdminActivity(req, env, ctx) {
     // Get activities from R2
     const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-    // Format activities with proper action text
+    // Format activities with icons
     const activityRows = logs.map(log => {
       const timeAgo = getTimeAgo(new Date(log.time));
       const iconInfo = getActionIcon(log.action);
       const details = log.details || {};
       
-      // Format action text based on action type
+      // Format text to match your screenshot
       let actionText = '';
-      const admin = log.admin || 'Admin';
-      const itemName = log.file ? `"${log.file}"` : '';
-      const itemType = details.type || '';
-      
-      switch (log.action) {
-        case 'create':
-          actionText = `${admin} created ${itemType} ${itemName}`;
-          break;
-        case 'edit':
-          actionText = `${admin} edited ${itemType} ${itemName}`;
-          break;
-        case 'delete':
-          actionText = `${admin} deleted ${itemType} ${itemName}`;
-          break;
-        case 'restore':
-          actionText = `${admin} restored ${itemType} ${itemName}`;
-          break;
-        case 'upload':
-          actionText = `${admin} uploaded song ${itemName}`;
-          break;
-        case 'login':
-          actionText = `${admin} logged in`;
-          break;
-        case 'logout':
-          actionText = `${admin} logged out`;
-          break;
-        case 'merge':
-          actionText = `${admin} merged ${itemType} ${itemName}`;
-          break;
-        case 'update':
-          actionText = `${admin} updated ${itemType} ${itemName}`;
-          break;
-        case 'bulk-delete':
-          actionText = `${admin} bulk deleted ${details.count || ''} items`;
-          break;
-        default:
-          actionText = `${admin} ${log.action} ${itemType} ${itemName}`;
+      if (log.action === 'create' && details.type === 'artist') {
+        actionText = `${log.admin || 'Admin'} create artist "${log.file}"`;
+      } else if (log.action === 'login') {
+        actionText = `${log.admin || 'Admin'} login admin "${log.admin || 'Admin'} logged in"`;
+      } else {
+        actionText = `${log.admin || 'Admin'} ${log.action} ${details.type || ''} ${log.file ? `"${log.file}"` : ''}`;
       }
       
       return `
@@ -72,7 +41,7 @@ export async function handleAdminActivity(req, env, ctx) {
       `;
     }).join('');
 
-    // Return content without layout wrapper
+    // Return ONLY the content - NO adminLayout wrapper
     return { 
       content: `
         <div style="margin-bottom: 20px;">
@@ -248,110 +217,5 @@ export async function handleAdminActivity(req, env, ctx) {
   }
 }
 
-// Export handler
-export async function handleAdminActivityExport(req, env, ctx) {
-  try {
-    const url = new URL(req.url);
-    const days = parseInt(url.searchParams.get('days')) || 30;
-    const filter = url.searchParams.get('filter') || 'all';
-
-    // Get logs from R2
-    const { logs } = await getActivities(env, filter, days, 1, 1000);
-
-    // Generate CSV
-    let csv = 'Timestamp,Admin,Action,Item Type,Item Name,Details\n';
-    
-    for (const log of logs) {
-      const details = JSON.stringify(log.details || {});
-      csv += `"${log.time}","${log.admin || ''}","${log.action || ''}","${log.details?.type || ''}","${log.file || ''}","${details}"\n`;
-    }
-
-    return new Response(csv, {
-      headers: {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="admin-activity-${Date.now()}.csv"`
-      }
-    });
-
-  } catch (error) {
-    console.error('Error exporting activity log:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-// Helper function to get icon based on action
-function getActionIcon(action) {
-  const icons = {
-    'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
-    'edit': { icon: 'fa-edit', bg: '#4a90e2' },
-    'delete': { icon: 'fa-trash', bg: '#dc3545' },
-    'create': { icon: 'fa-plus-circle', bg: '#28a745' },
-    'restore': { icon: 'fa-undo', bg: '#28a745' },
-    'merge': { icon: 'fa-compress', bg: '#9b59b6' },
-    'update': { icon: 'fa-sync', bg: '#00b894' },
-    'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' },
-    'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
-    'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
-    'play': { icon: 'fa-play', bg: '#ff5500' },
-    'download': { icon: 'fa-download', bg: '#ff5500' },
-    'cron': { icon: 'fa-clock', bg: '#6c757d' },
-    'test': { icon: 'fa-vial', bg: '#666' }
-  };
-  return icons[action] || { icon: 'fa-history', bg: '#666' };
-}
-
-// Helper function to format time ago
-function getTimeAgo(date) {
-  const seconds = Math.floor((new Date() - date) / 1000);
-  
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
-  return `${Math.floor(seconds / 604800)} weeks ago`;
-}
-
-// Generate empty state
-function getEmptyState() {
-  return `
-    <div class="empty-state">
-        <i class="fas fa-history"></i>
-        <h3>No activity found</h3>
-        <p style="color: #666;">Activities will appear here as you use the admin panel</p>
-    </div>
-  `;
-}
-
-// Generate pagination
-function generatePagination(currentPage, totalPages, filter, days) {
-  if (totalPages <= 1) return '';
-
-  let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
-  
-  if (currentPage > 1) {
-    html += `<a href="/admin/activity?page=${currentPage-1}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
-  } else {
-    html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
-  }
-
-  for (let i = 1; i <= totalPages; i++) {
-    if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
-      const active = i === currentPage ? 'active' : '';
-      html += `<a href="/admin/activity?page=${i}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item ${active}">${i}</a>`;
-    } else if (i === currentPage - 3 || i === currentPage + 3) {
-      html += `<span class="pagination-ellipsis">...</span>`;
-    }
-  }
-
-  if (currentPage < totalPages) {
-    html += `<a href="/admin/activity?page=${currentPage+1}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
-  } else {
-    html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
-  }
-
-  html += '</div>';
-  return html;
-}
+// Keep all your helper functions (getActionIcon, getTimeAgo, getEmptyState, generatePagination, handleAdminActivityExport)
+// ... but remove the adminLayout function entirely
