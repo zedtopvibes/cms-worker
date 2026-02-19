@@ -1,9 +1,5 @@
 // ==================== ADMIN ACTIVITY LOG ROUTE ====================
-// FIXED: Correct import paths (from helpers folder, not current directory)
 import { getActivities } from '../../helpers/activity.js';
-
-// These imports are NOT needed in activity.js - remove them!
-// The activity page doesn't need storage, db, stats etc.
 
 export async function handleAdminActivity(req, env, ctx) {
   const url = new URL(req.url);
@@ -16,7 +12,7 @@ export async function handleAdminActivity(req, env, ctx) {
     // Get activities from R2
     const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-    // Format activities with icons - using original design's simpler format
+    // Format activities with icons - EXACT original format
     const activityRows = logs.map(log => {
       const timeAgo = getTimeAgo(new Date(log.time));
       const iconInfo = getActionIcon(log.action);
@@ -29,7 +25,7 @@ export async function handleAdminActivity(req, env, ctx) {
           </div>
           <div class="activity-content">
             <div class="activity-text">
-              <strong>${log.admin || 'System'}</strong> ${log.action} 
+              <strong>${log.admin || 'Admin'}</strong> ${log.action} 
               ${details.type ? `<strong>${details.type}</strong>` : ''}
               ${log.file ? `"${log.file}"` : ''}
             </div>
@@ -39,7 +35,7 @@ export async function handleAdminActivity(req, env, ctx) {
       `;
     }).join('');
 
-    // ORIGINAL DESIGN HTML/CSS from the first version
+    // EXACT original HTML/CSS from the first version
     const content = `
       <div style="margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -196,7 +192,6 @@ export async function handleAdminActivity(req, env, ctx) {
       </script>
     `;
 
-    // Return the response with admin layout
     return new Response(adminLayout(content, 'Activity Log'), {
       headers: { 'Content-Type': 'text/html' }
     });
@@ -216,28 +211,26 @@ export async function handleAdminActivity(req, env, ctx) {
   }
 }
 
-// Export handler
 export async function handleAdminActivityExport(req, env, ctx) {
   try {
     const url = new URL(req.url);
     const days = parseInt(url.searchParams.get('days')) || 30;
     const filter = url.searchParams.get('filter') || 'all';
 
-    // Get logs from R2
     const { logs } = await getActivities(env, filter, days, 1, 1000);
 
-    // Generate CSV
-    let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
+    // Original CSV format
+    let csv = 'Timestamp,Admin ID,Action,Item Type,Item ID,Item Name\n';
     
     for (const log of logs) {
-      const details = JSON.stringify(log.details || {});
-      csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || ''}","${log.ip || ''}","${details}"\n`;
+      const details = log.details || {};
+      csv += `"${log.time}","${log.admin || ''}","${log.action || ''}","${details.type || ''}","${details.id || ''}","${log.file || ''}"\n`;
     }
 
     return new Response(csv, {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="activity-log-${Date.now()}.csv"`
+        'Content-Disposition': `attachment; filename="admin-activity-${Date.now()}.csv"`
       }
     });
 
@@ -250,7 +243,7 @@ export async function handleAdminActivityExport(req, env, ctx) {
   }
 }
 
-// Helper function to get icon based on action
+// Original icon mapping
 function getActionIcon(action) {
   const icons = {
     'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
@@ -263,15 +256,12 @@ function getActionIcon(action) {
     'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' },
     'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
     'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
-    'play': { icon: 'fa-play', bg: '#ff5500' },
-    'download': { icon: 'fa-download', bg: '#ff5500' },
-    'cron': { icon: 'fa-clock', bg: '#6c757d' },
     'test': { icon: 'fa-vial', bg: '#666' }
   };
   return icons[action] || { icon: 'fa-history', bg: '#666' };
 }
 
-// Helper function to format time ago (simpler version from original)
+// Original time ago formatter
 function getTimeAgo(date) {
   const seconds = Math.floor((new Date() - date) / 1000);
   
@@ -282,7 +272,7 @@ function getTimeAgo(date) {
   return `${Math.floor(seconds / 604800)} weeks ago`;
 }
 
-// Generate empty state
+// Original empty state
 function getEmptyState() {
   return `
     <div class="empty-state">
@@ -293,7 +283,7 @@ function getEmptyState() {
   `;
 }
 
-// Generate pagination
+// Original pagination
 function generatePagination(currentPage, totalPages, filter, days) {
   if (totalPages <= 1) return '';
 
@@ -324,7 +314,7 @@ function generatePagination(currentPage, totalPages, filter, days) {
   return html;
 }
 
-// You need an adminLayout function - add this or import it
+// Original admin layout
 function adminLayout(content, title) {
   return `<!DOCTYPE html>
 <html>
