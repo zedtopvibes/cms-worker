@@ -1,5 +1,6 @@
 // ==================== PURE R2 TRASH HELPER (FULL FIXED CODE) ====================
 import { getAlbums, saveAlbums, getArtists, saveArtists, getPlaylists, savePlaylists, getMetadata, saveMetadata } from './storage.js';
+import { logActivity } from './activity.js';  // ADD THIS IMPORT
 
 // Move item to trash - pure R2
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
@@ -149,7 +150,7 @@ async function moveSongToTrash(env, songId, trashPrefix) {
   return { files, totalSize };
 }
 
-// Restore from trash
+// Restore from trash - UPDATED WITH LOGGING
 export async function restoreFromTrash(env, adminId, trashKey) {
   console.log('🔄 Restoring from trash:', trashKey);
 
@@ -193,6 +194,14 @@ export async function restoreFromTrash(env, adminId, trashKey) {
     // Restore metadata in storage (for albums/artists/playlists)
     await restoreMetadataInStorage(env, metadata);
 
+    // ✅ ADD THIS: Log the restore activity
+    await logActivity(env, 'restore', metadata.itemName, adminId, {
+      type: metadata.itemType,
+      id: metadata.itemId,
+      fromTrash: true,
+      files: restoredFiles.length
+    }, 'internal');
+
     return {
       success: true,
       message: `✅ Restored ${metadata.itemName} (${restoredFiles.length} files)`,
@@ -201,6 +210,12 @@ export async function restoreFromTrash(env, adminId, trashKey) {
 
   } catch (error) {
     console.error('❌ Restore error:', error);
+    
+    // ❌ Also log failed restore attempts
+    await logActivity(env, 'restore_failed', trashKey, adminId, {
+      error: error.message
+    }, 'internal').catch(() => {});
+    
     return {
       success: false,
       message: `❌ Error: ${error.message}`
@@ -239,7 +254,7 @@ async function restoreMetadataInStorage(env, metadata) {
   }
 }
 
-// Permanently delete from trash
+// Permanently delete from trash - UPDATED WITH LOGGING
 export async function deletePermanently(env, trashKey) {
   console.log('🗑️ Permanently deleting from trash:', trashKey);
 
@@ -264,6 +279,14 @@ export async function deletePermanently(env, trashKey) {
 
     // Delete metadata file
     await env.media.delete(trashKey);
+
+    // ✅ ADD THIS: Log permanent deletion
+    await logActivity(env, 'permanent_delete', metadata.itemName, 'system', {
+      type: metadata.itemType,
+      id: metadata.itemId,
+      deletedBy: metadata.deletedBy,
+      files: metadata.files.length
+    }, 'internal');
 
     return {
       success: true,
