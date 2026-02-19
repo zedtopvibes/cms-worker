@@ -32,12 +32,14 @@ export default {
       // ===== ADMIN ROUTES (Highest priority) =====
       if (path.startsWith("/admin")) {
         // Handle specific admin routes before passing to general handler
-        if (path === "/admin/activity") {
-          return await handleAdminActivity(req, env, ctx);
-        }
-        if (path === "/admin/activity/export") {
-          return await handleAdminActivityExport(req, env, ctx);
-        }
+        // ===== ACTIVITY LOG =====
+if (path === '/activity') {
+  const result = await handleAdminActivity(req, env, ctx, auth);
+  // result should be { title, content }
+  return new Response(adminLayout(result.title, result.content, auth, 'activity'), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
         
         // Pass through to main admin handler
         return await handleAdmin(req, env, ctx);
