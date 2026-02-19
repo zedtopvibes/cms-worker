@@ -12,7 +12,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
     // Get activities from R2
     const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-    // Format activities with icons - SIMPLE design like your dashboard
+    // Format activities with icons - SIMPLE design
     const activityRows = logs.map(log => {
       const timeAgo = getTimeAgo(new Date(log.time));
       const iconInfo = getActionIcon(log.action);
@@ -63,7 +63,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       `;
     }).join('');
 
-    // CONTENT ONLY - no layout wrapper
+    // EXACT HTML/CSS from the design - NO layout wrapper
     const content = `
       <div style="margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -220,7 +220,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       </script>
     `;
 
-    // Return ONLY content and title - main router adds the layout
+    // Return ONLY content and title - NO layout, NO Response
     return { 
       title: 'Activity Log', 
       content: content 
@@ -274,7 +274,7 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
   }
 }
 
-// Helper functions (keep all of these)
+// Helper functions
 function getActionIcon(action) {
   const icons = {
     'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
