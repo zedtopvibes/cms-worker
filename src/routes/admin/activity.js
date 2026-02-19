@@ -1,7 +1,12 @@
-// ==================== ADMIN ACTIVITY LOG (PURE R2 - ORIGINAL DESIGN) ====================
+
+// ==================== ADMIN ACTIVITY LOG ROUTE ====================
+// FIXED: Correct import paths (from helpers folder, not current directory)
 import { getActivities } from '../../helpers/activity.js';
 
-export async function handleAdminActivity(req, env, ctx, auth) {
+// These imports are NOT needed in activity.js - remove them!
+// The activity page doesn't need storage, db, stats etc.
+
+export async function handleAdminActivity(req, env, ctx) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
   const filter = url.searchParams.get('filter') || 'all';
@@ -12,7 +17,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
     // Get activities from R2
     const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-    // Format activities with icons - EXACT same HTML structure
+    // Format activities with icons
     const activityRows = logs.map(log => {
       const timeAgo = getTimeAgo(new Date(log.time));
       const iconInfo = getActionIcon(log.action);
@@ -26,16 +31,16 @@ export async function handleAdminActivity(req, env, ctx, auth) {
           <div class="activity-content">
             <div class="activity-text">
               <strong>${log.admin || 'System'}</strong> ${log.action} 
-              ${details.type ? `<strong>${details.type}</strong>` : ''}
-              ${log.file ? `"${log.file}"` : ''}
+              ${log.file ? `<strong>${log.file}</strong>` : ''}
+              ${details.type ? `(${details.type})` : ''}
             </div>
-            <div class="activity-time">${timeAgo}</div>
+            <div class="activity-time">${timeAgo} • ${new Date(log.time).toLocaleString()}</div>
+            ${Object.keys(details).length > 0 ? `<div class="activity-details">${JSON.stringify(details)}</div>` : ''}
           </div>
         </div>
       `;
     }).join('');
 
-    // EXACT same HTML/CSS as original
     const content = `
       <div style="margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -66,6 +71,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
                           <option value="1" ${days === 1 ? 'selected' : ''}>Last 24 Hours</option>
                           <option value="7" ${days === 7 ? 'selected' : ''}>Last 7 Days</option>
                           <option value="30" ${days === 30 ? 'selected' : ''}>Last 30 Days</option>
+                          <option value="90" ${days === 90 ? 'selected' : ''}>Last 90 Days</option>
                           <option value="0" ${days === 0 ? 'selected' : ''}>All Time</option>
                       </select>
                   </div>
@@ -145,6 +151,16 @@ export async function handleAdminActivity(req, env, ctx, auth) {
               color: #999;
           }
           
+          .activity-details {
+              font-size: 0.7rem;
+              color: #666;
+              margin-top: 5px;
+              padding: 3px 8px;
+              background: #f5f5f5;
+              border-radius: 4px;
+              display: inline-block;
+          }
+          
           .empty-state {
               text-align: center;
               padding: 60px 20px;
@@ -192,27 +208,28 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       </script>
     `;
 
-    // Return in the same format as original
-    return { content, title: 'Activity Log' };
+    // Return the response with admin layout
+    return new Response(adminLayout(content, 'Activity Log'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
 
   } catch (error) {
     console.error('Error in activity log:', error);
-    return { 
-      content: `
-        <div style="padding: 40px; text-align: center;">
-          <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
-          <h3>Error Loading Activity Log</h3>
-          <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
-          <a href="/admin" class="btn btn-primary">Back to Dashboard</a>
-        </div>
-      `, 
-      title: 'Error' 
-    };
+    return new Response(adminLayout(`
+      <div style="padding: 40px; text-align: center;">
+        <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
+        <h3>Error Loading Activity Log</h3>
+        <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+        <a href="/admin" class="btn btn-primary">Back to Dashboard</a>
+      </div>
+    `, 'Error'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
   }
 }
 
 // Export handler
-export async function handleAdminActivityExport(req, env, ctx, auth) {
+export async function handleAdminActivityExport(req, env, ctx) {
   try {
     const url = new URL(req.url);
     const days = parseInt(url.searchParams.get('days')) || 30;
@@ -221,18 +238,18 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
     // Get logs from R2
     const { logs } = await getActivities(env, filter, days, 1, 1000);
 
-    // Generate CSV - EXACT same format as original
-    let csv = 'Timestamp,Admin ID,Action,Item Type,Item ID,Item Name\n';
+    // Generate CSV
+    let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
     
     for (const log of logs) {
-      const details = log.details || {};
-      csv += `"${log.time}","${log.admin || ''}","${log.action || ''}","${details.type || ''}","${details.id || ''}","${log.file || ''}"\n`;
+      const details = JSON.stringify(log.details || {});
+      csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || ''}","${log.ip || ''}","${details}"\n`;
     }
 
     return new Response(csv, {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="admin-activity-${Date.now()}.csv"`
+        'Content-Disposition': `attachment; filename="activity-log-${Date.now()}.csv"`
       }
     });
 
@@ -245,7 +262,7 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
   }
 }
 
-// Helper function to get icon based on action (EXACT same as original)
+// Helper function to get icon based on action
 function getActionIcon(action) {
   const icons = {
     'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
@@ -266,7 +283,7 @@ function getActionIcon(action) {
   return icons[action] || { icon: 'fa-history', bg: '#666' };
 }
 
-// Helper function to format time ago (EXACT same as original)
+// Helper function to format time ago
 function getTimeAgo(date) {
   const seconds = Math.floor((new Date() - date) / 1000);
   
@@ -274,10 +291,11 @@ function getTimeAgo(date) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
   if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
-  return `${Math.floor(seconds / 604800)} weeks ago`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 604800)} weeks ago`;
+  return `${Math.floor(seconds / 2592000)} months ago`;
 }
 
-// Generate empty state (EXACT same as original)
+// Generate empty state
 function getEmptyState() {
   return `
     <div class="empty-state">
@@ -288,7 +306,7 @@ function getEmptyState() {
   `;
 }
 
-// Generate pagination (EXACT same as original)
+// Generate pagination
 function generatePagination(currentPage, totalPages, filter, days) {
   if (totalPages <= 1) return '';
 
@@ -317,4 +335,102 @@ function generatePagination(currentPage, totalPages, filter, days) {
 
   html += '</div>';
   return html;
+}
+
+// You need an adminLayout function - add this or import it
+function adminLayout(content, title) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title} - Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+        }
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+        }
+        .top-bar {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #ff5500;
+            color: white;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .form-control {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .pagination {
+            display: flex;
+            gap: 5px;
+            margin-top: 20px;
+        }
+        .pagination-item {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #333;
+        }
+        .pagination-item.active {
+            background: #ff5500;
+            color: white;
+            border-color: #ff5500;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="sidebar">
+            <!-- Your sidebar content -->
+        </div>
+        <div class="main-content">
+            <div class="top-bar">
+                <h2>${title}</h2>
+                <div>Admin</div>
+            </div>
+            ${content}
+        </div>
+    </div>
+</body>
+</html>`;
 }
