@@ -1,8 +1,7 @@
-// ==================== ADMIN ACTIVITY LOG ====================
-// MODIFIED: Using R2 instead of D1 database
-import { formatNumber } from '../../helpers/formatting.js';
+// ==================== ADMIN ACTIVITY LOG ROUTE ====================
+import { getActivities } from '../../helpers/activity.js';
 
-export async function handleAdminActivity(req, env, ctx, auth) {
+export async function handleAdminActivity(req, env, ctx) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
   const filter = url.searchParams.get('filter') || 'all';
@@ -11,14 +10,14 @@ export async function handleAdminActivity(req, env, ctx, auth) {
 
   try {
     // Get activities from R2
-    const { activities, totalItems, actions } = await getActivitiesFromR2(env, filter, days, page, ITEMS_PER_PAGE);
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+    const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-    // Format activities with icons
-    const activityRows = activities.map(log => {
-      const timeAgo = getTimeAgo(new Date(log.timestamp));
+    // Format activities with icons - SIMPLIFIED to match Code 1
+    const activityRows = logs.map(log => {
+      const timeAgo = getTimeAgo(new Date(log.time));
       const iconInfo = getActionIcon(log.action);
       
+      // Use consistent field names (map log fields to match Code 1 expectations)
       return `
         <div class="activity-item">
           <div class="activity-icon" style="background: ${iconInfo.bg};">
@@ -26,9 +25,9 @@ export async function handleAdminActivity(req, env, ctx, auth) {
           </div>
           <div class="activity-content">
             <div class="activity-text">
-              <strong>${log.admin_id || 'Admin'}</strong> ${log.action} 
-              <strong>${log.item_type}</strong> 
-              "${log.item_name || log.item_id}"
+              <strong>${log.admin || 'Admin'}</strong> ${log.action} 
+              <strong>${log.file ? 'file' : 'item'}</strong> 
+              "${log.file || log.id || ''}"
             </div>
             <div class="activity-time">${timeAgo}</div>
           </div>
@@ -40,21 +39,21 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       <div style="margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
               <h2 style="margin:0;"><i class="fas fa-history" style="color: #ff5500;"></i> Activity Log</h2>
-              <a href="/admin/activity/export" class="btn btn-secondary">
+              <a href="/admin/activity/export?days=${days}&filter=${filter}" class="btn btn-secondary">
                   <i class="fas fa-download"></i> Export Log
               </a>
           </div>
           
-          <!-- Filters -->
+          <!-- Filters - Code 1 style -->
           <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
               <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                   <div style="flex: 1; min-width: 150px;">
                       <label style="display: block; margin-bottom: 5px; font-size: 0.8rem; color: #666;">Action</label>
                       <select id="filterSelect" class="form-control">
                           <option value="all" ${filter === 'all' ? 'selected' : ''}>All Actions</option>
-                          ${actions.map(a => `
-                              <option value="${a}" ${filter === a ? 'selected' : ''}>
-                                  ${a.charAt(0).toUpperCase() + a.slice(1)}
+                          ${actions.map(action => `
+                              <option value="${action}" ${filter === action ? 'selected' : ''}>
+                                  ${action.charAt(0).toUpperCase() + action.slice(1)}
                               </option>
                           `).join('')}
                       </select>
@@ -81,13 +80,13 @@ export async function handleAdminActivity(req, env, ctx, auth) {
               </div>
           </div>
           
-          <!-- Results Summary -->
+          <!-- Results Summary - Code 1 style -->
           <div style="background: #e8f4fd; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-              <span><i class="fas fa-list"></i> Showing <strong>${activities.length}</strong> of <strong>${totalItems}</strong> activities</span>
+              <span><i class="fas fa-list"></i> Showing <strong>${logs.length}</strong> of <strong>${total}</strong> activities</span>
               <span><i class="fas fa-clock"></i> Page ${page} of ${totalPages}</span>
           </div>
           
-          <!-- Activity List -->
+          <!-- Activity List - Code 1 style -->
           <div class="activity-list">
               ${activityRows || getEmptyState()}
           </div>
@@ -97,6 +96,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       </div>
       
       <style>
+          /* EXACT CSS FROM CODE 1 */
           .activity-list {
               display: flex;
               flex-direction: column;
@@ -168,6 +168,69 @@ export async function handleAdminActivity(req, env, ctx, auth) {
                   font-size: 1rem;
               }
           }
+          
+          /* Additional styles needed for the page */
+          .btn {
+              display: inline-block;
+              padding: 8px 16px;
+              border: none;
+              border-radius: 6px;
+              font-size: 0.9rem;
+              font-weight: 600;
+              cursor: pointer;
+              text-decoration: none;
+              transition: all 0.2s;
+          }
+          
+          .btn-primary {
+              background: #ff5500;
+              color: white;
+          }
+          
+          .btn-secondary {
+              background: #6c757d;
+              color: white;
+          }
+          
+          .form-control {
+              width: 100%;
+              padding: 8px 12px;
+              border: 1px solid #ddd;
+              border-radius: 6px;
+              font-size: 0.9rem;
+          }
+          
+          .pagination {
+              display: flex;
+              gap: 5px;
+              margin-top: 30px;
+              justify-content: center;
+          }
+          
+          .pagination-item {
+              padding: 8px 12px;
+              border: 1px solid #ddd;
+              border-radius: 4px;
+              text-decoration: none;
+              color: #333;
+              background: white;
+          }
+          
+          .pagination-item.active {
+              background: #ff5500;
+              color: white;
+              border-color: #ff5500;
+          }
+          
+          .pagination-item.disabled {
+              opacity: 0.5;
+              cursor: not-allowed;
+          }
+          
+          .pagination-ellipsis {
+              padding: 8px 12px;
+              color: #666;
+          }
       </style>
       
       <script>
@@ -183,78 +246,59 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       </script>
     `;
 
+    // Return as object instead of HTML response (to match Code 1's pattern)
     return { content, title: 'Activity Log' };
 
   } catch (error) {
     console.error('Error in activity log:', error);
     return { 
-      content: `<div class="error-message">Error loading activity log: ${error.message}</div>`, 
+      content: `
+        <div style="padding: 40px; text-align: center; background: white; border-radius: 12px;">
+          <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
+          <h3 style="margin-bottom: 10px;">Error Loading Activity Log</h3>
+          <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+          <a href="/admin/activity" class="btn btn-primary">Try Again</a>
+        </div>
+      `, 
       title: 'Error' 
     };
   }
 }
 
-// ==================== R2 FUNCTIONS ====================
-
-async function getActivitiesFromR2(env, filter, days, page, itemsPerPage) {
+// Export handler
+export async function handleAdminActivityExport(req, env, ctx) {
   try {
-    // List all activity log files from R2
-    // Assuming logs are stored with keys like: activity/YYYY-MM-DD-HH-MM-SS.json or activity/timestamp-uuid.json
-    const objects = await env.R2_BUCKET.list({ prefix: 'activity/' });
+    const url = new URL(req.url);
+    const days = parseInt(url.searchParams.get('days')) || 30;
+    const filter = url.searchParams.get('filter') || 'all';
+
+    const { logs } = await getActivities(env, filter, days, 1, 1000);
+
+    // Generate CSV
+    let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
     
-    let allActivities = [];
-    
-    // Fetch each log file
-    for (const object of objects.objects) {
-      try {
-        const file = await env.R2_BUCKET.get(object.key);
-        if (file) {
-          const logData = await file.json();
-          
-          // Add timestamp from object metadata or use upload date
-          allActivities.push({
-            timestamp: object.uploaded.toISOString(),
-            ...logData
-          });
-        }
-      } catch (err) {
-        console.error(`Error parsing log file ${object.key}:`, err);
-        // Continue with other files
+    for (const log of logs) {
+      const details = JSON.stringify(log.details || {});
+      csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || ''}","${log.ip || ''}","${details}"\n`;
+    }
+
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="activity-log-${Date.now()}.csv"`
       }
-    }
-    
-    // Sort by timestamp (newest first)
-    allActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
-    // Apply time filter
-    if (days > 0) {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - days);
-      allActivities = allActivities.filter(log => new Date(log.timestamp) > cutoffDate);
-    }
-    
-    // Apply action filter
-    if (filter !== 'all') {
-      allActivities = allActivities.filter(log => log.action === filter);
-    }
-    
-    // Get unique actions for filter dropdown
-    const actions = [...new Set(allActivities.map(log => log.action))].sort();
-    
-    // Calculate pagination
-    const totalItems = allActivities.length;
-    const start = (page - 1) * itemsPerPage;
-    const activities = allActivities.slice(start, start + itemsPerPage);
-    
-    return { activities, totalItems, actions };
-    
+    });
+
   } catch (error) {
-    console.error('Error reading from R2:', error);
-    return { activities: [], totalItems: 0, actions: [] };
+    console.error('Error exporting activity log:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 
-// Helper function to get icon based on action
+// Helper function to get icon based on action - SIMPLIFIED to match Code 1
 function getActionIcon(action) {
   const icons = {
     'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
@@ -264,15 +308,14 @@ function getActionIcon(action) {
     'merge': { icon: 'fa-compress', bg: '#9b59b6' },
     'update': { icon: 'fa-sync', bg: '#00b894' },
     'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' },
-    'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
-    'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
     'restore': { icon: 'fa-undo', bg: '#28a745' },
-    'download': { icon: 'fa-download', bg: '#ff5500' }
+    'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
+    'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' }
   };
   return icons[action] || { icon: 'fa-circle', bg: '#666' };
 }
 
-// Helper function to format time ago
+// Helper function to format time ago - SIMPLIFIED to match Code 1
 function getTimeAgo(date) {
   const seconds = Math.floor((new Date() - date) / 1000);
   
@@ -283,7 +326,7 @@ function getTimeAgo(date) {
   return `${Math.floor(seconds / 604800)} weeks ago`;
 }
 
-// Generate empty state
+// Generate empty state - Code 1 style
 function getEmptyState() {
   return `
     <div class="empty-state">
@@ -294,7 +337,7 @@ function getEmptyState() {
   `;
 }
 
-// Generate pagination
+// Generate pagination - SIMPLIFIED to match Code 1
 function generatePagination(currentPage, totalPages, filter, days) {
   if (totalPages <= 1) return '';
 
@@ -323,37 +366,4 @@ function generatePagination(currentPage, totalPages, filter, days) {
 
   html += '</div>';
   return html;
-}
-
-// Export activity log as CSV
-export async function handleAdminActivityExport(req, env, ctx, auth) {
-  try {
-    const url = new URL(req.url);
-    const days = parseInt(url.searchParams.get('days')) || 30;
-    const filter = url.searchParams.get('filter') || 'all';
-
-    // Get all logs (unpaginated) for export
-    const { activities } = await getActivitiesFromR2(env, filter, days, 1, 10000); // Get up to 10000 records
-
-    // Generate CSV
-    let csv = 'Timestamp,Admin ID,Action,Item Type,Item ID,Item Name\n';
-    
-    for (const log of activities) {
-      csv += `"${log.timestamp}","${log.admin_id || ''}","${log.action}","${log.item_type}","${log.item_id}","${log.item_name || ''}"\n`;
-    }
-
-    return new Response(csv, {
-      headers: {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="admin-activity-${Date.now()}.csv"`
-      }
-    });
-
-  } catch (error) {
-    console.error('Error exporting activity log:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
 }
