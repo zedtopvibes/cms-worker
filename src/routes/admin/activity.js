@@ -1,4 +1,4 @@
-// ==================== ADMIN ACTIVITY LOG ROUTE ====================
+// ==================== ADMIN ACTIVITY LOG ROUTE ==================== 
 import { getActivities } from '../../helpers/activity.js';
 
 export async function handleAdminActivity(req, env, ctx) {
