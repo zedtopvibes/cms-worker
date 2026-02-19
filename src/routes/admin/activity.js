@@ -1,4 +1,4 @@
-// ==================== ADMIN  ACTIVITY LOG ====================
+// ==================== ADMIN ACTIVITY LOG ====================
 import { formatNumber } from '../../helpers/formatting.js';
 
 export async function handleAdminActivity(req, env, ctx, auth) {
@@ -8,45 +8,41 @@ export async function handleAdminActivity(req, env, ctx, auth) {
   const days = parseInt(url.searchParams.get('days')) || 7;
   const ITEMS_PER_PAGE = 20;
 
-  // Build query parameters safely
-  const params = [];
-  let whereClause = 'WHERE 1=1';
-  
-  // Date filter
+  // Build date filter
+  let dateFilter = '';
   if (days > 0) {
-    whereClause += ` AND timestamp >= datetime('now', ?)`;
-    params.push(`-${days} days`);
+    dateFilter = `AND timestamp > datetime('now', '-${days} days')`;
   }
 
-  // Action filter
+  // Build action filter
+  let actionFilter = '';
   if (filter !== 'all') {
-    whereClause += ` AND action = ?`;
-    params.push(filter);
+    actionFilter = `AND action = '${filter}'`;
   }
 
   // Get total count for pagination
   const countResult = await env.DB.prepare(
-    `SELECT COUNT(*) as total FROM admin_activity ${whereClause}`
-  ).bind(...params).first();
+    `SELECT COUNT(*) as total FROM admin_activity 
+     WHERE 1=1 ${dateFilter} ${actionFilter}`
+  ).all();
   
-  const totalItems = countResult?.total || 0;
+  const totalItems = countResult.results[0]?.total || 0;
   const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
   const offset = (page - 1) * ITEMS_PER_PAGE;
 
-  // Get activity logs with pagination params
-  const logParams = [...params, ITEMS_PER_PAGE, offset];
+  // Get activity logs
   const { results } = await env.DB.prepare(
     `SELECT * FROM admin_activity 
-     ${whereClause}
+     WHERE 1=1 ${dateFilter} ${actionFilter}
      ORDER BY timestamp DESC 
      LIMIT ? OFFSET ?`
-  ).bind(...logParams).all();
+  ).bind(ITEMS_PER_PAGE, offset).all();
 
   const activities = results || [];
 
   // Get unique actions for filter dropdown
   const { results: actionResults } = await env.DB.prepare(
-    `SELECT DISTINCT action FROM admin_activity WHERE action IS NOT NULL ORDER BY action`
+    `SELECT DISTINCT action FROM admin_activity ORDER BY action`
   ).all();
   
   const actions = actionResults || [];
@@ -64,8 +60,8 @@ export async function handleAdminActivity(req, env, ctx, auth) {
         <div class="activity-content">
           <div class="activity-text">
             <strong>${log.admin_id || 'Admin'}</strong> ${log.action} 
-            ${log.item_type ? `<strong>${log.item_type}</strong>` : ''}
-            ${log.item_name ? `"${log.item_name}"` : ''}
+            <strong>${log.item_type}</strong> 
+            "${log.item_name || log.item_id}"
           </div>
           <div class="activity-time">${timeAgo}</div>
         </div>
@@ -195,15 +191,6 @@ export async function handleAdminActivity(req, env, ctx, auth) {
             margin-bottom: 15px;
         }
         
-        .empty-state h3 {
-            margin-bottom: 10px;
-            color: #333;
-        }
-        
-        .empty-state p {
-            color: #666;
-        }
-        
         @media (max-width: 480px) {
             .activity-item {
                 flex-wrap: wrap;
@@ -220,7 +207,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
         function applyFilters() {
             const filter = document.getElementById('filterSelect').value;
             const days = document.getElementById('daysSelect').value;
-            window.location.href = '/admin/activity?filter=' + encodeURIComponent(filter) + '&days=' + days;
+            window.location.href = '/admin/activity?filter=' + filter + '&days=' + days;
         }
         
         function clearFilters() {
@@ -241,12 +228,9 @@ function getActionIcon(action) {
     'create': { icon: 'fa-plus-circle', bg: '#28a745' },
     'merge': { icon: 'fa-compress', bg: '#9b59b6' },
     'update': { icon: 'fa-sync', bg: '#00b894' },
-    'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' },
-    'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
-    'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
-    'test': { icon: 'fa-vial', bg: '#666' }
+    'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' }
   };
-  return icons[action] || { icon: 'fa-history', bg: '#666' };
+  return icons[action] || { icon: 'fa-circle', bg: '#666' };
 }
 
 // Helper function to format time ago
@@ -278,7 +262,7 @@ function generatePagination(currentPage, totalPages, filter, days) {
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
   
   if (currentPage > 1) {
-    html += `<a href="/admin/activity?page=${currentPage-1}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
+    html += `<a href="/admin/activity?page=${currentPage-1}&filter=${filter}&days=${days}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
   } else {
     html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
   }
@@ -286,14 +270,14 @@ function generatePagination(currentPage, totalPages, filter, days) {
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
       const active = i === currentPage ? 'active' : '';
-      html += `<a href="/admin/activity?page=${i}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item ${active}">${i}</a>`;
+      html += `<a href="/admin/activity?page=${i}&filter=${filter}&days=${days}" class="pagination-item ${active}">${i}</a>`;
     } else if (i === currentPage - 3 || i === currentPage + 3) {
       html += `<span class="pagination-ellipsis">...</span>`;
     }
   }
 
   if (currentPage < totalPages) {
-    html += `<a href="/admin/activity?page=${currentPage+1}&filter=${encodeURIComponent(filter)}&days=${days}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
+    html += `<a href="/admin/activity?page=${currentPage+1}&filter=${filter}&days=${days}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
   } else {
     html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
   }
@@ -307,26 +291,22 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
   const url = new URL(req.url);
   const days = parseInt(url.searchParams.get('days')) || 30;
 
-  // Build query safely
-  const params = [];
-  let whereClause = 'WHERE 1=1';
-  
+  let dateFilter = '';
   if (days > 0) {
-    whereClause += ` AND timestamp >= datetime('now', ?)`;
-    params.push(`-${days} days`);
+    dateFilter = `AND timestamp > datetime('now', '-${days} days')`;
   }
 
   const { results } = await env.DB.prepare(
     `SELECT * FROM admin_activity 
-     ${whereClause}
+     WHERE 1=1 ${dateFilter}
      ORDER BY timestamp DESC`
-  ).bind(...params).all();
+  ).all();
 
   // Generate CSV
   let csv = 'Timestamp,Admin ID,Action,Item Type,Item ID,Item Name\n';
   
   for (const log of results || []) {
-    csv += `"${log.timestamp}","${log.admin_id || ''}","${log.action || ''}","${log.item_type || ''}","${log.item_id || ''}","${log.item_name || ''}"\n`;
+    csv += `"${log.timestamp}","${log.admin_id || ''}","${log.action}","${log.item_type}","${log.item_id}","${log.item_name || ''}"\n`;
   }
 
   return new Response(csv, {
