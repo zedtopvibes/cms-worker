@@ -7,11 +7,11 @@ import { getMetadata, saveMetadata } from './storage.js';
 // Move item to trash
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
   console.log('🗑️ Moving to trash:', { itemType, itemId, itemName });
-  
+
   try {
     const settings = await getTrashSettings(env);
     const retentionDays = settings?.retention_days || 30;
-    
+
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + retentionDays);
     
@@ -26,79 +26,18 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
         trashPaths = files.paths || [];
         totalSize = files.totalSize || 0;
         break;
-        
       case 'album':
-        // For albums, move thumbnail to trash folder
-        const albumThumbPath = `albums/thumbnails/${itemId}.jpg`;
-        const trashAlbumPath = `trash/${albumThumbPath}`;
-        
-        try {
-          const albumFile = await env.media.get(albumThumbPath);
-          if (albumFile) {
-            const fileData = await albumFile.arrayBuffer();
-            await env.media.put(trashAlbumPath, fileData, {
-              httpMetadata: albumFile.httpMetadata,
-              customMetadata: albumFile.customMetadata
-            });
-            await env.media.delete(albumThumbPath);
-            trashPaths = [trashAlbumPath];
-            totalSize = albumFile.size || 0;
-            console.log(`Moved album thumbnail: ${albumThumbPath} -> ${trashAlbumPath}`);
-          }
-        } catch (e) {
-          console.log(`No album thumbnail: ${albumThumbPath}`);
-          trashPaths = [trashAlbumPath];
-        }
+        trashPaths = [`trash/albums/thumbnails/${itemId}.jpg`];
         break;
-        
       case 'artist':
-        // For artists, move thumbnail to trash folder
-        const artistThumbPath = `artists/thumbnails/${itemId}.jpg`;
-        const trashArtistPath = `trash/${artistThumbPath}`;
-        
-        try {
-          const artistFile = await env.media.get(artistThumbPath);
-          if (artistFile) {
-            const fileData = await artistFile.arrayBuffer();
-            await env.media.put(trashArtistPath, fileData, {
-              httpMetadata: artistFile.httpMetadata,
-              customMetadata: artistFile.customMetadata
-            });
-            await env.media.delete(artistThumbPath);
-            trashPaths = [trashArtistPath];
-            totalSize = artistFile.size || 0;
-            console.log(`Moved artist thumbnail: ${artistThumbPath} -> ${trashArtistPath}`);
-          }
-        } catch (e) {
-          console.log(`No artist thumbnail: ${artistThumbPath}`);
-          trashPaths = [trashArtistPath];
-        }
+        trashPaths = [`trash/artists/thumbnails/${itemId}.jpg`];
         break;
-        
       case 'playlist':
-        // For playlists, move thumbnail to trash folder
-        const playlistThumbPath = `playlists/thumbnails/${itemId}.jpg`;
-        const trashPlaylistPath = `trash/${playlistThumbPath}`;
-        
-        try {
-          const playlistFile = await env.media.get(playlistThumbPath);
-          if (playlistFile) {
-            const fileData = await playlistFile.arrayBuffer();
-            await env.media.put(trashPlaylistPath, fileData, {
-              httpMetadata: playlistFile.httpMetadata,
-              customMetadata: playlistFile.customMetadata
-            });
-            await env.media.delete(playlistThumbPath);
-            trashPaths = [trashPlaylistPath];
-            totalSize = playlistFile.size || 0;
-            console.log(`Moved playlist thumbnail: ${playlistThumbPath} -> ${trashPlaylistPath}`);
-          }
-        } catch (e) {
-          console.log(`No playlist thumbnail: ${playlistThumbPath}`);
-          trashPaths = [trashPlaylistPath];
-        }
+        trashPaths = [`trash/playlists/thumbnails/${itemId}.jpg`];
         break;
     }
+
+    console.log('📁 Generated trash paths:', trashPaths);
 
     // Safety checks
     const safeValues = {
@@ -114,18 +53,11 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
       size_bytes: typeof totalSize === 'number' ? totalSize : 0
     };
 
-    console.log('Inserting into database:', {
-      id: safeValues.id,
-      type: safeValues.item_type,
-      name: safeValues.item_name,
-      trash_path: safeValues.trash_path.substring(0, 100) + '...'
-    });
-
     // Store in database
     await env.DB.prepare(
       `INSERT INTO trash_items (
-        id, item_type, item_id, item_name, original_path, trash_path, 
-        metadata, deleted_by, expires_at, size_bytes
+        id, item_type, item_id, item_name, original_path, 
+        trash_path, metadata, deleted_by, expires_at, size_bytes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       safeValues.id,
@@ -140,100 +72,156 @@ export async function moveToTrash(env, adminId, itemType, itemId, itemName, meta
       safeValues.size_bytes
     ).run();
 
-    console.log('✅ Item moved to trash successfully:', trashId);
-    return { success: true, trashId, message: 'Item moved to trash' };
+    return { 
+      success: true, 
+      trashId, 
+      message: '✅ Item moved to trash' 
+    };
+
   } catch (error) {
     console.error('❌ Error moving to trash:', error);
-    return { success: false, error: error.message, message: 'Error: ' + error.message };
+    return { 
+      success: false, 
+      error: error.message, 
+      message: `❌ Error: ${error.message}` 
+    };
   }
 }
 
-// Restore from trash - FIXED VERSION WITH PROPER FILE HANDLING
+// FIXED: Restore from trash with proper arrayBuffer handling
 export async function restoreFromTrash(env, adminId, trashId) {
-  console.log('🔄 Restoring:', trashId);
-  
+  console.log('🔄 Restoring from R2:', trashId);
+
   try {
     // STEP 1: Get item from database
+    console.log('Step 1: Fetching from database...');
     const item = await env.DB.prepare(
       `SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL`
     ).bind(trashId).first();
 
-    if (!item) {
+    if (!item) { 
       return { 
         success: false, 
-        message: 'Item not found in trash'
-      };
+        error: 'Item not found in trash', 
+        message: '❌ Item not found in trash. It may have been already restored or permanently deleted.' 
+      }; 
     }
-
-    console.log('✅ Item found:', { type: item.item_type, name: item.item_name });
-
+    
+    console.log('✅ Item found:', { 
+      type: item.item_type, 
+      name: item.item_name,
+      id: item.item_id,
+      trash_path: item.trash_path 
+    });
+    
     // STEP 2: Parse trash paths
+    console.log('Step 2: Parsing R2 paths...');
     let trashPaths = [];
     try {
       trashPaths = JSON.parse(item.trash_path || '[]');
-      console.log('Paths to restore:', trashPaths);
+      console.log('📁 R2 trash paths from DB:', trashPaths);
     } catch (e) {
-      return {
-        success: false,
-        message: 'Invalid trash paths'
+      console.error('❌ Failed to parse trash_path:', e);
+      return { 
+        success: false, 
+        error: 'Invalid trash paths', 
+        message: '❌ Could not parse trash paths. The trash item may be corrupted.' 
       };
     }
 
-    // STEP 3: Restore files with proper confirmation
+    if (trashPaths.length === 0) {
+      console.log('⚠️ No trash paths found in database');
+      return {
+        success: false,
+        error: 'No files to restore',
+        message: '❌ No files associated with this item in trash.'
+      };
+    }
+
+    // STEP 3: Restore files from R2 with proper arrayBuffer handling
+    console.log('Step 3: Restoring files from R2...');
     let filesRestored = 0;
     let filesFailed = 0;
+    const restoredFiles = [];
 
     for (const trashPath of trashPaths) {
       try {
-        console.log(`Attempting to restore: ${trashPath}`);
+        console.log(`🔍 Getting file from R2 trash: ${trashPath}`);
         
-        // Get file from trash
+        // Get the file from R2 trash location
         const file = await env.media.get(trashPath);
         
-        if (!file) {
-          console.log(`❌ File not found: ${trashPath}`);
-          filesFailed++;
-          continue;
-        }
-
-        // Determine original path
-        const originalPath = trashPath.replace('trash/', '');
-        console.log(`Found file, copying to: ${originalPath}`);
-
-        // IMPORTANT: Read the file data FIRST
-        const fileData = await file.arrayBuffer();
-        
-        // Then put it in original location
-        const putResult = await env.media.put(originalPath, fileData, {
-          httpMetadata: file.httpMetadata,
-          customMetadata: file.customMetadata
-        });
-
-        // Verify put succeeded before deleting
-        if (putResult) {
-          console.log(`✅ Copy successful, deleting from trash`);
+        if (file) {
+          console.log(`📦 Found file in R2:`, {
+            size: file.size,
+            path: trashPath,
+            hasMetadata: !!file.customMetadata
+          });
+          
+          // FIX 1: Convert stream to arrayBuffer BEFORE using it
+          console.log(`📥 Reading file data as arrayBuffer...`);
+          const fileData = await file.arrayBuffer();
+          console.log(`✅ Read ${fileData.byteLength} bytes`);
+          
+          // Get original path from metadata if available, otherwise construct it
+          let originalPath = file.customMetadata?.originalPath;
+          
+          if (!originalPath) {
+            // Fallback: construct from trash path
+            originalPath = trashPath.replace('trash/', '');
+            console.log(`⚠️ No originalPath in metadata, using constructed path: ${originalPath}`);
+          } else {
+            console.log(`📋 Found originalPath in metadata: ${originalPath}`);
+          }
+          
+          // FIX 2: Copy back to original location using arrayBuffer
+          console.log(`📤 Copying to R2: ${originalPath}`);
+          await env.media.put(originalPath, fileData, {
+            httpMetadata: file.httpMetadata,
+            customMetadata: {
+              ...file.customMetadata,
+              restoredAt: new Date().toISOString(),
+              restoredBy: adminId
+            }
+          });
+          
+          // FIX 3: Only delete from trash after successful restore
+          console.log(`🗑️ Deleting from trash: ${trashPath}`);
           await env.media.delete(trashPath);
+          
           filesRestored++;
+          restoredFiles.push({ 
+            from: trashPath, 
+            to: originalPath, 
+            size: file.size,
+            bytesRead: fileData.byteLength
+          });
+          console.log(`✅ Successfully restored: ${trashPath} -> ${originalPath}`);
         } else {
-          console.log(`❌ Copy failed, keeping trash file`);
+          console.log(`❌ File NOT found in R2: ${trashPath}`);
           filesFailed++;
         }
-
       } catch (e) {
-        console.error(`❌ Error restoring ${trashPath}:`, e);
+        console.error(`❌ Error restoring from R2 ${trashPath}:`, e);
         filesFailed++;
       }
     }
 
     if (filesRestored === 0 && trashPaths.length > 0) {
-      return {
-        success: false,
-        message: 'Could not restore any files. Check R2 permissions.'
+      return { 
+        success: false, 
+        error: 'No files restored from R2', 
+        message: '❌ Could not restore any files. The files may be missing from trash or corrupted.',
+        debug: {
+          trashPaths,
+          filesFailed,
+          item
+        }
       };
     }
 
-    // STEP 4: Restore metadata based on item type
-    console.log('Restoring metadata...');
+    // STEP 4: Restore metadata
+    console.log('Step 4: Restoring metadata...');
     const metadata = JSON.parse(item.metadata || '{}');
     
     try {
@@ -249,7 +237,7 @@ export async function restoreFromTrash(env, adminId, trashId) {
           const albums = await getAlbums(env);
           albums[item.item_id] = { 
             ...metadata, 
-            id: item.item_id,
+            id: item.item_id, 
             songs: metadata.songs || [] 
           };
           await saveAlbums(env, albums);
@@ -260,9 +248,9 @@ export async function restoreFromTrash(env, adminId, trashId) {
           const artists = await getArtists(env);
           artists[item.item_id] = { 
             ...metadata, 
-            id: item.item_id,
-            songs: metadata.songs || [],
-            albums: metadata.albums || []
+            id: item.item_id, 
+            songs: metadata.songs || [], 
+            albums: metadata.albums || [] 
           };
           await saveArtists(env, artists);
           console.log('✅ Artist metadata restored');
@@ -272,111 +260,146 @@ export async function restoreFromTrash(env, adminId, trashId) {
           const playlists = await getPlaylists(env);
           playlists[item.item_id] = { 
             ...metadata, 
-            id: item.item_id,
-            songs: metadata.songs || [],
-            updated: Date.now()
+            id: item.item_id, 
+            songs: metadata.songs || [], 
+            updated: Date.now() 
           };
           await savePlaylists(env, playlists);
           console.log('✅ Playlist metadata restored');
           break;
       }
     } catch (metaError) {
-      console.error('Metadata restore error:', metaError);
-      // Continue anyway - files are restored
+      console.error('❌ Metadata restore error:', metaError);
+      return { 
+        success: false, 
+        error: metaError.message, 
+        message: '❌ Failed to restore metadata: ' + metaError.message 
+      };
     }
 
     // STEP 5: Mark as restored in database
+    console.log('Step 5: Marking as restored in database...');
     await env.DB.prepare(
       `UPDATE trash_items SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?`
     ).bind(adminId, trashId).run();
 
-    console.log('✅ Restore complete!');
+    console.log('✅ Restore complete! Restored files:', restoredFiles);
     
     return { 
       success: true, 
-      message: `Restored ${filesRestored} file(s) successfully`
+      item, 
+      message: `✅ Successfully restored ${item.item_name} from R2 (${filesRestored} files restored)`,
+      restoredFiles
     };
-    
+
   } catch (error) {
     console.error('❌ Restore error:', error);
-    return { 
-      success: false, 
-      message: 'Error: ' + error.message
+    return {
+      success: false,
+      error: error.message,
+      message: `❌ Error: ${error.message}`
     };
   }
 }
 
-// Permanently delete
+// Permanently delete from R2
 export async function deletePermanently(env, trashId) {
-  console.log('🗑️ Deleting permanently:', trashId);
-  
+  console.log('🗑️ Deleting permanently from R2:', trashId);
+
   try {
     const item = await env.DB.prepare(
       `SELECT * FROM trash_items WHERE id = ?`
     ).bind(trashId).first();
 
-    if (!item) {
-      return { success: false, message: 'Item not found' };
+    if (!item) { 
+      return { 
+        success: false, 
+        error: 'Item not found', 
+        message: '❌ Item not found' 
+      }; 
     }
-
+    
     const trashPaths = JSON.parse(item.trash_path || '[]');
-    console.log('Deleting files:', trashPaths);
+    console.log('📁 Files to delete from R2:', trashPaths);
 
-    // Delete files from trash folder
+    // Delete files from R2
     for (const path of trashPaths) {
       try {
         await env.media.delete(path);
-        console.log('✅ Deleted:', path);
+        console.log('✅ Deleted from R2:', path);
       } catch (e) {
-        console.error('❌ Error deleting:', path, e);
+        console.error('❌ Error deleting from R2:', path, e);
       }
     }
 
     // Remove from database
     await env.DB.prepare(`DELETE FROM trash_items WHERE id = ?`).bind(trashId).run();
-    
-    return { success: true, message: 'Item permanently deleted' };
+
+    return { 
+      success: true, 
+      message: '✅ Item permanently deleted from R2' 
+    };
+
   } catch (error) {
     console.error('❌ Error:', error);
-    return { success: false, message: 'Error: ' + error.message };
+    return { 
+      success: false, 
+      error: error.message, 
+      message: `❌ Error: ${error.message}` 
+    };
   }
 }
 
-// Empty trash
+// Empty trash (delete all from R2)
 export async function emptyTrash(env, itemType = 'all') {
-  console.log('🧹 Emptying trash:', itemType);
-  
+  console.log('🧹 Emptying trash from R2:', itemType);
+
   try {
     let query = `SELECT * FROM trash_items WHERE restored_at IS NULL`;
     let deleteQuery = `DELETE FROM trash_items WHERE restored_at IS NULL`;
-    
-    if (itemType !== 'all') {
-      query += ` AND item_type = ?`;
-      deleteQuery += ` AND item_type = ?`;
+
+    if (itemType !== 'all') { 
+      query += ` AND item_type = ?`; 
+      deleteQuery += ` AND item_type = ?`; 
     }
     
-    const items = await env.DB.prepare(query).bind(...(itemType !== 'all' ? [itemType] : [])).all();
-    console.log(`Found ${items.results.length} items to delete`);
-    
+    const items = await env.DB.prepare(query)
+      .bind(...(itemType !== 'all' ? [itemType] : []))
+      .all();
+
+    console.log(`📁 Found ${items.results.length} items to delete from R2`);
+
     // Delete files from R2
     for (const item of items.results) {
       const trashPaths = JSON.parse(item.trash_path || '[]');
       for (const path of trashPaths) {
         try {
           await env.media.delete(path);
+          console.log('✅ Deleted from R2:', path);
         } catch (e) {
-          console.error('Error deleting:', path, e);
+          console.error('❌ Error deleting from R2:', path, e);
         }
       }
     }
-    
+
     // Delete from database
-    await env.DB.prepare(deleteQuery).bind(...(itemType !== 'all' ? [itemType] : [])).run();
-    
-    return { success: true, count: items.results.length, message: `Emptied ${items.results.length} items` };
+    await env.DB.prepare(deleteQuery)
+      .bind(...(itemType !== 'all' ? [itemType] : []))
+      .run();
+
+    return { 
+      success: true, 
+      count: items.results.length, 
+      message: `✅ Emptied ${items.results.length} items from R2` 
+    };
+
   } catch (error) {
     console.error('❌ Error:', error);
-    return { success: false, message: 'Error: ' + error.message };
+    return { 
+      success: false, 
+      error: error.message, 
+      message: `❌ Error: ${error.message}` 
+    };
   }
 }
 
@@ -385,30 +408,32 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
   try {
     const offset = (page - 1) * limit;
     const params = [];
-    
+
     let query = `SELECT * FROM trash_items WHERE restored_at IS NULL`;
     let countQuery = `SELECT COUNT(*) as total FROM trash_items WHERE restored_at IS NULL`;
     
-    if (type !== 'all') {
-      query += ` AND item_type = ?`;
-      countQuery += ` AND item_type = ?`;
-      params.push(type);
+    if (type !== 'all') { 
+      query += ` AND item_type = ?`; 
+      countQuery += ` AND item_type = ?`; 
+      params.push(type); 
     }
     
-    if (search) {
-      query += ` AND item_name LIKE ?`;
-      countQuery += ` AND item_name LIKE ?`;
-      params.push(`%${search}%`);
+    if (search) { 
+      query += ` AND item_name LIKE ?`; 
+      countQuery += ` AND item_name LIKE ?`; 
+      params.push(`%${search}%`); 
     }
-    
-    const countResult = await env.DB.prepare(countQuery).bind(...params).first();
+
+    const countResult = await env.DB.prepare(countQuery)
+      .bind(...params)
+      .first();
     const total = countResult?.total || 0;
-    
+
     const queryParams = [...params, limit, offset];
     const { results } = await env.DB.prepare(
       `${query} ORDER BY deleted_at DESC LIMIT ? OFFSET ?`
     ).bind(...queryParams).all();
-    
+
     const now = new Date();
     const items = results.map(item => {
       const expiresAt = new Date(item.expires_at);
@@ -421,46 +446,62 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
         itemData,
         thumbnail: itemData.thumbnail || null,
         formattedSize: formatBytes(item.size_bytes || 0),
-        deletedDate: new Date(item.deleted_at).toLocaleDateString('en-GB', {
-          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        deletedDate: new Date(item.deleted_at).toLocaleDateString('en-GB', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
         })
       };
     });
-    
-    return { items, total, page, totalPages: Math.ceil(total / limit) };
+
+    return { 
+      items, 
+      total, 
+      page, 
+      totalPages: Math.ceil(total / limit) 
+    };
+
   } catch (error) {
     console.error('Error getting trash items:', error);
-    return { items: [], total: 0, page: 1, totalPages: 1 };
+    return { 
+      items: [], 
+      total: 0, 
+      page: 1, 
+      totalPages: 1 
+    };
   }
 }
 
 // Get trash stats
 export async function getTrashStats(env) {
   try {
-    const stats = await env.DB.prepare(`
-      SELECT 
+    const stats = await env.DB.prepare(
+      `SELECT 
         COUNT(CASE WHEN item_type = 'song' THEN 1 END) as songs,
         COUNT(CASE WHEN item_type = 'album' THEN 1 END) as albums,
         COUNT(CASE WHEN item_type = 'artist' THEN 1 END) as artists,
         COUNT(CASE WHEN item_type = 'playlist' THEN 1 END) as playlists,
         COUNT(*) as total,
         SUM(size_bytes) as total_size
-      FROM trash_items
-      WHERE restored_at IS NULL
-    `).first();
-    
+      FROM trash_items 
+      WHERE restored_at IS NULL`
+    ).first();
+
     const settings = await getTrashSettings(env);
     
-    return {
-      songs: stats?.songs || 0,
-      albums: stats?.albums || 0,
-      artists: stats?.artists || 0,
-      playlists: stats?.playlists || 0,
-      total: stats?.total || 0,
-      totalSize: stats?.total_size || 0,
-      formattedSize: formatBytes(stats?.total_size || 0),
-      retentionDays: settings?.retention_days || 30
+    return { 
+      songs: stats?.songs || 0, 
+      albums: stats?.albums || 0, 
+      artists: stats?.artists || 0, 
+      playlists: stats?.playlists || 0, 
+      total: stats?.total || 0, 
+      totalSize: stats?.total_size || 0, 
+      formattedSize: formatBytes(stats?.total_size || 0), 
+      retentionDays: settings?.retention_days || 30 
     };
+
   } catch (error) {
     console.error('Error getting trash stats:', error);
     return {
@@ -476,14 +517,16 @@ export async function getTrashSettings(env) {
     const settings = await env.DB.prepare(
       `SELECT * FROM trash_settings WHERE id = 1`
     ).first();
-    
-    return settings || {
-      retention_days: 30,
-      auto_cleanup: 1,
-      max_trash_size_mb: 1024,
-      notify_before_delete: 1
+
+    return settings || { 
+      retention_days: 30, 
+      auto_cleanup: 1, 
+      max_trash_size_mb: 1024, 
+      notify_before_delete: 1 
     };
+
   } catch (error) {
+    console.error('Error getting trash settings:', error);
     return {
       retention_days: 30,
       auto_cleanup: 1,
@@ -497,13 +540,9 @@ export async function getTrashSettings(env) {
 export async function updateTrashSettings(env, adminId, settings) {
   try {
     await env.DB.prepare(
-      `UPDATE trash_settings SET
-        retention_days = ?,
-        auto_cleanup = ?,
-        max_trash_size_mb = ?,
-        notify_before_delete = ?,
-        updated_at = CURRENT_TIMESTAMP,
-        updated_by = ?
+      `UPDATE trash_settings 
+       SET retention_days = ?, auto_cleanup = ?, max_trash_size_mb = ?, 
+           notify_before_delete = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? 
        WHERE id = 1`
     ).bind(
       settings.retention_days,
@@ -512,109 +551,137 @@ export async function updateTrashSettings(env, adminId, settings) {
       settings.notify_before_delete ? 1 : 0,
       adminId
     ).run();
-    
-    return { success: true, message: 'Settings updated' };
+
+    return { success: true, message: '✅ Settings updated' };
+
   } catch (error) {
     console.error('Error updating trash settings:', error);
-    return { success: false, message: 'Error: ' + error.message };
+    return { 
+      success: false, 
+      error: error.message, 
+      message: `❌ Error: ${error.message}` 
+    };
   }
 }
 
-// Cleanup expired items
+// Cleanup expired items from R2
 export async function cleanupExpiredTrash(env) {
   try {
     const settings = await getTrashSettings(env);
-    
-    if (!settings.auto_cleanup) {
-      return { success: true, message: 'Auto cleanup disabled' };
+
+    if (!settings.auto_cleanup) { 
+      return { success: true, message: 'Auto cleanup disabled' }; 
     }
-    
+
     const expired = await env.DB.prepare(
-      `SELECT * FROM trash_items 
-       WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
+      `SELECT * FROM trash_items WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
     ).all();
-    
-    console.log(`Cleaning up ${expired.results.length} expired items`);
-    
+
+    console.log(`🧹 Found ${expired.results.length} expired items to clean up`);
+
+    // Delete files from R2
     for (const item of expired.results) {
       const trashPaths = JSON.parse(item.trash_path || '[]');
       for (const path of trashPaths) {
         try {
           await env.media.delete(path);
-        } catch (e) {}
+          console.log('✅ Deleted expired from R2:', path);
+        } catch (e) {
+          console.error('❌ Error deleting expired from R2:', path, e);
+        }
       }
     }
-    
+
+    // Delete from database
     await env.DB.prepare(
       `DELETE FROM trash_items WHERE restored_at IS NULL AND expires_at < CURRENT_TIMESTAMP`
     ).run();
-    
-    return { success: true, deleted: expired.results.length, message: `Cleaned up ${expired.results.length} items` };
+
+    return { 
+      success: true, 
+      deleted: expired.results.length, 
+      message: `✅ Cleaned up ${expired.results.length} items from R2` 
+    };
+
   } catch (error) {
     console.error('Error cleaning up trash:', error);
-    return { success: false, message: 'Error: ' + error.message };
+    return { success: false, error: error.message };
   }
 }
 
 // ===== HELPER FUNCTIONS =====
 
+// FIXED: Move song to trash with proper arrayBuffer handling
 async function moveSongToTrash(env, songId) {
   const extensions = ['.mp3', '.jpg', '.png'];
   const paths = [];
   let totalSize = 0;
 
   for (const ext of extensions) {
-    // Original paths
-    const songPath = `songs/${songId}${ext}`;
-    const imagePath = `images/${songId}${ext}`;
+    // Define R2 paths
+    let originalPath;
+    let trashPath;
     
-    // Trash paths
-    const trashSongPath = `trash/songs/${songId}${ext}`;
-    const trashImagePath = `trash/images/${songId}${ext}`;
-    
-    // Try to move song file
-    try {
-      const songFile = await env.media.get(songPath);
-      if (songFile) {
-        console.log(`Moving song: ${songPath} -> ${trashSongPath}`);
-        const fileData = await songFile.arrayBuffer();
-        await env.media.put(trashSongPath, fileData, {
-          httpMetadata: songFile.httpMetadata,
-          customMetadata: songFile.customMetadata
-        });
-        await env.media.delete(songPath);
-        paths.push(trashSongPath);
-        totalSize += songFile.size || 0;
-      }
-    } catch (e) {
-      console.log(`No song file: ${songPath}`);
+    if (ext === '.mp3') {
+      originalPath = `songs/${songId}${ext}`;
+      trashPath = `trash/songs/${songId}${ext}`;
+    } else {
+      originalPath = `images/${songId}${ext}`;
+      trashPath = `trash/images/${songId}${ext}`;
     }
-    
-    // Try to move image file
-    try {
-      const imageFile = await env.media.get(imagePath);
-      if (imageFile) {
-        console.log(`Moving image: ${imagePath} -> ${trashImagePath}`);
-        const fileData = await imageFile.arrayBuffer();
-        await env.media.put(trashImagePath, fileData, {
-          httpMetadata: imageFile.httpMetadata,
-          customMetadata: imageFile.customMetadata
-        });
-        await env.media.delete(imagePath);
-        paths.push(trashImagePath);
-        totalSize += imageFile.size || 0;
+
+    try { 
+      // Get from R2
+      console.log(`🔍 Checking R2 for: ${originalPath}`);
+      const file = await env.media.get(originalPath); 
+      
+      if (file) { 
+        console.log(`📦 Found in R2: ${originalPath} (${file.size} bytes)`);
+        
+        // FIX 1: Convert stream to arrayBuffer BEFORE using it
+        console.log(`📥 Reading file data as arrayBuffer...`);
+        const fileData = await file.arrayBuffer();
+        console.log(`✅ Read ${fileData.byteLength} bytes`);
+        
+        // FIX 2: Store original path in metadata for later restoration
+        const metadata = {
+          ...file.customMetadata,
+          originalPath: originalPath,  // Save this!
+          originalSize: file.size,
+          movedToTrash: new Date().toISOString(),
+          songId: songId
+        };
+        
+        // FIX 3: Copy to trash using arrayBuffer, not stream
+        console.log(`📤 Copying to trash: ${trashPath}`);
+        await env.media.put(trashPath, fileData, {
+          httpMetadata: file.httpMetadata,
+          customMetadata: metadata
+        }); 
+        
+        // FIX 4: Only delete original AFTER confirming trash copy succeeded
+        console.log(`🗑️ Deleting original: ${originalPath}`);
+        await env.media.delete(originalPath); 
+        
+        paths.push(trashPath); 
+        totalSize += file.size || 0; 
+        console.log(`✅ Moved in R2: ${originalPath} -> ${trashPath}`); 
+      } else {
+        console.log(`📭 File not found in R2: ${originalPath}`);
       }
-    } catch (e) {
-      console.log(`No image file: ${imagePath}`);
-    }
+    } catch (e) { 
+      console.error(`❌ Error moving file ${originalPath}:`, e.message);
+      // DON'T delete original if copy failed!
+    } 
   }
 
+  console.log(`📊 Move summary: ${paths.length} files moved, total size: ${totalSize} bytes`);
   return { paths, totalSize };
 }
 
 function getOriginalPath(type, id) {
   if (!type || !id) return '';
-  
+
   switch (type) {
     case 'song': return `songs/${id}.mp3`;
     case 'album': return `albums/thumbnails/${id}.jpg`;
@@ -630,4 +697,63 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// ===== REPAIR FUNCTION =====
+// Run this once to fix incorrect trash paths in database
+export async function repairTrashPaths(env) {
+  console.log('🔧 Repairing incorrect trash paths...');
+  
+  try {
+    // Get all items with incorrect paths (missing 'trash/' prefix)
+    const items = await env.DB.prepare(
+      `SELECT id, item_type, trash_path FROM trash_items 
+       WHERE restored_at IS NULL 
+       AND trash_path NOT LIKE '%trash/%'`
+    ).all();
+    
+    console.log(`Found ${items.results.length} items with incorrect paths`);
+    
+    const fixed = [];
+    
+    for (const item of items.results) {
+      try {
+        const oldPaths = JSON.parse(item.trash_path || '[]');
+        const newPaths = oldPaths.map(path => {
+          // Add trash/ prefix if missing
+          if (!path.startsWith('trash/')) {
+            return `trash/${path}`;
+          }
+          return path;
+        });
+        
+        // Update database with corrected paths
+        await env.DB.prepare(
+          `UPDATE trash_items SET trash_path = ? WHERE id = ?`
+        ).bind(JSON.stringify(newPaths), item.id).run();
+        
+        fixed.push({
+          id: item.id,
+          type: item.item_type,
+          old: oldPaths,
+          new: newPaths
+        });
+        
+        console.log(`✅ Fixed: ${item.id}`, { old: oldPaths, new: newPaths });
+        
+      } catch (e) {
+        console.error(`❌ Failed to fix ${item.id}:`, e);
+      }
+    }
+    
+    return {
+      success: true,
+      fixed: fixed.length,
+      items: fixed
+    };
+    
+  } catch (error) {
+    console.error('Repair error:', error);
+    return { success: false, error: error.message };
+  }
 }
