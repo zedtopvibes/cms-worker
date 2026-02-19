@@ -12,13 +12,13 @@ export async function handleAdminActivity(req, env, ctx, auth) {
     // Get activities from R2
     const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
-    // Format activities with icons
+    // Format activities with icons - SIMPLE design like your dashboard
     const activityRows = logs.map(log => {
       const timeAgo = getTimeAgo(new Date(log.time));
       const iconInfo = getActionIcon(log.action);
       const details = log.details || {};
       
-      // Format text to match original design
+      // Format text nicely
       let actionText = '';
       const admin = log.admin || 'Admin';
       const itemName = log.file ? `"${log.file}"` : '';
@@ -41,7 +41,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
           actionText = `${admin} upload ${itemType} ${itemName}`;
           break;
         case 'login':
-          actionText = `${admin} login admin "${admin} logged in"`;
+          actionText = `${admin} login`;
           break;
         case 'logout':
           actionText = `${admin} logout`;
@@ -63,7 +63,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       `;
     }).join('');
 
-    // Build the content HTML (NO adminLayout wrapper)
+    // CONTENT ONLY - no layout wrapper
     const content = `
       <div style="margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -220,7 +220,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
       </script>
     `;
 
-    // Return as { title, content } - main router will wrap with adminLayout
+    // Return ONLY content and title - main router adds the layout
     return { 
       title: 'Activity Log', 
       content: content 
@@ -249,10 +249,8 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
     const days = parseInt(url.searchParams.get('days')) || 30;
     const filter = url.searchParams.get('filter') || 'all';
 
-    // Get logs from R2
     const { logs } = await getActivities(env, filter, days, 1, 1000);
 
-    // Generate CSV
     let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
     
     for (const log of logs) {
@@ -276,7 +274,7 @@ export async function handleAdminActivityExport(req, env, ctx, auth) {
   }
 }
 
-// Helper function to get icon based on action
+// Helper functions (keep all of these)
 function getActionIcon(action) {
   const icons = {
     'upload': { icon: 'fa-cloud-upload-alt', bg: '#ff5500' },
@@ -297,7 +295,6 @@ function getActionIcon(action) {
   return icons[action] || { icon: 'fa-history', bg: '#666' };
 }
 
-// Helper function to format time ago
 function getTimeAgo(date) {
   const seconds = Math.floor((new Date() - date) / 1000);
   
@@ -308,7 +305,6 @@ function getTimeAgo(date) {
   return `${Math.floor(seconds / 604800)} weeks ago`;
 }
 
-// Generate empty state
 function getEmptyState() {
   return `
     <div class="empty-state">
@@ -319,7 +315,6 @@ function getEmptyState() {
   `;
 }
 
-// Generate pagination
 function generatePagination(currentPage, totalPages, filter, days) {
   if (totalPages <= 1) return '';
 
