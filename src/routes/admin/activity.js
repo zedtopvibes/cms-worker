@@ -1,5 +1,4 @@
-// ==================== ADMIN ACTIVITY LOG ====================
-import { formatNumber } from '../../helpers/formatting.js';
+// ==================== ADMIN ACTIVITY LOG (PURE R2) ====================
 
 export async function handleAdminActivity(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -8,53 +7,43 @@ export async function handleAdminActivity(req, env, ctx, auth) {
   const days = parseInt(url.searchParams.get('days')) || 7;
   const ITEMS_PER_PAGE = 20;
 
-  // Build query parameters safely
-  const params = [];
-  let whereClause = 'WHERE 1=1';
+  // Get logs from R2
+  const logFile = await env.media.get('_logs/activity.json');
+  let allLogs = [];
+  
+  if (logFile) {
+    allLogs = JSON.parse(await logFile.text());
+  }
+
+  // Apply filters
+  let filteredLogs = [...allLogs];
   
   // Date filter
   if (days > 0) {
-    whereClause += ` AND timestamp >= datetime('now', ?)`;
-    params.push(`-${days} days`);
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    filteredLogs = filteredLogs.filter(log => new Date(log.time) >= cutoffDate);
   }
 
   // Action filter
   if (filter !== 'all') {
-    whereClause += ` AND action = ?`;
-    params.push(filter);
+    filteredLogs = filteredLogs.filter(log => log.action === filter);
   }
 
-  // Get total count for pagination
-  const countResult = await env.DB.prepare(
-    `SELECT COUNT(*) as total FROM admin_activity ${whereClause}`
-  ).bind(...params).first();
-  
-  const totalItems = countResult?.total || 0;
-  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-  const offset = (page - 1) * ITEMS_PER_PAGE;
-
-  // Get activity logs with pagination params
-  const logParams = [...params, ITEMS_PER_PAGE, offset];
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM admin_activity 
-     ${whereClause}
-     ORDER BY timestamp DESC 
-     LIMIT ? OFFSET ?`
-  ).bind(...logParams).all();
-
-  const activities = results || [];
-
   // Get unique actions for filter dropdown
-  const { results: actionResults } = await env.DB.prepare(
-    `SELECT DISTINCT action FROM admin_activity WHERE action IS NOT NULL ORDER BY action`
-  ).all();
-  
-  const actions = actionResults || [];
+  const actions = [...new Set(allLogs.map(log => log.action))].filter(Boolean);
+
+  // Pagination
+  const totalItems = filteredLogs.length;
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+  const startIdx = (page - 1) * ITEMS_PER_PAGE;
+  const paginatedLogs = filteredLogs.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
   // Format activities with icons
-  const activityRows = activities.map(log => {
-    const timeAgo = getTimeAgo(new Date(log.timestamp));
+  const activityRows = paginatedLogs.map(log => {
+    const timeAgo = getTimeAgo(new Date(log.time));
     const iconInfo = getActionIcon(log.action);
+    const details = log.details || {};
     
     return `
       <div class="activity-item">
@@ -63,11 +52,12 @@ export async function handleAdminActivity(req, env, ctx, auth) {
         </div>
         <div class="activity-content">
           <div class="activity-text">
-            <strong>${log.admin_id || 'Admin'}</strong> ${log.action} 
-            ${log.item_type ? `<strong>${log.item_type}</strong>` : ''}
-            ${log.item_name ? `"${log.item_name}"` : ''}
+            <strong>${log.admin || log.user || 'System'}</strong> ${log.action} 
+            ${log.file ? `<strong>${log.file}</strong>` : ''}
+            ${details.type ? `(${details.type})` : ''}
           </div>
-          <div class="activity-time">${timeAgo}</div>
+          <div class="activity-time">${timeAgo} • ${new Date(log.time).toLocaleString()}</div>
+          ${log.details ? `<div class="activity-details">${JSON.stringify(log.details)}</div>` : ''}
         </div>
       </div>
     `;
@@ -77,7 +67,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
     <div style="margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
             <h2 style="margin:0;"><i class="fas fa-history" style="color: #ff5500;"></i> Activity Log</h2>
-            <a href="/admin/activity/export" class="btn btn-secondary">
+            <a href="/admin/activity/export?days=${days}&filter=${filter}" class="btn btn-secondary">
                 <i class="fas fa-download"></i> Export Log
             </a>
         </div>
@@ -89,9 +79,9 @@ export async function handleAdminActivity(req, env, ctx, auth) {
                     <label style="display: block; margin-bottom: 5px; font-size: 0.8rem; color: #666;">Action</label>
                     <select id="filterSelect" class="form-control">
                         <option value="all" ${filter === 'all' ? 'selected' : ''}>All Actions</option>
-                        ${actions.map(a => `
-                            <option value="${a.action}" ${filter === a.action ? 'selected' : ''}>
-                                ${a.action.charAt(0).toUpperCase() + a.action.slice(1)}
+                        ${actions.map(action => `
+                            <option value="${action}" ${filter === action ? 'selected' : ''}>
+                                ${action.charAt(0).toUpperCase() + action.slice(1)}
                             </option>
                         `).join('')}
                     </select>
@@ -103,6 +93,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
                         <option value="1" ${days === 1 ? 'selected' : ''}>Last 24 Hours</option>
                         <option value="7" ${days === 7 ? 'selected' : ''}>Last 7 Days</option>
                         <option value="30" ${days === 30 ? 'selected' : ''}>Last 30 Days</option>
+                        <option value="90" ${days === 90 ? 'selected' : ''}>Last 90 Days</option>
                         <option value="0" ${days === 0 ? 'selected' : ''}>All Time</option>
                     </select>
                 </div>
@@ -120,7 +111,7 @@ export async function handleAdminActivity(req, env, ctx, auth) {
         
         <!-- Results Summary -->
         <div style="background: #e8f4fd; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-            <span><i class="fas fa-list"></i> Showing <strong>${activities.length}</strong> of <strong>${totalItems}</strong> activities</span>
+            <span><i class="fas fa-list"></i> Showing <strong>${paginatedLogs.length}</strong> of <strong>${totalItems}</strong> activities</span>
             <span><i class="fas fa-clock"></i> Page ${page} of ${totalPages}</span>
         </div>
         
@@ -182,6 +173,16 @@ export async function handleAdminActivity(req, env, ctx, auth) {
             color: #999;
         }
         
+        .activity-details {
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 5px;
+            padding: 3px 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -239,11 +240,14 @@ function getActionIcon(action) {
     'edit': { icon: 'fa-edit', bg: '#4a90e2' },
     'delete': { icon: 'fa-trash', bg: '#dc3545' },
     'create': { icon: 'fa-plus-circle', bg: '#28a745' },
+    'restore': { icon: 'fa-undo', bg: '#28a745' },
     'merge': { icon: 'fa-compress', bg: '#9b59b6' },
     'update': { icon: 'fa-sync', bg: '#00b894' },
     'bulk-delete': { icon: 'fa-trash-alt', bg: '#dc3545' },
     'login': { icon: 'fa-sign-in-alt', bg: '#6c5ce7' },
     'logout': { icon: 'fa-sign-out-alt', bg: '#6c5ce7' },
+    'play': { icon: 'fa-play', bg: '#ff5500' },
+    'download': { icon: 'fa-download', bg: '#ff5500' },
     'test': { icon: 'fa-vial', bg: '#666' }
   };
   return icons[action] || { icon: 'fa-history', bg: '#666' };
@@ -257,7 +261,8 @@ function getTimeAgo(date) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
   if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
-  return `${Math.floor(seconds / 604800)} weeks ago`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 604800)} weeks ago`;
+  return `${Math.floor(seconds / 2592000)} months ago`;
 }
 
 // Generate empty state
@@ -306,33 +311,72 @@ function generatePagination(currentPage, totalPages, filter, days) {
 export async function handleAdminActivityExport(req, env, ctx, auth) {
   const url = new URL(req.url);
   const days = parseInt(url.searchParams.get('days')) || 30;
+  const filter = url.searchParams.get('filter') || 'all';
 
-  // Build query safely
-  const params = [];
-  let whereClause = 'WHERE 1=1';
+  // Get logs from R2
+  const logFile = await env.media.get('_logs/activity.json');
+  let logs = [];
   
-  if (days > 0) {
-    whereClause += ` AND timestamp >= datetime('now', ?)`;
-    params.push(`-${days} days`);
+  if (logFile) {
+    logs = JSON.parse(await logFile.text());
   }
 
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM admin_activity 
-     ${whereClause}
-     ORDER BY timestamp DESC`
-  ).bind(...params).all();
+  // Apply filters
+  let filteredLogs = [...logs];
+  
+  // Date filter
+  if (days > 0) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    filteredLogs = filteredLogs.filter(log => new Date(log.time) >= cutoffDate);
+  }
+
+  // Action filter
+  if (filter !== 'all') {
+    filteredLogs = filteredLogs.filter(log => log.action === filter);
+  }
 
   // Generate CSV
-  let csv = 'Timestamp,Admin ID,Action,Item Type,Item ID,Item Name\n';
+  let csv = 'Timestamp,Action,File,Admin,IP Address,Details\n';
   
-  for (const log of results || []) {
-    csv += `"${log.timestamp}","${log.admin_id || ''}","${log.action || ''}","${log.item_type || ''}","${log.item_id || ''}","${log.item_name || ''}"\n`;
+  for (const log of filteredLogs) {
+    const details = JSON.stringify(log.details || {});
+    csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || log.user || ''}","${log.ip || ''}","${details}"\n`;
   }
 
   return new Response(csv, {
     headers: {
       'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="admin-activity-${Date.now()}.csv"`
+      'Content-Disposition': `attachment; filename="activity-log-${Date.now()}.csv"`
     }
   });
+}
+
+// Helper function to log activities (add this to your log helper)
+export async function logActivity(env, action, file, adminId, details = {}, ip = 'unknown') {
+  const logKey = '_logs/activity.json';
+  const existing = await env.media.get(logKey);
+  
+  let logs = [];
+  if (existing) {
+    logs = JSON.parse(await existing.text());
+  }
+  
+  logs.unshift({
+    action,
+    file,
+    admin: adminId,
+    ip,
+    time: new Date().toISOString(),
+    details
+  });
+  
+  // Keep only latest 500 logs (you can adjust this)
+  logs = logs.slice(0, 500);
+  
+  await env.media.put(logKey, JSON.stringify(logs, null, 2), {
+    httpMetadata: { contentType: 'application/json' }
+  });
+  
+  return { success: true };
 }
