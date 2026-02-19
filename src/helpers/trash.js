@@ -1,189 +1,175 @@
-// ==================== R2 TRASH HELPER (FULLY FIXED) ====================
+// src/helpers/trash.js
 
-import { getAlbums, saveAlbums } from './storage.js';
-import { getArtists, saveArtists } from './storage.js';
-import { getPlaylists, savePlaylists } from './storage.js';
-import { getMetadata, saveMetadata } from './storage.js';
+// =============================
+// GET TRASH ITEMS
+// =============================
+export async function getTrashItems(env, type = 'all') {
+  const query = type === 'all'
+    ? `SELECT * FROM trash_items WHERE is_deleted = 0 ORDER BY deleted_at DESC`
+    : `SELECT * FROM trash_items WHERE is_deleted = 0 AND item_type = ? ORDER BY deleted_at DESC`;
 
-// ================= MOVE TO TRASH =================
+  const { results } = type === 'all'
+    ? await env.DB.prepare(query).all()
+    : await env.DB.prepare(query).bind(type).all();
 
-export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}) {
-  try {
-    const trashId = `${itemType}_${itemId}_${Date.now()}`;
-    const trashPaths = [];
-    let totalSize = 0;
-
-    const moveSingleFile = async (originalPath) => {
-      const trashPath = `trash/${originalPath}`;
-
-      const file = await env.media.get(originalPath);
-      if (!file) return;
-
-      const data = await file.arrayBuffer();
-
-      await env.media.put(trashPath, data, {
-        httpMetadata: file.httpMetadata,
-        customMetadata: {
-          ...file.customMetadata,
-          originalPath,
-          movedToTrash: new Date().toISOString()
-        }
-      });
-
-      await env.media.delete(originalPath);
-
-      trashPaths.push(trashPath);
-      totalSize += file.size || 0;
-    };
-
-    switch (itemType) {
-      case 'song':
-        await moveSingleFile(`songs/${itemId}.mp3`);
-        await moveSingleFile(`images/${itemId}.jpg`);
-        await moveSingleFile(`images/${itemId}.png`);
-        break;
-
-      case 'album':
-        await moveSingleFile(`albums/thumbnails/${itemId}.jpg`);
-        break;
-
-      case 'artist':
-        await moveSingleFile(`artists/thumbnails/${itemId}.jpg`);
-        break;
-
-      case 'playlist':
-        await moveSingleFile(`playlists/thumbnails/${itemId}.jpg`);
-        break;
-    }
-
-    await env.DB.prepare(
-      `INSERT INTO trash_items (
-        id, item_type, item_id, item_name,
-        original_path, trash_path, metadata,
-        deleted_by, expires_at, size_bytes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      trashId,
-      itemType,
-      itemId,
-      itemName,
-      '', // not needed anymore
-      JSON.stringify(trashPaths),
-      JSON.stringify(metadata || {}),
-      adminId,
-      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      totalSize
-    ).run();
-
-    return { success: true };
-
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  return results || [];
 }
 
-// ================= RESTORE FROM TRASH =================
+// =============================
+// GET TRASH STATS
+// =============================
+export async function getTrashStats(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT 
+      COUNT(*) as total_items,
+      COALESCE(SUM(file_size),0) as total_size
+    FROM trash_items
+    WHERE is_deleted = 0
+  `).all();
 
+  return results?.[0] || { total_items: 0, total_size: 0 };
+}
+
+// =============================
+// GET TRASH SETTINGS
+// =============================
+export async function getTrashSettings(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT * FROM trash_settings LIMIT 1
+  `).all();
+
+  return results?.[0] || { retention_days: 30 };
+}
+
+// =============================
+// UPDATE TRASH SETTINGS
+// =============================
+export async function updateTrashSettings(env, adminId, settings) {
+  await env.DB.prepare(`
+    UPDATE trash_settings
+    SET retention_days = ?
+  `).bind(settings.retention_days).run();
+
+  return { success: true };
+}
+
+// =============================
+// RESTORE ITEM
+// =============================
 export async function restoreFromTrash(env, adminId, trashId) {
-  try {
-    const item = await env.DB.prepare(
-      `SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL`
-    ).bind(trashId).first();
+  const item = await env.DB.prepare(`
+    SELECT * FROM trash_items WHERE id = ? AND is_deleted = 0
+  `).bind(trashId).first();
 
-    if (!item) {
-      return { success: false, error: 'Item not found' };
-    }
+  if (!item) {
+    return { success: false, message: 'Item not found in trash' };
+  }
 
-    const trashPaths = JSON.parse(item.trash_path || '[]');
-    let restoredCount = 0;
+  const trashPaths = JSON.parse(item.trash_paths || '[]');
+
+  for (const trashPath of trashPaths) {
+    const file = await env.media.get(trashPath);
+    if (!file) continue;
+
+    const originalPath = trashPath.replace(/^trash\//, '');
+
+    await env.media.put(originalPath, await file.arrayBuffer(), {
+      httpMetadata: file.httpMetadata,
+      customMetadata: file.customMetadata
+    });
+
+    await env.media.delete(trashPath);
+  }
+
+  await env.DB.prepare(`
+    UPDATE trash_items
+    SET is_deleted = 1,
+        restored_at = datetime('now')
+    WHERE id = ?
+  `).bind(trashId).run();
+
+  return { success: true };
+}
+
+// =============================
+// DELETE PERMANENTLY
+// =============================
+export async function deletePermanently(env, trashId) {
+  const item = await env.DB.prepare(`
+    SELECT * FROM trash_items WHERE id = ?
+  `).bind(trashId).first();
+
+  if (!item) {
+    return { success: false, message: 'Item not found' };
+  }
+
+  const trashPaths = JSON.parse(item.trash_paths || '[]');
+
+  for (const trashPath of trashPaths) {
+    await env.media.delete(trashPath);
+  }
+
+  await env.DB.prepare(`
+    UPDATE trash_items
+    SET is_deleted = 1,
+        permanently_deleted_at = datetime('now')
+    WHERE id = ?
+  `).bind(trashId).run();
+
+  return { success: true };
+}
+
+// =============================
+// EMPTY TRASH
+// =============================
+export async function emptyTrash(env, type = 'all') {
+  const items = await getTrashItems(env, type);
+
+  for (const item of items) {
+    const trashPaths = JSON.parse(item.trash_paths || '[]');
 
     for (const trashPath of trashPaths) {
-      const file = await env.media.get(trashPath);
-      if (!file) continue;
-
-      const data = await file.arrayBuffer();
-      const originalPath =
-        file.customMetadata?.originalPath ||
-        trashPath.replace('trash/', '');
-
-      await env.media.put(originalPath, data, {
-        httpMetadata: file.httpMetadata,
-        customMetadata: {
-          ...file.customMetadata,
-          restoredAt: new Date().toISOString(),
-          restoredBy: adminId
-        }
-      });
-
       await env.media.delete(trashPath);
-      restoredCount++;
     }
 
-    if (restoredCount === 0) {
-      return { success: false, error: 'No files restored' };
-    }
-
-    // Restore metadata
-    const metadata = JSON.parse(item.metadata || '{}');
-
-    switch (item.item_type) {
-      case 'song':
-        await saveMetadata(env, item.item_id, metadata);
-        break;
-
-      case 'album':
-        const albums = await getAlbums(env);
-        albums[item.item_id] = { ...metadata, id: item.item_id };
-        await saveAlbums(env, albums);
-        break;
-
-      case 'artist':
-        const artists = await getArtists(env);
-        artists[item.item_id] = { ...metadata, id: item.item_id };
-        await saveArtists(env, artists);
-        break;
-
-      case 'playlist':
-        const playlists = await getPlaylists(env);
-        playlists[item.item_id] = { ...metadata, id: item.item_id };
-        await savePlaylists(env, playlists);
-        break;
-    }
-
-    await env.DB.prepare(
-      `UPDATE trash_items SET restored_at = CURRENT_TIMESTAMP, restored_by = ? WHERE id = ?`
-    ).bind(adminId, trashId).run();
-
-    return { success: true };
-
-  } catch (error) {
-    return { success: false, error: error.message };
+    await env.DB.prepare(`
+      UPDATE trash_items
+      SET is_deleted = 1,
+          permanently_deleted_at = datetime('now')
+      WHERE id = ?
+    `).bind(item.id).run();
   }
+
+  return { success: true };
 }
 
-// ================= DELETE PERMANENTLY =================
+// =============================
+// CLEANUP EXPIRED TRASH (CRON)
+// =============================
+export async function cleanupExpiredTrash(env) {
+  const settings = await getTrashSettings(env);
+  const days = settings.retention_days || 30;
 
-export async function deletePermanently(env, trashId) {
-  try {
-    const item = await env.DB.prepare(
-      `SELECT * FROM trash_items WHERE id = ?`
-    ).bind(trashId).first();
+  const { results } = await env.DB.prepare(`
+    SELECT * FROM trash_items
+    WHERE is_deleted = 0
+    AND deleted_at <= datetime('now', '-' || ? || ' days')
+  `).bind(days).all();
 
-    if (!item) return { success: false };
+  for (const item of results || []) {
+    const trashPaths = JSON.parse(item.trash_paths || '[]');
 
-    const trashPaths = JSON.parse(item.trash_path || '[]');
-
-    for (const path of trashPaths) {
-      await env.media.delete(path);
+    for (const trashPath of trashPaths) {
+      await env.media.delete(trashPath);
     }
 
-    await env.DB.prepare(
-      `DELETE FROM trash_items WHERE id = ?`
-    ).bind(trashId).run();
-
-    return { success: true };
-
-  } catch (error) {
-    return { success: false, error: error.message };
+    await env.DB.prepare(`
+      UPDATE trash_items
+      SET is_deleted = 1,
+          permanently_deleted_at = datetime('now')
+      WHERE id = ?
+    `).bind(item.id).run();
   }
+
+  return { success: true };
 }
