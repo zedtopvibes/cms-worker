@@ -1,7 +1,7 @@
 // ==================== ADMIN ACTIVITY LOG ROUTE ====================
 import { getActivities } from '../../helpers/activity.js';
 
-export async function handleAdminActivity(req, env, ctx) {
+export async function handleAdminActivity(req, env, ctx, auth) {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
   const filter = url.searchParams.get('filter') || 'all';
@@ -63,6 +63,7 @@ export async function handleAdminActivity(req, env, ctx) {
       `;
     }).join('');
 
+    // Build the content HTML (NO adminLayout wrapper)
     const content = `
       <div style="margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -219,12 +220,16 @@ export async function handleAdminActivity(req, env, ctx) {
       </script>
     `;
 
-    // Return as { content, title } - let main router handle the layout
-    return { content, title: 'Activity Log' };
+    // Return as { title, content } - main router will wrap with adminLayout
+    return { 
+      title: 'Activity Log', 
+      content: content 
+    };
 
   } catch (error) {
     console.error('Error in activity log:', error);
     return { 
+      title: 'Error', 
       content: `
         <div style="padding: 40px; text-align: center;">
           <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
@@ -232,14 +237,13 @@ export async function handleAdminActivity(req, env, ctx) {
           <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
           <a href="/admin" class="btn btn-primary">Back to Dashboard</a>
         </div>
-      `, 
-      title: 'Error' 
+      `
     };
   }
 }
 
-// Export handler
-export async function handleAdminActivityExport(req, env, ctx) {
+// Export handler (keep as is)
+export async function handleAdminActivityExport(req, env, ctx, auth) {
   try {
     const url = new URL(req.url);
     const days = parseInt(url.searchParams.get('days')) || 30;
