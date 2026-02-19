@@ -802,6 +802,10 @@ if (path === '/activity') {
   });
 }
 
+if (path === '/activity/export') {
+  return await handleAdminActivityExport(req, env, ctx, auth);
+}
+
 
 // ===== MIGRATIONS =====
 if (path === '/migrate' || path.startsWith('/migrate/')) {
