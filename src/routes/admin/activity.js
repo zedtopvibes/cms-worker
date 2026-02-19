@@ -1,17 +1,24 @@
 // ==================== ADMIN ACTIVITY PAGE ====================
-// File: /admin/activity.js or wherever your route handler is
+// File: /routes/admin/activity.js
 
 import { getActivities } from '../../helpers/activity.js';
+import { requireAdmin } from '../../middleware/auth.js';
 import { adminLayout } from './layout.js'; // Adjust path as needed
 
 export async function handleAdminActivity(req, env, ctx) {
-  const url = new URL(req.url);
-  const page = parseInt(url.searchParams.get('page')) || 1;
-  const filter = url.searchParams.get('filter') || 'all';
-  const days = parseInt(url.searchParams.get('days')) || 7;
-  const ITEMS_PER_PAGE = 20;
-
   try {
+    // Check authentication first
+    const auth = await requireAdmin(req, env);
+    if (!auth.authenticated) {
+      return auth.response; // Redirect to login
+    }
+
+    const url = new URL(req.url);
+    const page = parseInt(url.searchParams.get('page')) || 1;
+    const filter = url.searchParams.get('filter') || 'all';
+    const days = parseInt(url.searchParams.get('days')) || 7;
+    const ITEMS_PER_PAGE = 20;
+
     // Get activities from R2 using your helper
     const { logs, total, totalPages, actions } = await getActivities(env, filter, days, page, ITEMS_PER_PAGE);
 
@@ -27,8 +34,8 @@ export async function handleAdminActivity(req, env, ctx) {
           </div>
           <div class="activity-content">
             <div class="activity-text">
-              <strong>${log.admin || 'System'}</strong> ${log.action} 
-              ${log.file ? `<strong>${log.file}</strong>` : 'item'}
+              <strong>${escapeHtml(log.admin || 'System')}</strong> ${escapeHtml(log.action)} 
+              ${log.file ? `<strong>${escapeHtml(log.file)}</strong>` : 'item'}
             </div>
             <div class="activity-time">${timeAgo} • ${new Date(log.time).toLocaleString()}</div>
           </div>
@@ -49,7 +56,7 @@ export async function handleAdminActivity(req, env, ctx) {
     });
 
     // Wrap in admin layout and return HTML
-    return new Response(adminLayout('Activity Log', content, auth, 'activity'), {
+    return new Response(adminLayout('Activity Log', content, auth.session, 'activity'), {
       headers: { 'Content-Type': 'text/html' }
     });
 
@@ -60,20 +67,38 @@ export async function handleAdminActivity(req, env, ctx) {
       <div style="padding: 40px; text-align: center;">
         <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
         <h3 style="margin-bottom: 10px;">Error Loading Activity Log</h3>
-        <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+        <p style="color: #666; margin-bottom: 20px;">${escapeHtml(error.message)}</p>
         <a href="/admin/activity" class="btn btn-primary">Try Again</a>
       </div>
     `;
     
-    return new Response(adminLayout('Error', errorContent, auth, 'activity'), {
-      headers: { 'Content-Type': 'text/html' }
-    });
+    // Try to get auth for layout, but if error is auth-related, redirect to login
+    try {
+      const auth = await requireAdmin(req, env);
+      if (!auth.authenticated) {
+        return auth.response;
+      }
+      return new Response(adminLayout('Error', errorContent, auth.session, 'activity'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    } catch {
+      // If we can't get auth, just show error without layout
+      return new Response(errorContent, {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
   }
 }
 
-// Export handler for CSV
+// Export handler for CSV (also needs auth)
 export async function handleAdminActivityExport(req, env, ctx) {
   try {
+    // Check authentication first
+    const auth = await requireAdmin(req, env);
+    if (!auth.authenticated) {
+      return auth.response;
+    }
+
     const url = new URL(req.url);
     const days = parseInt(url.searchParams.get('days')) || 30;
     const filter = url.searchParams.get('filter') || 'all';
@@ -85,7 +110,7 @@ export async function handleAdminActivityExport(req, env, ctx) {
     
     for (const log of logs) {
       const details = JSON.stringify(log.details || {});
-      csv += `"${log.time}","${log.action || ''}","${log.file || ''}","${log.admin || ''}","${log.ip || ''}","${details}"\n`;
+      csv += `"${escapeCsv(log.time)}","${escapeCsv(log.action || '')}","${escapeCsv(log.file || '')}","${escapeCsv(log.admin || '')}","${escapeCsv(log.ip || '')}","${escapeCsv(details)}"\n`;
     }
 
     return new Response(csv, {
@@ -96,6 +121,7 @@ export async function handleAdminActivityExport(req, env, ctx) {
     });
 
   } catch (error) {
+    console.error('Error exporting activity log:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
@@ -261,6 +287,27 @@ function generateActivityContent({ logs, total, page, totalPages, filter, days, 
       }
     </script>
   `;
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Helper function to escape CSV fields
+function escapeCsv(field) {
+  if (field === null || field === undefined) return '""';
+  const stringField = String(field);
+  if (stringField.includes(',') || stringField.includes('"') || stringField.includes('\n')) {
+    return '"' + stringField.replace(/"/g, '""') + '"';
+  }
+  return '"' + stringField + '"';
 }
 
 // Helper function to get icon based on action
