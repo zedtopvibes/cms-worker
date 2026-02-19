@@ -1,4 +1,4 @@
-// ==================== ADMIN ACTIVITY LOG ROUTE ====================
+// ==================== ADMIN  ACTIVITY LOG ROUTE ====================
 // FIXED: Correct import paths and consistent layout matching codes 1-5
 import { getActivities } from '../../helpers/activity.js';
 
