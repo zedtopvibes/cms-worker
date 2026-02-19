@@ -95,6 +95,7 @@ export async function updateDailyStats(env) {
   }
 }
 
+// ===== GET DASHBOARD STATS =====
 export async function getDashboardStats(env) {
   try {
     // Get counts
@@ -113,7 +114,7 @@ export async function getDashboardStats(env) {
     const newAlbums = Object.values(albums).filter(a => a.created > oneWeekAgo).length;
     const newArtists = Object.values(artists).filter(a => a.created > oneWeekAgo).length;
     
-    // ===== REAL DATA FROM NEW TABLES =====
+    // ===== REAL DATA FROM D1 TABLES =====
     // Get today's stats
     const summary = await getPlaysDownloadsSummary(env);
     const todayViews = await getTodayViews(env);
@@ -210,7 +211,7 @@ export async function getDashboardStats(env) {
   }
 }
 
-// ===== NEW: Get recent activity from R2 logs =====
+// ===== GET RECENT ACTIVITY FROM R2 LOGS =====
 async function getRecentActivityFromR2(env) {
   try {
     const activity = [];
@@ -390,7 +391,10 @@ function getActivityIcon(action) {
     'restore': 'fa-undo',
     'cron': 'fa-clock',
     'play': 'fa-play',
-    'download': 'fa-download'
+    'download': 'fa-download',
+    'login': 'fa-sign-in-alt',
+    'logout': 'fa-sign-out-alt',
+    'test': 'fa-vial'
   };
   return icons[action] || 'fa-circle';
 }
@@ -406,7 +410,10 @@ function getActivityColor(action) {
     'restore': '#28a745',
     'cron': '#6c757d',
     'play': '#ff5500',
-    'download': '#ff5500'
+    'download': '#ff5500',
+    'login': '#6c5ce7',
+    'logout': '#6c5ce7',
+    'test': '#666'
   };
   return colors[action] || '#6c757d';
 }
@@ -421,7 +428,8 @@ function formatTimeAgo(date) {
   
   if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
   if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-  return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) !== 1 ? 's' : ''} ago`;
 }
 
 // Generate fallback weekly data
