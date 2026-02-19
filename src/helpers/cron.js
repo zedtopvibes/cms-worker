@@ -1,4 +1,4 @@
-// ==================== CRON JOB  HANDLER ====================
+// ==================== CRON JOB HANDLER ====================
 import { cleanupExpiredTrash } from './trash.js';
 
 export async function handleCron(event, env, ctx) {
@@ -13,9 +13,9 @@ export async function handleCron(event, env, ctx) {
     const trashResult = await cleanupExpiredTrash(env);
     results.trash = {
       status: 'success',
-      message: `Deleted ${trashResult.deleted} expired items`
+      message: `Deleted ${trashResult.count} expired items`  // FIXED: count not deleted
     };
-    console.log(`✅ Trash cleanup: ${trashResult.deleted} items deleted`);
+    console.log(`✅ Trash cleanup: ${trashResult.count} items deleted`);  // FIXED: count not deleted
   } catch (error) {
     results.trash = {
       status: 'error',
