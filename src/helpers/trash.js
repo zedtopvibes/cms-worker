@@ -1,4 +1,4 @@
-// ==================== PURE R2 TRASH HELPER (REPLACE THIS FILE) ====================
+// ==================== PURE R2 TRASH HELPER (FULL FIXED CODE) ====================
 import { getAlbums, saveAlbums, getArtists, saveArtists, getPlaylists, savePlaylists, getMetadata, saveMetadata } from './storage.js';
 
 // Move item to trash - pure R2
@@ -320,7 +320,7 @@ export async function emptyTrash(env, itemType = 'all') {
   }
 }
 
-// Get all trash items with pagination
+// Get all trash items with pagination - FIXED for UI
 export async function getTrashItems(env, type = 'all', page = 1, limit = 20, search = '') {
   try {
     // List all trash metadata files
@@ -340,19 +340,51 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
       // Calculate days left
       const daysLeft = Math.ceil((new Date(metadata.expiresAt) - new Date()) / (1000 * 60 * 60 * 24));
       
+      // Format thumbnail URL based on item type
+      let thumbnail = null;
+      if (metadata.originalMetadata?.thumbnail) {
+        thumbnail = metadata.originalMetadata.thumbnail;
+      } else {
+        // Generate default thumbnail path
+        switch (metadata.itemType) {
+          case 'song':
+            thumbnail = `/images/${metadata.itemId}.jpg`;
+            break;
+          case 'album':
+            thumbnail = `/albums/thumbnails/${metadata.itemId}.jpg`;
+            break;
+          case 'artist':
+            thumbnail = `/artists/thumbnails/${metadata.itemId}.jpg`;
+            break;
+          case 'playlist':
+            thumbnail = `/playlists/thumbnails/${metadata.itemId}.jpg`;
+            break;
+        }
+      }
+      
+      // Format the item to match what your UI expects
       items.push({
-        id: obj.key,
-        ...metadata,
-        daysLeft: Math.max(0, daysLeft),
-        formattedSize: formatBytes(metadata.totalSize || 0),
+        id: obj.key,                    // This is what your UI uses for restore/delete
+        item_type: metadata.itemType,    // Your UI expects this field name
+        item_name: metadata.itemName,    // Your UI expects this field name
+        item_id: metadata.itemId,
+        deleted_by: metadata.deletedBy,
+        deleted_at: metadata.deletedAt,
         deletedDate: new Date(metadata.deletedAt).toLocaleDateString('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        })
+        }),
+        daysLeft: Math.max(0, daysLeft),
+        formattedSize: formatBytes(metadata.totalSize || 0),
+        size_bytes: metadata.totalSize,
+        thumbnail: thumbnail,
+        expires_at: metadata.expiresAt,
+        metadata: metadata.originalMetadata,
+        files: metadata.files
       });
     }
     
     // Sort by deleted date (newest first)
-    items.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+    items.sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
     
     // Paginate
     const start = (page - 1) * limit;
@@ -371,7 +403,7 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
   }
 }
 
-// Get trash statistics
+// Get trash statistics - FIXED for UI
 export async function getTrashStats(env) {
   try {
     const trashList = await env.media.list({ prefix: 'trash/' });
@@ -390,12 +422,22 @@ export async function getTrashStats(env) {
       const file = await env.media.get(obj.key);
       const metadata = JSON.parse(await file.text());
       
-      stats[`${metadata.itemType}s`]++;
+      // Count by type
+      if (metadata.itemType === 'song') stats.songs++;
+      else if (metadata.itemType === 'album') stats.albums++;
+      else if (metadata.itemType === 'artist') stats.artists++;
+      else if (metadata.itemType === 'playlist') stats.playlists++;
+      
       stats.totalSize += metadata.totalSize || 0;
     }
     
     return {
-      ...stats,
+      songs: stats.songs,
+      albums: stats.albums,
+      artists: stats.artists,
+      playlists: stats.playlists,
+      total: stats.total,
+      totalSize: stats.totalSize,
       formattedSize: formatBytes(stats.totalSize),
       retentionDays: 30
     };
@@ -536,4 +578,55 @@ export async function debugR2Paths(env, itemId) {
   }
   
   return results;
+}
+
+// Repair function to fix metadata if needed
+export async function repairTrashMetadata(env) {
+  console.log('🔧 Repairing trash metadata...');
+  
+  try {
+    const trashList = await env.media.list({ prefix: 'trash/' });
+    const metadataFiles = trashList.objects.filter(obj => obj.key.endsWith('_metadata.json'));
+    let fixed = 0;
+    
+    for (const obj of metadataFiles) {
+      try {
+        const file = await env.media.get(obj.key);
+        const metadata = JSON.parse(await file.text());
+        
+        // Check if metadata has required fields
+        if (!metadata.itemType || !metadata.itemName || !metadata.deletedBy) {
+          console.log('⚠️ Fixing metadata for:', obj.key);
+          
+          // Extract info from path if needed
+          const pathParts = obj.key.split('/');
+          const fileName = pathParts[pathParts.length - 2]; // timestamp_itemType_itemId
+          const [timestamp, itemType, itemId] = fileName.split('_');
+          
+          const fixedMetadata = {
+            ...metadata,
+            itemType: metadata.itemType || itemType,
+            itemId: metadata.itemId || itemId,
+            itemName: metadata.itemName || 'Unknown',
+            deletedBy: metadata.deletedBy || 'system',
+            deletedAt: metadata.deletedAt || new Date(parseInt(timestamp)).toISOString(),
+            expiresAt: metadata.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          };
+          
+          await env.media.put(obj.key, JSON.stringify(fixedMetadata, null, 2), {
+            httpMetadata: { contentType: 'application/json' }
+          });
+          fixed++;
+        }
+      } catch (e) {
+        console.error('❌ Error repairing:', obj.key, e);
+      }
+    }
+    
+    return { success: true, fixed };
+    
+  } catch (error) {
+    console.error('Repair error:', error);
+    return { success: false, error: error.message };
+  }
 }
