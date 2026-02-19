@@ -11,9 +11,12 @@ import { handleSearch } from './routes/search.js';
 import { handleAdmin } from './routes/admin/index.js';
 import { handleCron } from './helpers/cron.js';
 
+// ===== ADMIN PAGE IMPORTS =====
+import { handleAdminActivity, handleAdminActivityExport } from './routes/admin/activity.js';
+
 // ===== API IMPORTS =====
 import { handleTrackPlay, handleTrackPlayOptions } from './routes/api/play.js';
-import { handlePreview } from './routes/api/preview.js';  // 👈 NEW PREVIEW API
+import { handlePreview } from './routes/api/preview.js';
 
 export default {
   async fetch(req, env, ctx) {
@@ -28,6 +31,15 @@ export default {
     try {
       // ===== ADMIN ROUTES (Highest priority) =====
       if (path.startsWith("/admin")) {
+        // Handle specific admin routes before passing to general handler
+        if (path === "/admin/activity") {
+          return await handleAdminActivity(req, env, ctx);
+        }
+        if (path === "/admin/activity/export") {
+          return await handleAdminActivityExport(req, env, ctx);
+        }
+        
+        // Pass through to main admin handler
         return await handleAdmin(req, env, ctx);
       }
       
@@ -46,7 +58,7 @@ export default {
         });
       }
       
-      // 👇 NEW PREVIEW API ROUTE
+      // Preview API route
       if (path.startsWith("/api/preview")) {
         return await handlePreview(req, env, ctx);
       }
