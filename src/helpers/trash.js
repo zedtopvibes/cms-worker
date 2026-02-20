@@ -1,6 +1,6 @@
-// ==================== PURE R2 TRASH HELPER (FULL FIXED CODE) ====================
+// ==================== PURE R2 TRASH HELPER (WITH PARALLEL PROCESSING) ====================
 import { getAlbums, saveAlbums, getArtists, saveArtists, getPlaylists, savePlaylists, getMetadata, saveMetadata } from './storage.js';
-import { logActivity } from './activity.js';  // ADD THIS IMPORT
+import { logActivity } from './activity.js';
 
 // Move item to trash - pure R2
 export async function moveToTrash(env, adminId, itemType, itemId, itemName, metadata = {}, sizeBytes = 0) {
@@ -89,7 +89,6 @@ async function moveFileToTrash(env, originalPath, trashPrefix) {
     const fileName = originalPath.split('/').pop();
     const trashPath = `${trashPrefix}/${fileName}`;
 
-    // Use stream directly - no arrayBuffer!
     await env.media.put(trashPath, file.body, {
       httpMetadata: file.httpMetadata,
       customMetadata: {
@@ -99,7 +98,6 @@ async function moveFileToTrash(env, originalPath, trashPrefix) {
       }
     });
 
-    // Delete original after successful copy
     await env.media.delete(originalPath);
 
     return {
@@ -150,9 +148,11 @@ async function moveSongToTrash(env, songId, trashPrefix) {
   return { files, totalSize };
 }
 
-// Restore from trash - UPDATED WITH LOGGING
+// ===== PARALLEL PROCESSING FUNCTIONS =====
+
+// Restore from trash - WITH PARALLEL PROCESSING
 export async function restoreFromTrash(env, adminId, trashKey) {
-  console.log('🔄 Restoring from trash:', trashKey);
+  console.log('🔄 Restoring from trash (parallel):', trashKey);
 
   try {
     // Get metadata file
@@ -162,14 +162,15 @@ export async function restoreFromTrash(env, adminId, trashKey) {
     }
 
     const metadata = JSON.parse(await metadataFile.text());
-    const restoredFiles = [];
-
-    // Restore each file
-    for (const file of metadata.files) {
+    
+    // PARALLEL: Restore all files at the same time
+    console.log(`📦 Restoring ${metadata.files.length} files in parallel...`);
+    
+    const restorePromises = metadata.files.map(async (file) => {
       try {
         const trashFile = await env.media.get(file.trashPath);
         if (trashFile) {
-          // Restore to original location using stream
+          // Restore to original location
           await env.media.put(file.originalPath, trashFile.body, {
             httpMetadata: trashFile.httpMetadata,
             customMetadata: {
@@ -181,25 +182,31 @@ export async function restoreFromTrash(env, adminId, trashKey) {
 
           // Delete from trash
           await env.media.delete(file.trashPath);
-          restoredFiles.push(file.originalPath);
+          return file.originalPath;
         }
+        return null;
       } catch (e) {
         console.error(`❌ Error restoring ${file.trashPath}:`, e);
+        return null;
       }
-    }
+    });
+
+    // Wait for all files to be restored in parallel
+    const restoredFiles = (await Promise.all(restorePromises)).filter(Boolean);
 
     // Delete metadata file
     await env.media.delete(trashKey);
 
-    // Restore metadata in storage (for albums/artists/playlists)
+    // Restore metadata in storage
     await restoreMetadataInStorage(env, metadata);
 
-    // ✅ ADD THIS: Log the restore activity
+    // Log the restore activity
     await logActivity(env, 'restore', metadata.itemName, adminId, {
       type: metadata.itemType,
       id: metadata.itemId,
       fromTrash: true,
-      files: restoredFiles.length
+      files: restoredFiles.length,
+      parallel: true
     }, 'internal');
 
     return {
@@ -211,11 +218,117 @@ export async function restoreFromTrash(env, adminId, trashKey) {
   } catch (error) {
     console.error('❌ Restore error:', error);
     
-    // ❌ Also log failed restore attempts
     await logActivity(env, 'restore_failed', trashKey, adminId, {
       error: error.message
     }, 'internal').catch(() => {});
     
+    return {
+      success: false,
+      message: `❌ Error: ${error.message}`
+    };
+  }
+}
+
+// Permanently delete from trash - WITH PARALLEL PROCESSING
+export async function deletePermanently(env, trashKey) {
+  console.log('🗑️ Permanently deleting from trash (parallel):', trashKey);
+
+  try {
+    // Get metadata to find all files
+    const metadataFile = await env.media.get(trashKey);
+    if (!metadataFile) {
+      return { success: false, message: '❌ Trash item not found' };
+    }
+
+    const metadata = JSON.parse(await metadataFile.text());
+
+    // PARALLEL: Delete all files at the same time
+    console.log(`📦 Deleting ${metadata.files.length} files in parallel...`);
+    
+    const deletePromises = metadata.files.map(async (file) => {
+      try {
+        await env.media.delete(file.trashPath);
+        return true;
+      } catch (e) {
+        console.error(`❌ Error deleting ${file.trashPath}:`, e);
+        return false;
+      }
+    });
+
+    // Wait for all deletions
+    const results = await Promise.all(deletePromises);
+    const deletedCount = results.filter(Boolean).length;
+
+    // Delete metadata file
+    await env.media.delete(trashKey);
+
+    // Log permanent deletion
+    await logActivity(env, 'permanent_delete', metadata.itemName, 'system', {
+      type: metadata.itemType,
+      id: metadata.itemId,
+      deletedBy: metadata.deletedBy,
+      files: metadata.files.length,
+      deleted: deletedCount
+    }, 'internal');
+
+    return {
+      success: true,
+      message: `✅ Permanently deleted ${metadata.itemName} (${deletedCount} files)`
+    };
+
+  } catch (error) {
+    console.error('❌ Error:', error);
+    return {
+      success: false,
+      message: `❌ Error: ${error.message}`
+    };
+  }
+}
+
+// Empty trash (all or by type) - WITH PARALLEL PROCESSING
+export async function emptyTrash(env, itemType = 'all') {
+  try {
+    const trashList = await env.media.list({ prefix: 'trash/' });
+    const metadataFiles = trashList.objects.filter(obj => obj.key.endsWith('_metadata.json'));
+    
+    let totalDeleted = 0;
+    const deletePromises = [];
+
+    for (const obj of metadataFiles) {
+      if (itemType === 'all') {
+        // Delete metadata file
+        deletePromises.push(env.media.delete(obj.key));
+        totalDeleted++;
+      } else {
+        // Check if this metadata file matches the type
+        const file = await env.media.get(obj.key);
+        const metadata = JSON.parse(await file.text());
+        
+        if (metadata.itemType === itemType) {
+          // PARALLEL: Delete all files for this item
+          const fileDeletePromises = metadata.files.map(f => 
+            env.media.delete(f.trashPath).catch(() => {})
+          );
+          
+          // Add metadata file deletion
+          deletePromises.push(...fileDeletePromises);
+          deletePromises.push(env.media.delete(obj.key));
+          totalDeleted++;
+        }
+      }
+    }
+
+    // Wait for all deletions to complete in parallel
+    await Promise.all(deletePromises);
+    
+    return {
+      success: true,
+      count: totalDeleted,
+      message: `✅ Emptied ${totalDeleted} items from trash`
+    };
+    
+  } catch (error) {
+    console.error('Error emptying trash:', error);
     return {
       success: false,
       message: `❌ Error: ${error.message}`
@@ -254,99 +367,9 @@ async function restoreMetadataInStorage(env, metadata) {
   }
 }
 
-// Permanently delete from trash - UPDATED WITH LOGGING
-export async function deletePermanently(env, trashKey) {
-  console.log('🗑️ Permanently deleting from trash:', trashKey);
-
-  try {
-    // Get metadata to find all files
-    const metadataFile = await env.media.get(trashKey);
-    if (!metadataFile) {
-      return { success: false, message: '❌ Trash item not found' };
-    }
-
-    const metadata = JSON.parse(await metadataFile.text());
-
-    // Delete all files
-    for (const file of metadata.files) {
-      try {
-        await env.media.delete(file.trashPath);
-        console.log('✅ Deleted:', file.trashPath);
-      } catch (e) {
-        console.error(`❌ Error deleting ${file.trashPath}:`, e);
-      }
-    }
-
-    // Delete metadata file
-    await env.media.delete(trashKey);
-
-    // ✅ ADD THIS: Log permanent deletion
-    await logActivity(env, 'permanent_delete', metadata.itemName, 'system', {
-      type: metadata.itemType,
-      id: metadata.itemId,
-      deletedBy: metadata.deletedBy,
-      files: metadata.files.length
-    }, 'internal');
-
-    return {
-      success: true,
-      message: `✅ Permanently deleted ${metadata.itemName}`
-    };
-
-  } catch (error) {
-    console.error('❌ Error:', error);
-    return {
-      success: false,
-      message: `❌ Error: ${error.message}`
-    };
-  }
-}
-
-// Empty trash (all or by type)
-export async function emptyTrash(env, itemType = 'all') {
-  try {
-    const trashList = await env.media.list({ prefix: 'trash/' });
-    let deleted = 0;
-    
-    for (const obj of trashList.objects) {
-      if (itemType === 'all') {
-        // Delete everything in trash
-        await env.media.delete(obj.key);
-        deleted++;
-      } else if (obj.key.endsWith('_metadata.json')) {
-        // Check if this metadata file matches the type
-        const file = await env.media.get(obj.key);
-        const metadata = JSON.parse(await file.text());
-        if (metadata.itemType === itemType) {
-          // Delete all files for this item
-          for (const file of metadata.files) {
-            await env.media.delete(file.trashPath).catch(() => {});
-          }
-          await env.media.delete(obj.key);
-          deleted++;
-        }
-      }
-    }
-    
-    return {
-      success: true,
-      count: deleted,
-      message: `✅ Emptied ${deleted} items from trash`
-    };
-    
-  } catch (error) {
-    console.error('Error emptying trash:', error);
-    return {
-      success: false,
-      message: `❌ Error: ${error.message}`
-    };
-  }
-}
-
-// Get all trash items with pagination - FIXED for UI
+// Get all trash items with pagination
 export async function getTrashItems(env, type = 'all', page = 1, limit = 20, search = '') {
   try {
-    // List all trash metadata files
     const trashList = await env.media.list({ prefix: 'trash/' });
     const metadataFiles = trashList.objects.filter(obj => obj.key.endsWith('_metadata.json'));
     
@@ -356,19 +379,15 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
       const file = await env.media.get(obj.key);
       const metadata = JSON.parse(await file.text());
       
-      // Apply filters
       if (type !== 'all' && metadata.itemType !== type) continue;
       if (search && !metadata.itemName.toLowerCase().includes(search.toLowerCase())) continue;
       
-      // Calculate days left
       const daysLeft = Math.ceil((new Date(metadata.expiresAt) - new Date()) / (1000 * 60 * 60 * 24));
       
-      // Format thumbnail URL based on item type
       let thumbnail = null;
       if (metadata.originalMetadata?.thumbnail) {
         thumbnail = metadata.originalMetadata.thumbnail;
       } else {
-        // Generate default thumbnail path
         switch (metadata.itemType) {
           case 'song':
             thumbnail = `/images/${metadata.itemId}.jpg`;
@@ -385,11 +404,10 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
         }
       }
       
-      // Format the item to match what your UI expects
       items.push({
-        id: obj.key,                    // This is what your UI uses for restore/delete
-        item_type: metadata.itemType,    // Your UI expects this field name
-        item_name: metadata.itemName,    // Your UI expects this field name
+        id: obj.key,
+        item_type: metadata.itemType,
+        item_name: metadata.itemName,
         item_id: metadata.itemId,
         deleted_by: metadata.deletedBy,
         deleted_at: metadata.deletedAt,
@@ -406,10 +424,8 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
       });
     }
     
-    // Sort by deleted date (newest first)
     items.sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
     
-    // Paginate
     const start = (page - 1) * limit;
     const paginatedItems = items.slice(start, start + limit);
     
@@ -426,7 +442,7 @@ export async function getTrashItems(env, type = 'all', page = 1, limit = 20, sea
   }
 }
 
-// Get trash statistics - FIXED for UI
+// Get trash statistics
 export async function getTrashStats(env) {
   try {
     const trashList = await env.media.list({ prefix: 'trash/' });
@@ -445,7 +461,6 @@ export async function getTrashStats(env) {
       const file = await env.media.get(obj.key);
       const metadata = JSON.parse(await file.text());
       
-      // Count by type
       if (metadata.itemType === 'song') stats.songs++;
       else if (metadata.itemType === 'album') stats.albums++;
       else if (metadata.itemType === 'artist') stats.artists++;
@@ -522,7 +537,7 @@ export async function updateTrashSettings(env, adminId, settings) {
   }
 }
 
-// Clean up expired trash items (call from cron)
+// Clean up expired trash items (call from cron) - WITH PARALLEL PROCESSING
 export async function cleanupExpiredTrash(env) {
   try {
     const settings = await getTrashSettings(env);
@@ -533,6 +548,7 @@ export async function cleanupExpiredTrash(env) {
     const trashList = await env.media.list({ prefix: 'trash/' });
     const metadataFiles = trashList.objects.filter(obj => obj.key.endsWith('_metadata.json'));
     let deleted = 0;
+    const cleanupPromises = [];
     
     const now = new Date();
     
@@ -541,14 +557,17 @@ export async function cleanupExpiredTrash(env) {
       const metadata = JSON.parse(await file.text());
       
       if (new Date(metadata.expiresAt) < now) {
-        // Delete all files for this item
+        // PARALLEL: Delete all files for this item
         for (const file of metadata.files) {
-          await env.media.delete(file.trashPath).catch(() => {});
+          cleanupPromises.push(env.media.delete(file.trashPath).catch(() => {}));
         }
-        await env.media.delete(obj.key);
+        cleanupPromises.push(env.media.delete(obj.key));
         deleted++;
       }
     }
+
+    // Wait for all cleanup operations
+    await Promise.all(cleanupPromises);
     
     return {
       success: true,
@@ -571,7 +590,7 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Debug function to check R2 paths
+// Debug function
 export async function debugR2Paths(env, itemId) {
   console.log('🔍 Debugging R2 paths for item ID:', itemId);
   
@@ -603,7 +622,7 @@ export async function debugR2Paths(env, itemId) {
   return results;
 }
 
-// Repair function to fix metadata if needed
+// Repair function
 export async function repairTrashMetadata(env) {
   console.log('🔧 Repairing trash metadata...');
   
@@ -611,40 +630,46 @@ export async function repairTrashMetadata(env) {
     const trashList = await env.media.list({ prefix: 'trash/' });
     const metadataFiles = trashList.objects.filter(obj => obj.key.endsWith('_metadata.json'));
     let fixed = 0;
+    const repairPromises = [];
     
     for (const obj of metadataFiles) {
-      try {
-        const file = await env.media.get(obj.key);
-        const metadata = JSON.parse(await file.text());
-        
-        // Check if metadata has required fields
-        if (!metadata.itemType || !metadata.itemName || !metadata.deletedBy) {
-          console.log('⚠️ Fixing metadata for:', obj.key);
+      repairPromises.push((async () => {
+        try {
+          const file = await env.media.get(obj.key);
+          const metadata = JSON.parse(await file.text());
           
-          // Extract info from path if needed
-          const pathParts = obj.key.split('/');
-          const fileName = pathParts[pathParts.length - 2]; // timestamp_itemType_itemId
-          const [timestamp, itemType, itemId] = fileName.split('_');
-          
-          const fixedMetadata = {
-            ...metadata,
-            itemType: metadata.itemType || itemType,
-            itemId: metadata.itemId || itemId,
-            itemName: metadata.itemName || 'Unknown',
-            deletedBy: metadata.deletedBy || 'system',
-            deletedAt: metadata.deletedAt || new Date(parseInt(timestamp)).toISOString(),
-            expiresAt: metadata.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-          };
-          
-          await env.media.put(obj.key, JSON.stringify(fixedMetadata, null, 2), {
-            httpMetadata: { contentType: 'application/json' }
-          });
-          fixed++;
+          if (!metadata.itemType || !metadata.itemName || !metadata.deletedBy) {
+            console.log('⚠️ Fixing metadata for:', obj.key);
+            
+            const pathParts = obj.key.split('/');
+            const fileName = pathParts[pathParts.length - 2];
+            const [timestamp, itemType, itemId] = fileName.split('_');
+            
+            const fixedMetadata = {
+              ...metadata,
+              itemType: metadata.itemType || itemType,
+              itemId: metadata.itemId || itemId,
+              itemName: metadata.itemName || 'Unknown',
+              deletedBy: metadata.deletedBy || 'system',
+              deletedAt: metadata.deletedAt || new Date(parseInt(timestamp)).toISOString(),
+              expiresAt: metadata.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+            };
+            
+            await env.media.put(obj.key, JSON.stringify(fixedMetadata, null, 2), {
+              httpMetadata: { contentType: 'application/json' }
+            });
+            return true;
+          }
+          return false;
+        } catch (e) {
+          console.error('❌ Error repairing:', obj.key, e);
+          return false;
         }
-      } catch (e) {
-        console.error('❌ Error repairing:', obj.key, e);
-      }
+      })());
     }
+
+    const results = await Promise.all(repairPromises);
+    fixed = results.filter(Boolean).length;
     
     return { success: true, fixed };
     
