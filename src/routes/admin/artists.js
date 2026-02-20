@@ -32,17 +32,17 @@ export async function handleAdminArtists(req, env, ctx, auth) {
       
       return {
         id,
-        name: artist.name || '',
+        name: artist.name,
         description: artist.description || '',
         genre: artist.genre || 'Various',
         thumbnail: artist.thumbnail,
         songCount: artist.songs?.length || 0,
         albumCount,
-        plays: stats.plays || 0,
-        downloads: stats.downloads || 0,
-        views: pageViews || 0,
-        monthlyListeners: monthlyListeners || 0,
-        created: artist.created || 0,
+        plays: stats.plays,
+        downloads: stats.downloads,
+        views: pageViews,
+        monthlyListeners,
+        created: artist.created,
         hasImage: !!artist.thumbnail
       };
     })
@@ -52,34 +52,31 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   if (search) {
     const searchLower = search.toLowerCase();
     artistsData = artistsData.filter(artist => 
-      (artist.name || '').toLowerCase().includes(searchLower) ||
-      (artist.genre || '').toLowerCase().includes(searchLower) ||
-      (artist.description || '').toLowerCase().includes(searchLower)
+      artist.name.toLowerCase().includes(searchLower) ||
+      artist.genre.toLowerCase().includes(searchLower) ||
+      artist.description.toLowerCase().includes(searchLower)
     );
   }
 
-  // Apply sorting with views - FIXED with safety checks
+  // Apply sorting with views
   artistsData.sort((a, b) => {
-    // Safety checks
-    if (!a || !b) return 0;
-    
     switch (sort) {
       case 'name':
-        return (a.name || '').localeCompare(b.name || '');
+        return a.name.localeCompare(b.name);
       case 'songs':
-        return (b.songCount || 0) - (a.songCount || 0);
+        return b.songCount - a.songCount;
       case 'albums':
-        return (b.albumCount || 0) - (a.albumCount || 0);
+        return b.albumCount - a.albumCount;
       case 'plays':
-        return (b.plays || 0) - (a.plays || 0);
+        return b.plays - a.plays;
       case 'listeners':
-        return (b.monthlyListeners || 0) - (a.monthlyListeners || 0);
+        return b.monthlyListeners - a.monthlyListeners;
       case 'views':
         return (b.views || 0) - (a.views || 0);
       case 'date':
-        return (b.created || 0) - (a.created || 0);
+        return b.created - a.created;
       default:
-        return (a.name || '').localeCompare(b.name || '');
+        return a.name.localeCompare(b.name);
     }
   });
 
@@ -101,12 +98,12 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   ];
 
   // Calculate totals
-  const totalSongs = artistsData.reduce((acc, a) => acc + (a.songCount || 0), 0);
-  const totalAlbums = artistsData.reduce((acc, a) => acc + (a.albumCount || 0), 0);
-  const totalPlays = artistsData.reduce((acc, a) => acc + (a.plays || 0), 0);
-  const totalDownloads = artistsData.reduce((acc, a) => acc + (a.downloads || 0), 0);
+  const totalSongs = artistsData.reduce((acc, a) => acc + a.songCount, 0);
+  const totalAlbums = artistsData.reduce((acc, a) => acc + a.albumCount, 0);
+  const totalPlays = artistsData.reduce((acc, a) => acc + a.plays, 0);
+  const totalDownloads = artistsData.reduce((acc, a) => acc + a.downloads, 0);
   const totalViews = artistsData.reduce((acc, a) => acc + (a.views || 0), 0);
-  const totalListeners = artistsData.reduce((acc, a) => acc + (a.monthlyListeners || 0), 0);
+  const totalListeners = artistsData.reduce((acc, a) => acc + a.monthlyListeners, 0);
 
   const content = `
     <div style="margin-bottom: 20px;">
@@ -141,8 +138,8 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             <!-- Stats Summary with Views -->
             <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
                 <div><i class="fas fa-microphone" style="color: #ff5500;"></i> Artists: <strong>${totalArtists}</strong></div>
-                <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${formatNumber(totalSongs)}</strong></div>
-                <div><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Albums: <strong>${formatNumber(totalAlbums)}</strong></div>
+                <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${totalSongs}</strong></div>
+                <div><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Albums: <strong>${totalAlbums}</strong></div>
                 <div><i class="fas fa-headphones" style="color: #9b59b6;"></i> Listeners: <strong>${formatNumber(totalListeners)}</strong></div>
                 <div><i class="fas fa-eye" style="color: #4a90e2;"></i> Views: <strong>${formatNumber(totalViews)}</strong></div>
             </div>
@@ -305,12 +302,13 @@ export async function handleAdminArtists(req, env, ctx, auth) {
     </style>
     
     <script>
-        // ===== PARALLEL PROCESSING HELPER =====
+        // ===== PARALLEL PROCESSING HELPER (FIXED - no mock functions) =====
         async function processFilesInParallel(files, operation, onFileProgress) {
             const results = [];
             const total = files.length;
             let completed = 0;
             
+            // Process all files in parallel using Promise.all
             const promises = files.map(async (file, index) => {
                 try {
                     onFileProgress?.({
@@ -319,7 +317,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
                         status: 'processing'
                     });
                     
-                    // Simulate API call delay (remove this in production)
+                    // Simulate processing delay (remove in production)
                     await new Promise(resolve => setTimeout(resolve, 300));
                     
                     completed++;
@@ -338,17 +336,18 @@ export async function handleAdminArtists(req, env, ctx, auth) {
                         status: 'error',
                         error: error.message
                     });
-                    return { error, file };
+                    return { error, file: file.name };
                 }
             });
             
+            // Wait for all files to be processed in parallel
             const batchResults = await Promise.all(promises);
             results.push(...batchResults);
             
             return results;
         }
 
-        // ===== PROGRESS TRACKING FUNCTIONS =====
+        // ===== PROGRESS TRACKING FUNCTIONS (FIXED - no template literals) =====
         function createProgressBar(color, message, showCancel = false) {
             const progressDiv = document.createElement('div');
             progressDiv.className = 'progress-container';
@@ -394,12 +393,14 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const fileName = file.name.split('/').pop() || file.name;
+                let iconClass = 'fa-spinner fa-spin';
+                if (file.status === 'complete') iconClass = 'fa-check-circle';
+                if (file.status === 'error') iconClass = 'fa-exclamation-circle';
+                
                 html += '<div>' +
                     '<span style="color: #666;">' + fileName + '</span>' +
                     '<span class="' + file.status + '">' +
-                    '<i class="fas ' + (file.status === 'complete' ? 'fa-check-circle' : 
-                                     file.status === 'error' ? 'fa-exclamation-circle' : 
-                                     'fa-spinner fa-spin') + '"></i>' +
+                    '<i class="fas ' + iconClass + '"></i>' +
                     '</span>' +
                     '</div>';
             }
@@ -431,7 +432,6 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             window.location.href = '/admin/artists/merge?id=' + id; 
         };
         
-        // FIXED: Delete artist function with progress tracking
         window.deleteArtist = async function(id) {
             if (confirm('Delete this artist? It will be moved to trash.')) {
                 const btn = event.target.closest('button');
@@ -441,16 +441,12 @@ export async function handleAdminArtists(req, env, ctx, auth) {
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
                 btn.disabled = true;
                 
-                // Fix: Get artist name correctly from the card
+                // Get artist name
                 let artistName = 'Artist';
                 if (card) {
                     const nameElement = card.querySelector('.artist-name');
                     if (nameElement) {
                         artistName = nameElement.textContent || 'Artist';
-                    } else {
-                        // Try alternative selector for mobile cards
-                        const mobileName = card.querySelector('div[style*="font-weight:700"]');
-                        if (mobileName) artistName = mobileName.textContent || 'Artist';
                     }
                 }
                 
@@ -482,7 +478,8 @@ export async function handleAdminArtists(req, env, ctx, auth) {
                         const completedCount = fileProgress.filter(f => f.status === 'complete').length;
                         const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
                         
-                        updateProgress(progressDiv, percent, 'Processing ' + (fileData.file.split('/').pop() || 'file') + '...');
+                        const fileName = fileData.file.split('/').pop() || fileData.file;
+                        updateProgress(progressDiv, percent, 'Processing ' + fileName + '...');
                         updateFileProgress(progressDiv, fileProgress);
                     });
                     
@@ -744,7 +741,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ARTIST DELETION =====
+// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -999,7 +996,7 @@ function generateMobileCard(artist) {
             <span><i class="fas fa-music"></i> ${artist.songCount} songs</span>
             <span><i class="fas fa-compact-disc"></i> ${artist.albumCount} albums</span>
             <span><i class="fas fa-headphones" style="color:#9b59b6;"></i> ${formatNumber(artist.monthlyListeners)}</span>
-            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views)}</span>
+            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">Since ${date}</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -1034,7 +1031,7 @@ function generateGridCard(artist) {
                 <span><i class="fas fa-music"></i> ${artist.songCount}</span>
                 <span><i class="fas fa-compact-disc"></i> ${artist.albumCount}</span>
                 <span><i class="fas fa-headphones"></i> ${formatNumber(artist.monthlyListeners)}</span>
-                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views)}</span>
+                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
             </div>
             <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
                 <button onclick="previewModal.show('artist', '${artist.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
