@@ -621,6 +621,9 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                 <a href="/admin/trash" class="tab-btn ${activePage === 'trash' ? 'active' : ''}">
                     <i class="fas fa-trash-alt"></i> Trash
                 </a>
+  <a href="/admin/duplicate-detector" class="tab-btn ${activePage === 'duplicate-detector' ? 'active' : ''}">
+    <i class="fas fa-search"></i> Duplicate Detector
+</a>
             </div>
         </div>
         
