@@ -237,9 +237,201 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             .mobile-cards { display: none; }
             .artists-grid { display: grid !important; }
         }
+
+
+/* Progress Tracking Styles */
+.progress-container {
+    animation: slideDown 0.3s ease;
+    margin: 10px 0;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.progress-bar-fill {
+    transition: width 0.3s ease;
+}
+
+.btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.fa-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.file-progress-list {
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 0.75rem;
+    border-top: 1px solid #e8e8e8;
+    padding-top: 8px;
+}
+
+.file-progress-list div {
+    padding: 4px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+}
+
+.file-progress-list .complete {
+    color: #28a745;
+}
+
+.file-progress-list .error {
+    color: #dc3545;
+}
+
+.file-progress-list .processing {
+    color: #ff5500;
+}
+
+
     </style>
     
     <script>
+
+// ===== PARALLEL PROCESSING HELPER =====
+async function processFilesInParallel(files, operation, onFileProgress) {
+    const results = [];
+    const total = files.length;
+    let completed = 0;
+    
+    // Process all files in parallel using Promise.all
+    const promises = files.map(async (file, index) => {
+        try {
+            onFileProgress?.({
+                file: file.name,
+                index,
+                status: 'processing'
+            });
+            
+            let result;
+            if (operation === 'restore') {
+                // Simulate restore operation
+                result = await restoreSingleFile(file);
+            } else if (operation === 'delete') {
+                // Simulate delete operation
+                result = await deleteSingleFile(file);
+            }
+            
+            completed++;
+            onFileProgress?.({
+                file: file.name,
+                index,
+                status: 'complete',
+                progress: Math.round((completed / total) * 100)
+            });
+            
+            return result;
+        } catch (error) {
+            onFileProgress?.({
+                file: file.name,
+                index,
+                status: 'error',
+                error: error.message
+            });
+            return { error, file };
+        }
+    });
+    
+    // Wait for all files to be processed in parallel
+    const batchResults = await Promise.all(promises);
+    results.push(...batchResults);
+    
+    return results;
+}
+
+// Mock functions - replace with actual API calls
+async function restoreSingleFile(file) {
+    // In real implementation, this would call your API
+    return new Promise(resolve => setTimeout(resolve, 500));
+}
+
+async function deleteSingleFile(file) {
+    // In real implementation, this would call your API
+    return new Promise(resolve => setTimeout(resolve, 500));
+}
+
+
+// ===== PROGRESS TRACKING FUNCTIONS =====
+function createProgressBar(color, message, showCancel = false) {
+    const progressDiv = document.createElement('div');
+    progressDiv.className = 'progress-container';
+    progressDiv.innerHTML = \`
+        <div style="margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e8e8e8;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-weight: 600; color: #333;">\${message}</span>
+                <span class="progress-percent" style="font-weight: 600; color: \${color};">0%</span>
+            </div>
+            
+            <!-- Progress Bar -->
+            <div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+                <div class="progress-bar-fill" style="width: 0%; height: 100%; background: \${color}; transition: width 0.3s ease;"></div>
+            </div>
+            
+            <!-- Status Message -->
+            <div class="progress-status" style="font-size: 0.8rem; color: #666; margin-bottom: 8px;">
+                <i class="fas fa-circle-notch fa-spin" style="color: \${color};"></i> Starting...
+            </div>
+            
+            <!-- File Progress List -->
+            <div class="file-progress-list" style="display: none;"></div>
+        </div>
+    \`;
+    return progressDiv;
+}
+
+function updateProgress(container, percent, status) {
+    const fill = container.querySelector('.progress-bar-fill');
+    const percentSpan = container.querySelector('.progress-percent');
+    const statusSpan = container.querySelector('.progress-status');
+    
+    if (fill) fill.style.width = percent + '%';
+    if (percentSpan) percentSpan.textContent = percent + '%';
+    if (statusSpan) {
+        if (percent >= 100) {
+            statusSpan.innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> ' + status;
+        } else {
+            statusSpan.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="color: #ff5500;"></i> ' + status;
+        }
+    }
+}
+
+function updateFileProgress(container, files) {
+    const fileList = container.querySelector('.file-progress-list');
+    if (!fileList) return;
+    
+    fileList.style.display = 'block';
+    fileList.innerHTML = files.map(file => \`
+        <div>
+            <span style="color: #666;">\${file.name}</span>
+            <span class="\${file.status}">
+                <i class="fas \${file.status === 'complete' ? 'fa-check-circle' : 
+                                 file.status === 'error' ? 'fa-exclamation-circle' : 
+                                 'fa-spinner fa-spin'}"></i>
+            </span>
+        </div>
+    \`).join('');
+}
+
+
+
         function applyFilters() {
             const search = document.getElementById('searchInput').value;
             const sort = document.getElementById('sortSelect').value;
@@ -256,9 +448,86 @@ export async function handleAdminArtists(req, env, ctx, auth) {
         window.viewArtist = function(id) { window.open('/artist/' + id, '_blank'); };
         window.editArtist = function(id) { window.location.href = '/admin/artists/edit?id=' + id; };
         window.mergeArtist = function(id) { window.location.href = '/admin/artists/merge?id=' + id; };
-        window.deleteArtist = function(id) {
-            if (confirm('Delete this artist? It will be moved to trash.')) window.location.href = '/admin/artists/delete?id=' + id;
-        };
+        window.deleteArtist = async function(id) {
+    if (confirm('Delete this artist? It will be moved to trash.')) {
+        const btn = event.target.closest('button');
+        const originalText = btn.innerHTML;
+        const card = btn.closest('.artist-grid-card, .mobile-card');
+        
+        // Disable button and show spinner
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
+        btn.disabled = true;
+        
+        // Get artist name from the card
+        const artistName = card.querySelector('.artist-name')?.textContent || 'Artist';
+        
+        // Files to delete (artist image)
+        const files = [
+            { name: `artists/thumbnails/${id}.jpg`, type: 'image' }
+        ];
+        
+        // Create progress bar
+        const progressDiv = createProgressBar('#9b59b6', `Moving ${artistName} to trash...`);
+        
+        // Add progress bar after the button container
+        const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
+        buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
+        
+        // Track file progress
+        const fileProgress = files.map(f => ({
+            name: f.name,
+            status: 'pending'
+        }));
+        
+        try {
+            updateProgress(progressDiv, 10, 'Preparing...');
+            
+            // Process files in parallel (even if just one file)
+            const results = await processFilesInParallel(files, 'delete', (fileData) => {
+                // Update file progress
+                const fileIndex = fileProgress.findIndex(f => f.name === fileData.file);
+                if (fileIndex !== -1) {
+                    fileProgress[fileIndex].status = fileData.status;
+                }
+                
+                // Calculate overall progress
+                const completedCount = fileProgress.filter(f => f.status === 'complete').length;
+                const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
+                
+                updateProgress(progressDiv, percent, `Processing ${fileData.file}...`);
+                updateFileProgress(progressDiv, fileProgress);
+            });
+            
+            updateProgress(progressDiv, 90, 'Finalizing...');
+            
+            // Make the actual delete API call
+            const response = await fetch('/admin/artists/delete?id=' + id);
+            const result = await response.json();
+            
+            if (result.success) {
+                updateProgress(progressDiv, 100, '✅ Artist moved to trash!');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                throw new Error(result.message || 'Delete failed');
+            }
+            
+        } catch (error) {
+            console.error('Delete error:', error);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            updateProgress(progressDiv, 0, '❌ Error: ' + error.message);
+            
+            // Mark all pending files as error
+            fileProgress.forEach(f => {
+                if (f.status === 'pending') f.status = 'error';
+            });
+            updateFileProgress(progressDiv, fileProgress);
+            
+            setTimeout(() => progressDiv.remove(), 3000);
+        }
+    }
+};
+       
     </script>
   `;
 
