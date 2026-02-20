@@ -24,10 +24,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
       const stats = await getAggregatedStats(artist.songs || [], env);
       const pageViews = await getPageViews(env, 'artist', id);
       
-      // Get album count
       const albumCount = artist.albums?.length || 0;
-      
-      // Get monthly listeners (estimate based on plays)
       const monthlyListeners = Math.floor(stats.plays * 0.3);
       
       return {
@@ -86,7 +83,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   const startIdx = (page - 1) * ITEMS_PER_PAGE;
   const pageArtists = artistsData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
-  // Sort options with views
+  // Sort options
   const sortOptions = [
     { value: 'name', label: 'Name' },
     { value: 'songs', label: 'Most Songs' },
@@ -135,7 +132,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
                 </button>
             </div>
             
-            <!-- Stats Summary with Views -->
+            <!-- Stats Summary -->
             <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
                 <div><i class="fas fa-microphone" style="color: #ff5500;"></i> Artists: <strong>${totalArtists}</strong></div>
                 <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${totalSongs}</strong></div>
@@ -237,176 +234,9 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             .mobile-cards { display: none; }
             .artists-grid { display: grid !important; }
         }
-
-        /* Progress Tracking Styles */
-        .progress-container {
-            animation: slideDown 0.3s ease;
-            margin: 10px 0;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .progress-bar-fill {
-            transition: width 0.3s ease;
-        }
-
-        .btn:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-
-        .fa-spinner {
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .file-progress-list {
-            max-height: 150px;
-            overflow-y: auto;
-            font-size: 0.75rem;
-            border-top: 1px solid #e8e8e8;
-            padding-top: 8px;
-        }
-
-        .file-progress-list div {
-            padding: 4px;
-            border-bottom: 1px solid #f0f0f0;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .file-progress-list .complete {
-            color: #28a745;
-        }
-
-        .file-progress-list .error {
-            color: #dc3545;
-        }
-
-        .file-progress-list .processing {
-            color: #ff5500;
-        }
     </style>
     
     <script>
-        // ===== PARALLEL PROCESSING HELPER (FIXED - no mock functions) =====
-        async function processFilesInParallel(files, operation, onFileProgress) {
-            const results = [];
-            const total = files.length;
-            let completed = 0;
-            
-            // Process all files in parallel using Promise.all
-            const promises = files.map(async (file, index) => {
-                try {
-                    onFileProgress?.({
-                        file: file.name,
-                        index,
-                        status: 'processing'
-                    });
-                    
-                    // Simulate processing delay (remove in production)
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    
-                    completed++;
-                    onFileProgress?.({
-                        file: file.name,
-                        index,
-                        status: 'complete',
-                        progress: Math.round((completed / total) * 100)
-                    });
-                    
-                    return { success: true, file: file.name };
-                } catch (error) {
-                    onFileProgress?.({
-                        file: file.name,
-                        index,
-                        status: 'error',
-                        error: error.message
-                    });
-                    return { error, file: file.name };
-                }
-            });
-            
-            // Wait for all files to be processed in parallel
-            const batchResults = await Promise.all(promises);
-            results.push(...batchResults);
-            
-            return results;
-        }
-
-        // ===== PROGRESS TRACKING FUNCTIONS (FIXED - no template literals) =====
-        function createProgressBar(color, message, showCancel = false) {
-            const progressDiv = document.createElement('div');
-            progressDiv.className = 'progress-container';
-            progressDiv.innerHTML = 
-                '<div style="margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e8e8e8;">' +
-                '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">' +
-                '<span style="font-weight: 600; color: #333;">' + message + '</span>' +
-                '<span class="progress-percent" style="font-weight: 600; color: ' + color + ';">0%</span>' +
-                '</div>' +
-                '<div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">' +
-                '<div class="progress-bar-fill" style="width: 0%; height: 100%; background: ' + color + '; transition: width 0.3s ease;"></div>' +
-                '</div>' +
-                '<div class="progress-status" style="font-size: 0.8rem; color: #666; margin-bottom: 8px;">' +
-                '<i class="fas fa-circle-notch fa-spin" style="color: ' + color + ';"></i> Starting...' +
-                '</div>' +
-                '<div class="file-progress-list" style="display: none;"></div>' +
-                '</div>';
-            return progressDiv;
-        }
-
-        function updateProgress(container, percent, status) {
-            const fill = container.querySelector('.progress-bar-fill');
-            const percentSpan = container.querySelector('.progress-percent');
-            const statusSpan = container.querySelector('.progress-status');
-            
-            if (fill) fill.style.width = percent + '%';
-            if (percentSpan) percentSpan.textContent = percent + '%';
-            if (statusSpan) {
-                if (percent >= 100) {
-                    statusSpan.innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> ' + status;
-                } else {
-                    statusSpan.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="color: #ff5500;"></i> ' + status;
-                }
-            }
-        }
-
-        function updateFileProgress(container, files) {
-            const fileList = container.querySelector('.file-progress-list');
-            if (!fileList) return;
-            
-            fileList.style.display = 'block';
-            let html = '';
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                const fileName = file.name.split('/').pop() || file.name;
-                let iconClass = 'fa-spinner fa-spin';
-                if (file.status === 'complete') iconClass = 'fa-check-circle';
-                if (file.status === 'error') iconClass = 'fa-exclamation-circle';
-                
-                html += '<div>' +
-                    '<span style="color: #666;">' + fileName + '</span>' +
-                    '<span class="' + file.status + '">' +
-                    '<i class="fas ' + iconClass + '"></i>' +
-                    '</span>' +
-                    '</div>';
-            }
-            fileList.innerHTML = html;
-        }
-
         function applyFilters() {
             const search = document.getElementById('searchInput').value;
             const sort = document.getElementById('sortSelect').value;
@@ -432,83 +262,32 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             window.location.href = '/admin/artists/merge?id=' + id; 
         };
         
+        // SIMPLIFIED delete function - just like trash code
         window.deleteArtist = async function(id) {
             if (confirm('Delete this artist? It will be moved to trash.')) {
                 const btn = event.target.closest('button');
                 const originalText = btn.innerHTML;
-                const card = btn.closest('.artist-grid-card, .mobile-card');
                 
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
+                // Simple loading state
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
                 btn.disabled = true;
                 
-                // Get artist name
-                let artistName = 'Artist';
-                if (card) {
-                    const nameElement = card.querySelector('.artist-name');
-                    if (nameElement) {
-                        artistName = nameElement.textContent || 'Artist';
-                    }
-                }
-                
-                const files = [
-                    { name: 'artists/thumbnails/' + id + '.jpg', type: 'image' }
-                ];
-                
-                const progressDiv = createProgressBar('#9b59b6', 'Moving ' + artistName + ' to trash...');
-                
-                const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
-                if (buttonContainer && buttonContainer.parentNode) {
-                    buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
-                }
-                
-                const fileProgress = files.map(f => ({
-                    name: f.name,
-                    status: 'pending'
-                }));
-                
                 try {
-                    updateProgress(progressDiv, 10, 'Preparing...');
-                    
-                    await processFilesInParallel(files, 'delete', (fileData) => {
-                        const fileIndex = fileProgress.findIndex(f => f.name === fileData.file);
-                        if (fileIndex !== -1) {
-                            fileProgress[fileIndex].status = fileData.status;
-                        }
-                        
-                        const completedCount = fileProgress.filter(f => f.status === 'complete').length;
-                        const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
-                        
-                        const fileName = fileData.file.split('/').pop() || fileData.file;
-                        updateProgress(progressDiv, percent, 'Processing ' + fileName + '...');
-                        updateFileProgress(progressDiv, fileProgress);
-                    });
-                    
-                    updateProgress(progressDiv, 90, 'Finalizing...');
-                    
                     const response = await fetch('/admin/artists/delete?id=' + id);
                     const result = await response.json();
                     
                     if (result.success) {
-                        updateProgress(progressDiv, 100, '✅ ' + artistName + ' moved to trash!');
-                        setTimeout(() => location.reload(), 1000);
+                        // Simple reload on success
+                        location.reload();
                     } else {
-                        throw new Error(result.message || 'Delete failed');
+                        alert('Error: ' + (result.message || 'Delete failed'));
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
                     }
-                    
                 } catch (error) {
-                    console.error('Delete error:', error);
+                    alert('Error: ' + error.message);
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                    updateProgress(progressDiv, 0, '❌ Error: ' + error.message);
-                    
-                    for (let i = 0; i < fileProgress.length; i++) {
-                        if (fileProgress[i].status === 'pending') {
-                            fileProgress[i].status = 'error';
-                        }
-                    }
-                    updateFileProgress(progressDiv, fileProgress);
-                    
-                    setTimeout(() => progressDiv.remove(), 3000);
                 }
             }
         };
@@ -582,7 +361,6 @@ export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
   const artistId = sanitize(name);
   const artists = await getArtists(env);
 
-  // Check if artist already exists
   if (artists[artistId]) {
     return { success: false, error: 'Artist with this name already exists' };
   }
@@ -608,7 +386,6 @@ export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
 
   await saveArtists(env, artists);
   
-  // Log activity
   await logAdminActivity(env, auth.session.id, 'create', 'artist', artistId, name);
 
   return { 
@@ -716,13 +493,11 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
       return { success: false, error: 'Artist not found' };
     }
     
-    // Update artist details
     artists[artistId].name = name;
     artists[artistId].genre = genre;
     artists[artistId].description = description;
     artists[artistId].origin = origin;
     
-    // Upload new thumbnail if provided
     if (thumbnailFile && thumbnailFile.size > 0) {
       const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
       const thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
@@ -732,7 +507,6 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
     
     await saveArtists(env, artists);
     
-    // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
     
     return { success: true, redirect: '/admin/artists?updated=1' };
@@ -741,7 +515,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
+// ===== HANDLE ARTIST DELETION =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -755,13 +529,6 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
     const artist = artists[artistId];
     const artistName = artist?.name || 'Unknown artist';
     
-    // Get thumbnail path
-    let thumbnailPath = null;
-    if (artist?.thumbnail) {
-      thumbnailPath = artist.thumbnail;
-    }
-    
-    // Calculate total size (sum of all songs by artist)
     let totalSize = 0;
     if (artist?.songs) {
       for (const songId of artist.songs) {
@@ -772,7 +539,6 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
       }
     }
     
-    // Prepare metadata
     const itemData = {
       name: artist?.name,
       description: artist?.description,
@@ -784,7 +550,6 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
       thumbnail: artist?.thumbnail
     };
     
-    // Move to trash
     const result = await moveToTrash(
       env,
       auth.session.id,
@@ -799,11 +564,9 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
       return { success: false, error: result.error };
     }
     
-    // Remove from artists index
     delete artists[artistId];
     await saveArtists(env, artists);
     
-    // Log activity
     await logAdminActivity(env, auth.session.id, 'delete', 'artist', artistId, artistName);
     
     return { success: true };
@@ -829,7 +592,6 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
     return { redirect: '/admin/artists' };
   }
   
-  // Get all other artists for merging
   const otherArtists = Object.entries(artists)
     .filter(([id]) => id !== artistId)
     .map(([id, artist]) => ({
@@ -923,7 +685,6 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
       return { success: false, error: 'Artist not found' };
     }
     
-    // Transfer songs
     if (mergeArtist.songs) {
       for (const songKey of mergeArtist.songs) {
         if (!mainArtist.songs.includes(songKey)) {
@@ -932,18 +693,15 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
       }
     }
     
-    // Transfer albums
     if (mergeArtist.albums) {
       for (const albumId of mergeArtist.albums) {
         if (!mainArtist.albums.includes(albumId)) {
           mainArtist.albums.push(albumId);
         }
         
-        // Update album's artists array
         if (albums[albumId]) {
           if (!albums[albumId].artists) albums[albumId].artists = [];
           if (!albums[albumId].artists.includes(mainArtistId)) {
-            // Replace mergeArtistId with mainArtistId
             const index = albums[albumId].artists.indexOf(mergeArtistId);
             if (index !== -1) {
               albums[albumId].artists[index] = mainArtistId;
@@ -955,22 +713,17 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
       }
     }
     
-    // Save updated albums
     await saveAlbums(env, albums);
     
-    // Delete merged artist if requested
     if (deleteAfter === 'yes') {
-      // Delete thumbnail if exists
       if (mergeArtist.thumbnail) {
         await env.media.delete(mergeArtist.thumbnail).catch(() => {});
       }
       delete artists[mergeArtistId];
     }
     
-    // Save main artist
     await saveArtists(env, artists);
     
-    // Log activity
     await logAdminActivity(env, auth.session.id, 'merge', 'artist', mainArtistId, 
       `Merged ${mergeArtistName} into ${mainArtist.name}`);
     
@@ -982,7 +735,6 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views
 function generateMobileCard(artist) {
   const date = new Date(artist.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -1017,7 +769,6 @@ function generateMobileCard(artist) {
   `;
 }
 
-// Grid card with views
 function generateGridCard(artist) {
   return `
     <div class="artist-grid-card">
@@ -1052,7 +803,6 @@ function generateGridCard(artist) {
   `;
 }
 
-// Pagination helper
 function generatePagination(currentPage, totalPages, search, sort) {
   if (totalPages <= 1) return '';
   let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
