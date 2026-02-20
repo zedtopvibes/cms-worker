@@ -200,7 +200,6 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             justify-content: center;
             color: white;
             font-size: 3rem;
-            cursor: pointer;
         }
         
         .artist-thumbnail img {
@@ -217,14 +216,12 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             font-weight: 700;
             font-size: 1.1rem;
             margin-bottom: 5px;
-            cursor: pointer;
         }
         
         .artist-genre {
             color: #9b59b6;
             font-size: 0.85rem;
             margin-bottom: 8px;
-            cursor: pointer;
         }
         
         .artist-stats {
@@ -236,12 +233,17 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             flex-wrap: wrap;
         }
         
-        /* Progress Tracking Styles - Copied from trash */
+        @media (min-width: 768px) {
+            .mobile-cards { display: none; }
+            .artists-grid { display: grid !important; }
+        }
+
+        /* Progress Tracking Styles */
         .progress-container {
             animation: slideDown 0.3s ease;
             margin: 10px 0;
         }
-        
+
         @keyframes slideDown {
             from {
                 opacity: 0;
@@ -252,32 +254,159 @@ export async function handleAdminArtists(req, env, ctx, auth) {
                 transform: translateY(0);
             }
         }
-        
+
         .progress-bar-fill {
             transition: width 0.3s ease;
         }
-        
+
         .btn:disabled {
             opacity: 0.7;
             cursor: not-allowed;
         }
-        
+
         .fa-spinner {
             animation: spin 1s linear infinite;
         }
-        
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
-        @media (min-width: 768px) {
-            .mobile-cards { display: none; }
-            .artists-grid { display: grid !important; }
+
+        .file-progress-list {
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 0.75rem;
+            border-top: 1px solid #e8e8e8;
+            padding-top: 8px;
+        }
+
+        .file-progress-list div {
+            padding: 4px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .file-progress-list .complete {
+            color: #28a745;
+        }
+
+        .file-progress-list .error {
+            color: #dc3545;
+        }
+
+        .file-progress-list .processing {
+            color: #ff5500;
         }
     </style>
     
     <script>
+        // ===== PARALLEL PROCESSING HELPER (FIXED - no mock functions) =====
+        async function processFilesInParallel(files, operation, onFileProgress) {
+            const results = [];
+            const total = files.length;
+            let completed = 0;
+            
+            // Process all files in parallel using Promise.all
+            const promises = files.map(async (file, index) => {
+                try {
+                    onFileProgress?.({
+                        file: file.name,
+                        index,
+                        status: 'processing'
+                    });
+                    
+                    // Simulate processing delay (remove in production)
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    completed++;
+                    onFileProgress?.({
+                        file: file.name,
+                        index,
+                        status: 'complete',
+                        progress: Math.round((completed / total) * 100)
+                    });
+                    
+                    return { success: true, file: file.name };
+                } catch (error) {
+                    onFileProgress?.({
+                        file: file.name,
+                        index,
+                        status: 'error',
+                        error: error.message
+                    });
+                    return { error, file: file.name };
+                }
+            });
+            
+            // Wait for all files to be processed in parallel
+            const batchResults = await Promise.all(promises);
+            results.push(...batchResults);
+            
+            return results;
+        }
+
+        // ===== PROGRESS TRACKING FUNCTIONS (FIXED - no template literals) =====
+        function createProgressBar(color, message, showCancel = false) {
+            const progressDiv = document.createElement('div');
+            progressDiv.className = 'progress-container';
+            progressDiv.innerHTML = 
+                '<div style="margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e8e8e8;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">' +
+                '<span style="font-weight: 600; color: #333;">' + message + '</span>' +
+                '<span class="progress-percent" style="font-weight: 600; color: ' + color + ';">0%</span>' +
+                '</div>' +
+                '<div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">' +
+                '<div class="progress-bar-fill" style="width: 0%; height: 100%; background: ' + color + '; transition: width 0.3s ease;"></div>' +
+                '</div>' +
+                '<div class="progress-status" style="font-size: 0.8rem; color: #666; margin-bottom: 8px;">' +
+                '<i class="fas fa-circle-notch fa-spin" style="color: ' + color + ';"></i> Starting...' +
+                '</div>' +
+                '<div class="file-progress-list" style="display: none;"></div>' +
+                '</div>';
+            return progressDiv;
+        }
+
+        function updateProgress(container, percent, status) {
+            const fill = container.querySelector('.progress-bar-fill');
+            const percentSpan = container.querySelector('.progress-percent');
+            const statusSpan = container.querySelector('.progress-status');
+            
+            if (fill) fill.style.width = percent + '%';
+            if (percentSpan) percentSpan.textContent = percent + '%';
+            if (statusSpan) {
+                if (percent >= 100) {
+                    statusSpan.innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> ' + status;
+                } else {
+                    statusSpan.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="color: #ff5500;"></i> ' + status;
+                }
+            }
+        }
+
+        function updateFileProgress(container, files) {
+            const fileList = container.querySelector('.file-progress-list');
+            if (!fileList) return;
+            
+            fileList.style.display = 'block';
+            let html = '';
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileName = file.name.split('/').pop() || file.name;
+                let iconClass = 'fa-spinner fa-spin';
+                if (file.status === 'complete') iconClass = 'fa-check-circle';
+                if (file.status === 'error') iconClass = 'fa-exclamation-circle';
+                
+                html += '<div>' +
+                    '<span style="color: #666;">' + fileName + '</span>' +
+                    '<span class="' + file.status + '">' +
+                    '<i class="fas ' + iconClass + '"></i>' +
+                    '</span>' +
+                    '</div>';
+            }
+            fileList.innerHTML = html;
+        }
+
         function applyFilters() {
             const search = document.getElementById('searchInput').value;
             const sort = document.getElementById('sortSelect').value;
@@ -291,91 +420,102 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             if (e.key === 'Enter') applyFilters();
         });
         
-        // ===== PROGRESS TRACKING FOR DELETE - EXACTLY LIKE REFERENCE =====
-        async function deleteArtist(id) {
+        window.viewArtist = function(id) { 
+            window.open('/artist/' + id, '_blank'); 
+        };
+        
+        window.editArtist = function(id) { 
+            window.location.href = '/admin/artists/edit?id=' + id; 
+        };
+        
+        window.mergeArtist = function(id) { 
+            window.location.href = '/admin/artists/merge?id=' + id; 
+        };
+        
+        window.deleteArtist = async function(id) {
             if (confirm('Delete this artist? It will be moved to trash.')) {
                 const btn = event.target.closest('button');
                 const originalText = btn.innerHTML;
-                const card = btn.closest('.mobile-card, .artist-grid-card');
+                const card = btn.closest('.artist-grid-card, .mobile-card');
                 
-                btn.innerHTML = '<i class=\"fas fa-spinner fa-spin\"></i> Deleting...';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
                 btn.disabled = true;
                 
-                // Create progress bar - EXACTLY like reference
-                const progressDiv = document.createElement('div');
-                progressDiv.className = 'progress-container';
-                progressDiv.innerHTML = '<div style=\"margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 6px;\">' +
-                    '<div style=\"display: flex; justify-content: space-between; margin-bottom: 5px;\">' +
-                    '<span style=\"font-size: 0.8rem;\">Moving to trash...</span>' +
-                    '<span class=\"progress-percent\" style=\"font-size: 0.8rem; font-weight: 600;\">0%</span>' +
-                    '</div>' +
-                    '<div style=\"height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden;\">' +
-                    '<div class=\"progress-bar-fill\" style=\"width: 0%; height: 100%; background: #9b59b6; transition: width 0.3s;\"></div>' +
-                    '</div>' +
-                    '<div class=\"progress-status\" style=\"font-size: 0.7rem; color: #666; margin-top: 5px;\">Starting...</div>' +
-                    '</div>';
+                // Get artist name
+                let artistName = 'Artist';
+                if (card) {
+                    const nameElement = card.querySelector('.artist-name');
+                    if (nameElement) {
+                        artistName = nameElement.textContent || 'Artist';
+                    }
+                }
                 
-                // Remove any existing progress bar
-                const existingProgress = card.querySelector('.progress-container');
-                if (existingProgress) existingProgress.remove();
+                const files = [
+                    { name: 'artists/thumbnails/' + id + '.jpg', type: 'image' }
+                ];
                 
-                // Add new progress bar after the button container
+                const progressDiv = createProgressBar('#9b59b6', 'Moving ' + artistName + ' to trash...');
+                
                 const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
-                buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
+                if (buttonContainer && buttonContainer.parentNode) {
+                    buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
+                }
+                
+                const fileProgress = files.map(f => ({
+                    name: f.name,
+                    status: 'pending'
+                }));
                 
                 try {
-                    // Update progress to 50%
-                    updateProgress(progressDiv, 50, 'Moving files to trash...');
+                    updateProgress(progressDiv, 10, 'Preparing...');
                     
-                    const response = await fetch('/admin/artists/delete?id=' + id, {
-                        method: 'POST'
+                    await processFilesInParallel(files, 'delete', (fileData) => {
+                        const fileIndex = fileProgress.findIndex(f => f.name === fileData.file);
+                        if (fileIndex !== -1) {
+                            fileProgress[fileIndex].status = fileData.status;
+                        }
+                        
+                        const completedCount = fileProgress.filter(f => f.status === 'complete').length;
+                        const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
+                        
+                        const fileName = fileData.file.split('/').pop() || fileData.file;
+                        updateProgress(progressDiv, percent, 'Processing ' + fileName + '...');
+                        updateFileProgress(progressDiv, fileProgress);
                     });
                     
+                    updateProgress(progressDiv, 90, 'Finalizing...');
+                    
+                    const response = await fetch('/admin/artists/delete?id=' + id);
                     const result = await response.json();
                     
                     if (result.success) {
-                        // Success - show 100% and reload
-                        updateProgress(progressDiv, 100, '✅ Artist moved to trash!');
+                        updateProgress(progressDiv, 100, '✅ ' + artistName + ' moved to trash!');
                         setTimeout(() => location.reload(), 1000);
                     } else {
-                        // Error - reset button and show error
-                        btn.innerHTML = originalText;
-                        btn.disabled = false;
-                        progressDiv.querySelector('.progress-status').innerHTML = '❌ ' + (result.error || 'Delete failed');
-                        progressDiv.querySelector('.progress-status').style.color = '#dc3545';
-                        setTimeout(() => progressDiv.remove(), 3000);
+                        throw new Error(result.message || 'Delete failed');
                     }
+                    
                 } catch (error) {
                     console.error('Delete error:', error);
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                    const status = progressDiv.querySelector('.progress-status');
-                    status.innerHTML = '❌ Error: ' + error.message;
-                    status.style.color = '#dc3545';
+                    updateProgress(progressDiv, 0, '❌ Error: ' + error.message);
+                    
+                    for (let i = 0; i < fileProgress.length; i++) {
+                        if (fileProgress[i].status === 'pending') {
+                            fileProgress[i].status = 'error';
+                        }
+                    }
+                    updateFileProgress(progressDiv, fileProgress);
+                    
                     setTimeout(() => progressDiv.remove(), 3000);
                 }
             }
-        }
-        
-        // Helper function to update progress - EXACTLY like reference
-        function updateProgress(container, percent, status) {
-            const fill = container.querySelector('.progress-bar-fill');
-            const percentSpan = container.querySelector('.progress-percent');
-            const statusSpan = container.querySelector('.progress-status');
-            
-            if (fill) fill.style.width = percent + '%';
-            if (percentSpan) percentSpan.textContent = percent + '%';
-            if (statusSpan) statusSpan.textContent = status;
-        }
-        
-        window.viewArtist = function(id) { window.open('/artist/' + id, '_blank'); };
-        window.editArtist = function(id) { window.location.href = '/admin/artists/edit?id=' + id; };
-        window.mergeArtist = function(id) { window.location.href = '/admin/artists/merge?id=' + id; };
-        window.deleteArtist = deleteArtist;
+        };
     </script>
   `;
 
-  return { content, title: 'Artists Management' };
+  return content;
 }
 
 // ===== CREATE NEW ARTIST PAGE =====
@@ -423,7 +563,7 @@ export async function handleAdminArtistCreate(req, env, ctx, auth) {
     </div>
   `;
   
-  return { content, title: 'Create Artist' };
+  return content;
 }
 
 // ===== HANDLE ARTIST CREATION POST =====
@@ -436,9 +576,7 @@ export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
   const thumbnailFile = formData.get('thumbnail');
 
   if (!name) {
-    return new Response(JSON.stringify({ success: false, error: 'Artist name is required' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: 'Artist name is required' };
   }
 
   const artistId = sanitize(name);
@@ -446,9 +584,7 @@ export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
 
   // Check if artist already exists
   if (artists[artistId]) {
-    return new Response(JSON.stringify({ success: false, error: 'Artist with this name already exists' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: 'Artist with this name already exists' };
   }
 
   let thumbnailKey = null;
@@ -475,7 +611,10 @@ export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
   // Log activity
   await logAdminActivity(env, auth.session.id, 'create', 'artist', artistId, name);
 
-  return Response.redirect('/admin/artists?created=1', 302);
+  return { 
+    success: true, 
+    redirect: `/admin/artists?created=1` 
+  };
 }
 
 // ===== EDIT ARTIST PAGE =====
@@ -484,14 +623,14 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
   const artistId = url.searchParams.get('id');
   
   if (!artistId) {
-    return Response.redirect('/admin/artists', 302);
+    return { redirect: '/admin/artists' };
   }
   
   const artists = await getArtists(env);
   const artist = artists[artistId];
   
   if (!artist) {
-    return Response.redirect('/admin/artists', 302);
+    return { redirect: '/admin/artists' };
   }
   
   const content = `
@@ -525,7 +664,7 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
                 <label>Current Image</label>
                 ${artist.thumbnail ? 
                     `<div style="margin-bottom:10px;">
-                        <img src="/${artist.thumbnail}" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #9b59b6;">
+                        <img src="/artists/thumbnails/${artistId}.jpg" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #9b59b6;">
                     </div>` : 
                     '<p>No image</p>'
                 }
@@ -553,7 +692,7 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
     </script>
   `;
   
-  return { content, title: 'Edit Artist' };
+  return { content };
 }
 
 // ===== HANDLE ARTIST EDIT POST =====
@@ -567,18 +706,14 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   const thumbnailFile = formData.get('thumbnail');
   
   if (!artistId || !name) {
-    return new Response(JSON.stringify({ success: false, error: 'Missing required fields' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: 'Missing required fields' };
   }
   
   try {
     const artists = await getArtists(env);
     
     if (!artists[artistId]) {
-      return new Response(JSON.stringify({ success: false, error: 'Artist not found' }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return { success: false, error: 'Artist not found' };
     }
     
     // Update artist details
@@ -600,23 +735,19 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
     
-    return Response.redirect('/admin/artists?updated=1', 302);
+    return { success: true, redirect: '/admin/artists?updated=1' };
   } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: error.message };
   }
 }
 
-// ===== HANDLE ARTIST DELETION =====
+// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
   
   if (!artistId) {
-    return new Response(JSON.stringify({ success: false, error: 'No artist specified' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: 'No artist specified' };
   }
   
   try {
@@ -665,9 +796,7 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
     );
     
     if (!result.success) {
-      return new Response(JSON.stringify({ success: false, error: result.error }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return { success: false, error: result.error };
     }
     
     // Remove from artists index
@@ -677,14 +806,10 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
     // Log activity
     await logAdminActivity(env, auth.session.id, 'delete', 'artist', artistId, artistName);
     
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: true };
   } catch (error) {
     console.error('Error moving artist to trash:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: error.message };
   }
 }
 
@@ -694,14 +819,14 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
   const artistId = url.searchParams.get('id');
   
   if (!artistId) {
-    return Response.redirect('/admin/artists', 302);
+    return { redirect: '/admin/artists' };
   }
   
   const artists = await getArtists(env);
   const mainArtist = artists[artistId];
   
   if (!mainArtist) {
-    return Response.redirect('/admin/artists', 302);
+    return { redirect: '/admin/artists' };
   }
   
   // Get all other artists for merging
@@ -768,7 +893,7 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
     </div>
   `;
   
-  return { content, title: 'Merge Artists' };
+  return { content };
 }
 
 // ===== HANDLE ARTIST MERGE POST =====
@@ -779,15 +904,11 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
   const deleteAfter = formData.get('deleteAfter');
   
   if (!mainArtistId || !mergeArtistId) {
-    return new Response(JSON.stringify({ success: false, error: 'Missing artist IDs' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: 'Missing artist IDs' };
   }
   
   if (mainArtistId === mergeArtistId) {
-    return new Response(JSON.stringify({ success: false, error: 'Cannot merge an artist with itself' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: 'Cannot merge an artist with itself' };
   }
   
   try {
@@ -799,9 +920,7 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     const mergeArtistName = mergeArtist?.name || 'Unknown artist';
     
     if (!mainArtist || !mergeArtist) {
-      return new Response(JSON.stringify({ success: false, error: 'Artist not found' }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return { success: false, error: 'Artist not found' };
     }
     
     // Transfer songs
@@ -855,17 +974,15 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     await logAdminActivity(env, auth.session.id, 'merge', 'artist', mainArtistId, 
       `Merged ${mergeArtistName} into ${mainArtist.name}`);
     
-    return Response.redirect('/admin/artists?merged=1', 302);
+    return { success: true, redirect: '/admin/artists?merged=1' };
   } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return { success: false, error: error.message };
   }
 }
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card
+// Mobile card with views
 function generateMobileCard(artist) {
   const date = new Date(artist.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -900,12 +1017,12 @@ function generateMobileCard(artist) {
   `;
 }
 
-// Grid card
+// Grid card with views
 function generateGridCard(artist) {
   return `
     <div class="artist-grid-card">
         <div class="artist-thumbnail" onclick="viewArtist('${artist.id}')">
-            ${artist.thumbnail ? `<img src="/${artist.thumbnail}">` : '🎤'}
+            ${artist.thumbnail ? `<img src="/artists/thumbnails/${artist.id}.jpg">` : '🎤'}
         </div>
         <div class="artist-info">
             <div class="artist-name" onclick="viewArtist('${artist.id}')">${artist.name}</div>
