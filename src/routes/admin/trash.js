@@ -232,6 +232,41 @@ export async function handleAdminTrash(req, env, ctx, auth) {
             color: white;
         }
         
+        /* Progress Tracking Styles */
+        .progress-container {
+            animation: slideDown 0.3s ease;
+            margin: 10px 0;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .progress-bar-fill {
+            transition: width 0.3s ease;
+        }
+        
+        .btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .fa-spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         @media (min-width: 768px) {
             .mobile-cards { display: none; }
             .trash-grid { display: grid !important; }
@@ -275,33 +310,115 @@ export async function handleAdminTrash(req, env, ctx, auth) {
             }
         }
         
+        // ===== PROGRESS TRACKING FOR RESTORE =====
         async function restoreItem(id) {
             if (confirm('Restore this item?')) {
+                // Find the button that was clicked
+                const btn = event.target.closest('button');
+                const originalText = btn.innerHTML;
+                const card = btn.closest('.mobile-card, .trash-grid-card');
+                
+                // Disable button and show spinner
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Restoring...';
+                btn.disabled = true;
+                
+                // Create progress bar
+                const progressDiv = document.createElement('div');
+                progressDiv.className = 'progress-container';
+                progressDiv.innerHTML = `
+                    <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span style="font-size: 0.8rem;">Restoring files...</span>
+                            <span class="progress-percent" style="font-size: 0.8rem; font-weight: 600;">0%</span>
+                        </div>
+                        <div style="height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden;">
+                            <div class="progress-bar-fill" style="width: 0%; height: 100%; background: #28a745; transition: width 0.3s;"></div>
+                        </div>
+                        <div class="progress-status" style="font-size: 0.7rem; color: #666; margin-top: 5px;">Starting...</div>
+                    </div>
+                `;
+                
+                // Remove any existing progress bar
+                const existingProgress = card.querySelector('.progress-container');
+                if (existingProgress) existingProgress.remove();
+                
+                // Add new progress bar after the button container
+                const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
+                buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
+                
                 try {
+                    // Update progress to 25%
+                    updateProgress(progressDiv, 25, 'Moving files...');
+                    
                     const response = await fetch('/admin/trash/restore', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ id })
                     });
                     
+                    // Update progress to 75%
+                    updateProgress(progressDiv, 75, 'Almost done...');
+                    
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('✅ ' + (result.message || 'Item restored successfully'));
-                        location.reload();
+                        // Success - show 100% and reload
+                        updateProgress(progressDiv, 100, '✅ Restore complete!');
+                        setTimeout(() => location.reload(), 1000);
                     } else {
-                        alert('❌ ' + (result.message || 'Failed to restore item'));
-                        console.error('Restore failed:', result);
+                        // Error - reset button and show error
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                        progressDiv.querySelector('.progress-status').innerHTML = '❌ ' + (result.message || 'Restore failed');
+                        progressDiv.querySelector('.progress-status').style.color = '#dc3545';
+                        setTimeout(() => progressDiv.remove(), 3000);
                     }
                 } catch (error) {
-                    alert('❌ Error: ' + error.message);
+                    console.error('Restore error:', error);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    const status = progressDiv.querySelector('.progress-status');
+                    status.innerHTML = '❌ Error: ' + error.message;
+                    status.style.color = '#dc3545';
+                    setTimeout(() => progressDiv.remove(), 3000);
                 }
             }
         }
         
+        // ===== PROGRESS TRACKING FOR PERMANENT DELETE =====
         async function deletePermanently(id) {
             if (confirm('⚠️ Permanently delete this item? This cannot be undone.')) {
+                const btn = event.target.closest('button');
+                const originalText = btn.innerHTML;
+                const card = btn.closest('.mobile-card, .trash-grid-card');
+                
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+                btn.disabled = true;
+                
+                const progressDiv = document.createElement('div');
+                progressDiv.className = 'progress-container';
+                progressDiv.innerHTML = `
+                    <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span style="font-size: 0.8rem;">Deleting files...</span>
+                            <span class="progress-percent" style="font-size: 0.8rem; font-weight: 600;">0%</span>
+                        </div>
+                        <div style="height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden;">
+                            <div class="progress-bar-fill" style="width: 0%; height: 100%; background: #dc3545; transition: width 0.3s;"></div>
+                        </div>
+                        <div class="progress-status" style="font-size: 0.7rem; color: #666; margin-top: 5px;">Starting...</div>
+                    </div>
+                `;
+                
+                const existingProgress = card.querySelector('.progress-container');
+                if (existingProgress) existingProgress.remove();
+                
+                const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
+                buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
+                
                 try {
+                    updateProgress(progressDiv, 50, 'Removing files...');
+                    
                     const response = await fetch('/admin/trash/delete', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -311,38 +428,99 @@ export async function handleAdminTrash(req, env, ctx, auth) {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('✅ ' + (result.message || 'Item permanently deleted'));
-                        location.reload();
+                        updateProgress(progressDiv, 100, '✅ Permanently deleted!');
+                        setTimeout(() => location.reload(), 1000);
                     } else {
-                        alert('❌ ' + (result.message || 'Failed to delete item'));
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                        progressDiv.querySelector('.progress-status').innerHTML = '❌ ' + (result.message || 'Delete failed');
+                        progressDiv.querySelector('.progress-status').style.color = '#dc3545';
+                        setTimeout(() => progressDiv.remove(), 3000);
                     }
                 } catch (error) {
-                    alert('❌ Error: ' + error.message);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    const status = progressDiv.querySelector('.progress-status');
+                    status.innerHTML = '❌ Error: ' + error.message;
+                    status.style.color = '#dc3545';
+                    setTimeout(() => progressDiv.remove(), 3000);
                 }
             }
         }
         
+        // ===== PROGRESS TRACKING FOR EMPTY TRASH =====
         async function emptyTrash(type) {
             if (confirm('⚠️ Permanently delete ALL items in trash? This cannot be undone.')) {
+                const btn = event.target.closest('button');
+                const originalText = btn.innerHTML;
+                
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Emptying trash...';
+                btn.disabled = true;
+                
+                // Create global progress bar
+                let progressDiv = document.getElementById('empty-trash-progress');
+                if (!progressDiv) {
+                    progressDiv = document.createElement('div');
+                    progressDiv.id = 'empty-trash-progress';
+                    progressDiv.style.margin = '20px 0';
+                    progressDiv.innerHTML = `
+                        <div style="padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                                <span style="font-weight: 600;">Emptying trash...</span>
+                                <span class="progress-percent" style="font-weight: 600;">0%</span>
+                            </div>
+                            <div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden;">
+                                <div class="progress-bar-fill" style="width: 0%; height: 100%; background: #dc3545; transition: width 0.3s;"></div>
+                            </div>
+                            <div class="progress-status" style="font-size: 0.8rem; color: #666; margin-top: 8px;">Starting...</div>
+                        </div>
+                    `;
+                    document.querySelector('.content-area').prepend(progressDiv);
+                }
+                
                 try {
+                    updateProgress(progressDiv, 30, 'Scanning trash items...');
+                    
                     const response = await fetch('/admin/trash/empty', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ type })
                     });
                     
+                    updateProgress(progressDiv, 80, 'Deleting files...');
+                    
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('✅ ' + (result.message || 'Trash emptied successfully'));
-                        location.reload();
+                        updateProgress(progressDiv, 100, '✅ ' + result.message);
+                        setTimeout(() => location.reload(), 1500);
                     } else {
-                        alert('❌ ' + (result.message || 'Failed to empty trash'));
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                        progressDiv.querySelector('.progress-status').innerHTML = '❌ ' + (result.message || 'Failed to empty trash');
+                        progressDiv.querySelector('.progress-status').style.color = '#dc3545';
+                        setTimeout(() => progressDiv.remove(), 3000);
                     }
                 } catch (error) {
-                    alert('❌ Error: ' + error.message);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    const status = progressDiv.querySelector('.progress-status');
+                    status.innerHTML = '❌ Error: ' + error.message;
+                    status.style.color = '#dc3545';
+                    setTimeout(() => progressDiv.remove(), 3000);
                 }
             }
+        }
+        
+        // Helper function to update progress
+        function updateProgress(container, percent, status) {
+            const fill = container.querySelector('.progress-bar-fill');
+            const percentSpan = container.querySelector('.progress-percent');
+            const statusSpan = container.querySelector('.progress-status');
+            
+            if (fill) fill.style.width = percent + '%';
+            if (percentSpan) percentSpan.textContent = percent + '%';
+            if (statusSpan) statusSpan.textContent = status;
         }
     </script>
   `;
