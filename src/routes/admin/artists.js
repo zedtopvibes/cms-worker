@@ -1,10 +1,10 @@
-// ==================== ADMIN ARTISTS  MANAGEMENT ====================
+// ==================== ADMIN ARTISTS MANAGEMENT ====================
 import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
+import { moveToTrash } from '../../helpers/trash.js';
 
 // ===== LIST ALL ARTISTS =====
 export async function handleAdminArtists(req, env, ctx, auth) {
@@ -32,17 +32,17 @@ export async function handleAdminArtists(req, env, ctx, auth) {
       
       return {
         id,
-        name: artist.name,
+        name: artist.name || '',
         description: artist.description || '',
         genre: artist.genre || 'Various',
         thumbnail: artist.thumbnail,
         songCount: artist.songs?.length || 0,
         albumCount,
-        plays: stats.plays,
-        downloads: stats.downloads,
-        views: pageViews,
-        monthlyListeners,
-        created: artist.created,
+        plays: stats.plays || 0,
+        downloads: stats.downloads || 0,
+        views: pageViews || 0,
+        monthlyListeners: monthlyListeners || 0,
+        created: artist.created || 0,
         hasImage: !!artist.thumbnail
       };
     })
@@ -52,31 +52,34 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   if (search) {
     const searchLower = search.toLowerCase();
     artistsData = artistsData.filter(artist => 
-      artist.name.toLowerCase().includes(searchLower) ||
-      artist.genre.toLowerCase().includes(searchLower) ||
-      artist.description.toLowerCase().includes(searchLower)
+      (artist.name || '').toLowerCase().includes(searchLower) ||
+      (artist.genre || '').toLowerCase().includes(searchLower) ||
+      (artist.description || '').toLowerCase().includes(searchLower)
     );
   }
 
-  // Apply sorting with views
+  // Apply sorting with views - FIXED with safety checks
   artistsData.sort((a, b) => {
+    // Safety checks
+    if (!a || !b) return 0;
+    
     switch (sort) {
       case 'name':
-        return a.name.localeCompare(b.name);
+        return (a.name || '').localeCompare(b.name || '');
       case 'songs':
-        return b.songCount - a.songCount;
+        return (b.songCount || 0) - (a.songCount || 0);
       case 'albums':
-        return b.albumCount - a.albumCount;
+        return (b.albumCount || 0) - (a.albumCount || 0);
       case 'plays':
-        return b.plays - a.plays;
+        return (b.plays || 0) - (a.plays || 0);
       case 'listeners':
-        return b.monthlyListeners - a.monthlyListeners;
+        return (b.monthlyListeners || 0) - (a.monthlyListeners || 0);
       case 'views':
         return (b.views || 0) - (a.views || 0);
       case 'date':
-        return b.created - a.created;
+        return (b.created || 0) - (a.created || 0);
       default:
-        return a.name.localeCompare(b.name);
+        return (a.name || '').localeCompare(b.name || '');
     }
   });
 
@@ -98,12 +101,12 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   ];
 
   // Calculate totals
-  const totalSongs = artistsData.reduce((acc, a) => acc + a.songCount, 0);
-  const totalAlbums = artistsData.reduce((acc, a) => acc + a.albumCount, 0);
-  const totalPlays = artistsData.reduce((acc, a) => acc + a.plays, 0);
-  const totalDownloads = artistsData.reduce((acc, a) => acc + a.downloads, 0);
+  const totalSongs = artistsData.reduce((acc, a) => acc + (a.songCount || 0), 0);
+  const totalAlbums = artistsData.reduce((acc, a) => acc + (a.albumCount || 0), 0);
+  const totalPlays = artistsData.reduce((acc, a) => acc + (a.plays || 0), 0);
+  const totalDownloads = artistsData.reduce((acc, a) => acc + (a.downloads || 0), 0);
   const totalViews = artistsData.reduce((acc, a) => acc + (a.views || 0), 0);
-  const totalListeners = artistsData.reduce((acc, a) => acc + a.monthlyListeners, 0);
+  const totalListeners = artistsData.reduce((acc, a) => acc + (a.monthlyListeners || 0), 0);
 
   const content = `
     <div style="margin-bottom: 20px;">
@@ -138,8 +141,8 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             <!-- Stats Summary with Views -->
             <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
                 <div><i class="fas fa-microphone" style="color: #ff5500;"></i> Artists: <strong>${totalArtists}</strong></div>
-                <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${totalSongs}</strong></div>
-                <div><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Albums: <strong>${totalAlbums}</strong></div>
+                <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${formatNumber(totalSongs)}</strong></div>
+                <div><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Albums: <strong>${formatNumber(totalAlbums)}</strong></div>
                 <div><i class="fas fa-headphones" style="color: #9b59b6;"></i> Listeners: <strong>${formatNumber(totalListeners)}</strong></div>
                 <div><i class="fas fa-eye" style="color: #4a90e2;"></i> Views: <strong>${formatNumber(totalViews)}</strong></div>
             </div>
@@ -238,199 +241,170 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             .artists-grid { display: grid !important; }
         }
 
+        /* Progress Tracking Styles */
+        .progress-container {
+            animation: slideDown 0.3s ease;
+            margin: 10px 0;
+        }
 
-/* Progress Tracking Styles */
-.progress-container {
-    animation: slideDown 0.3s ease;
-    margin: 10px 0;
-}
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
 
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
+        .progress-bar-fill {
+            transition: width 0.3s ease;
+        }
 
-.progress-bar-fill {
-    transition: width 0.3s ease;
-}
+        .btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
 
-.btn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
+        .fa-spinner {
+            animation: spin 1s linear infinite;
+        }
 
-.fa-spinner {
-    animation: spin 1s linear infinite;
-}
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
+        .file-progress-list {
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 0.75rem;
+            border-top: 1px solid #e8e8e8;
+            padding-top: 8px;
+        }
 
-.file-progress-list {
-    max-height: 150px;
-    overflow-y: auto;
-    font-size: 0.75rem;
-    border-top: 1px solid #e8e8e8;
-    padding-top: 8px;
-}
+        .file-progress-list div {
+            padding: 4px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+        }
 
-.file-progress-list div {
-    padding: 4px;
-    border-bottom: 1px solid #f0f0f0;
-    display: flex;
-    justify-content: space-between;
-}
+        .file-progress-list .complete {
+            color: #28a745;
+        }
 
-.file-progress-list .complete {
-    color: #28a745;
-}
+        .file-progress-list .error {
+            color: #dc3545;
+        }
 
-.file-progress-list .error {
-    color: #dc3545;
-}
-
-.file-progress-list .processing {
-    color: #ff5500;
-}
-
-
+        .file-progress-list .processing {
+            color: #ff5500;
+        }
     </style>
     
     <script>
-
-// ===== PARALLEL PROCESSING HELPER =====
-async function processFilesInParallel(files, operation, onFileProgress) {
-    const results = [];
-    const total = files.length;
-    let completed = 0;
-    
-    // Process all files in parallel using Promise.all
-    const promises = files.map(async (file, index) => {
-        try {
-            onFileProgress?.({
-                file: file.name,
-                index,
-                status: 'processing'
+        // ===== PARALLEL PROCESSING HELPER =====
+        async function processFilesInParallel(files, operation, onFileProgress) {
+            const results = [];
+            const total = files.length;
+            let completed = 0;
+            
+            const promises = files.map(async (file, index) => {
+                try {
+                    onFileProgress?.({
+                        file: file.name,
+                        index,
+                        status: 'processing'
+                    });
+                    
+                    // Simulate API call delay (remove this in production)
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    completed++;
+                    onFileProgress?.({
+                        file: file.name,
+                        index,
+                        status: 'complete',
+                        progress: Math.round((completed / total) * 100)
+                    });
+                    
+                    return { success: true, file: file.name };
+                } catch (error) {
+                    onFileProgress?.({
+                        file: file.name,
+                        index,
+                        status: 'error',
+                        error: error.message
+                    });
+                    return { error, file };
+                }
             });
             
-            let result;
-            if (operation === 'restore') {
-                // Simulate restore operation
-                result = await restoreSingleFile(file);
-            } else if (operation === 'delete') {
-                // Simulate delete operation
-                result = await deleteSingleFile(file);
+            const batchResults = await Promise.all(promises);
+            results.push(...batchResults);
+            
+            return results;
+        }
+
+        // ===== PROGRESS TRACKING FUNCTIONS =====
+        function createProgressBar(color, message, showCancel = false) {
+            const progressDiv = document.createElement('div');
+            progressDiv.className = 'progress-container';
+            progressDiv.innerHTML = 
+                '<div style="margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e8e8e8;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">' +
+                '<span style="font-weight: 600; color: #333;">' + message + '</span>' +
+                '<span class="progress-percent" style="font-weight: 600; color: ' + color + ';">0%</span>' +
+                '</div>' +
+                '<div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">' +
+                '<div class="progress-bar-fill" style="width: 0%; height: 100%; background: ' + color + '; transition: width 0.3s ease;"></div>' +
+                '</div>' +
+                '<div class="progress-status" style="font-size: 0.8rem; color: #666; margin-bottom: 8px;">' +
+                '<i class="fas fa-circle-notch fa-spin" style="color: ' + color + ';"></i> Starting...' +
+                '</div>' +
+                '<div class="file-progress-list" style="display: none;"></div>' +
+                '</div>';
+            return progressDiv;
+        }
+
+        function updateProgress(container, percent, status) {
+            const fill = container.querySelector('.progress-bar-fill');
+            const percentSpan = container.querySelector('.progress-percent');
+            const statusSpan = container.querySelector('.progress-status');
+            
+            if (fill) fill.style.width = percent + '%';
+            if (percentSpan) percentSpan.textContent = percent + '%';
+            if (statusSpan) {
+                if (percent >= 100) {
+                    statusSpan.innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> ' + status;
+                } else {
+                    statusSpan.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="color: #ff5500;"></i> ' + status;
+                }
             }
-            
-            completed++;
-            onFileProgress?.({
-                file: file.name,
-                index,
-                status: 'complete',
-                progress: Math.round((completed / total) * 100)
-            });
-            
-            return result;
-        } catch (error) {
-            onFileProgress?.({
-                file: file.name,
-                index,
-                status: 'error',
-                error: error.message
-            });
-            return { error, file };
         }
-    });
-    
-    // Wait for all files to be processed in parallel
-    const batchResults = await Promise.all(promises);
-    results.push(...batchResults);
-    
-    return results;
-}
 
-// Mock functions - replace with actual API calls
-async function restoreSingleFile(file) {
-    // In real implementation, this would call your API
-    return new Promise(resolve => setTimeout(resolve, 500));
-}
-
-async function deleteSingleFile(file) {
-    // In real implementation, this would call your API
-    return new Promise(resolve => setTimeout(resolve, 500));
-}
-
-
-// ===== PROGRESS TRACKING FUNCTIONS =====
-function createProgressBar(color, message, showCancel = false) {
-    const progressDiv = document.createElement('div');
-    progressDiv.className = 'progress-container';
-    progressDiv.innerHTML = \`
-        <div style="margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e8e8e8;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="font-weight: 600; color: #333;">\${message}</span>
-                <span class="progress-percent" style="font-weight: 600; color: \${color};">0%</span>
-            </div>
+        function updateFileProgress(container, files) {
+            const fileList = container.querySelector('.file-progress-list');
+            if (!fileList) return;
             
-            <!-- Progress Bar -->
-            <div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
-                <div class="progress-bar-fill" style="width: 0%; height: 100%; background: \${color}; transition: width 0.3s ease;"></div>
-            </div>
-            
-            <!-- Status Message -->
-            <div class="progress-status" style="font-size: 0.8rem; color: #666; margin-bottom: 8px;">
-                <i class="fas fa-circle-notch fa-spin" style="color: \${color};"></i> Starting...
-            </div>
-            
-            <!-- File Progress List -->
-            <div class="file-progress-list" style="display: none;"></div>
-        </div>
-    \`;
-    return progressDiv;
-}
-
-function updateProgress(container, percent, status) {
-    const fill = container.querySelector('.progress-bar-fill');
-    const percentSpan = container.querySelector('.progress-percent');
-    const statusSpan = container.querySelector('.progress-status');
-    
-    if (fill) fill.style.width = percent + '%';
-    if (percentSpan) percentSpan.textContent = percent + '%';
-    if (statusSpan) {
-        if (percent >= 100) {
-            statusSpan.innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> ' + status;
-        } else {
-            statusSpan.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="color: #ff5500;"></i> ' + status;
+            fileList.style.display = 'block';
+            let html = '';
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileName = file.name.split('/').pop() || file.name;
+                html += '<div>' +
+                    '<span style="color: #666;">' + fileName + '</span>' +
+                    '<span class="' + file.status + '">' +
+                    '<i class="fas ' + (file.status === 'complete' ? 'fa-check-circle' : 
+                                     file.status === 'error' ? 'fa-exclamation-circle' : 
+                                     'fa-spinner fa-spin') + '"></i>' +
+                    '</span>' +
+                    '</div>';
+            }
+            fileList.innerHTML = html;
         }
-    }
-}
-
-function updateFileProgress(container, files) {
-    const fileList = container.querySelector('.file-progress-list');
-    if (!fileList) return;
-    
-    fileList.style.display = 'block';
-    fileList.innerHTML = files.map(file => \`
-        <div>
-            <span style="color: #666;">\${file.name}</span>
-            <span class="\${file.status}">
-                <i class="fas \${file.status === 'complete' ? 'fa-check-circle' : 
-                                 file.status === 'error' ? 'fa-exclamation-circle' : 
-                                 'fa-spinner fa-spin'}"></i>
-            </span>
-        </div>
-    \`).join('');
-}
-
-
 
         function applyFilters() {
             const search = document.getElementById('searchInput').value;
@@ -445,79 +419,102 @@ function updateFileProgress(container, files) {
             if (e.key === 'Enter') applyFilters();
         });
         
-        window.viewArtist = function(id) { window.open('/artist/' + id, '_blank'); };
-        window.editArtist = function(id) { window.location.href = '/admin/artists/edit?id=' + id; };
-        window.mergeArtist = function(id) { window.location.href = '/admin/artists/merge?id=' + id; };
+        window.viewArtist = function(id) { 
+            window.open('/artist/' + id, '_blank'); 
+        };
+        
+        window.editArtist = function(id) { 
+            window.location.href = '/admin/artists/edit?id=' + id; 
+        };
+        
+        window.mergeArtist = function(id) { 
+            window.location.href = '/admin/artists/merge?id=' + id; 
+        };
+        
+        // FIXED: Delete artist function with progress tracking
         window.deleteArtist = async function(id) {
-    if (confirm('Delete this artist? It will be moved to trash.')) {
-        const btn = event.target.closest('button');
-        const originalText = btn.innerHTML;
-        const card = btn.closest('.artist-grid-card, .mobile-card');
-        
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
-        btn.disabled = true;
-        
-        const artistName = card.querySelector('.artist-name')?.textContent || 'Artist';
-        
-        // FIXED: Use string concatenation instead of template literals
-        const files = [
-            { name: 'artists/thumbnails/' + id + '.jpg', type: 'image' }
-        ];
-        
-        const progressDiv = createProgressBar('#9b59b6', 'Moving ' + artistName + ' to trash...');
-        
-        const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
-        buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
-        
-        const fileProgress = files.map(f => ({
-            name: f.name,
-            status: 'pending'
-        }));
-        
-        try {
-            updateProgress(progressDiv, 10, 'Preparing...');
-            
-            const results = await processFilesInParallel(files, 'delete', (fileData) => {
-                const fileIndex = fileProgress.findIndex(f => f.name === fileData.file);
-                if (fileIndex !== -1) {
-                    fileProgress[fileIndex].status = fileData.status;
+            if (confirm('Delete this artist? It will be moved to trash.')) {
+                const btn = event.target.closest('button');
+                const originalText = btn.innerHTML;
+                const card = btn.closest('.artist-grid-card, .mobile-card');
+                
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
+                btn.disabled = true;
+                
+                // Fix: Get artist name correctly from the card
+                let artistName = 'Artist';
+                if (card) {
+                    const nameElement = card.querySelector('.artist-name');
+                    if (nameElement) {
+                        artistName = nameElement.textContent || 'Artist';
+                    } else {
+                        // Try alternative selector for mobile cards
+                        const mobileName = card.querySelector('div[style*="font-weight:700"]');
+                        if (mobileName) artistName = mobileName.textContent || 'Artist';
+                    }
                 }
                 
-                const completedCount = fileProgress.filter(f => f.status === 'complete').length;
-                const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
+                const files = [
+                    { name: 'artists/thumbnails/' + id + '.jpg', type: 'image' }
+                ];
                 
-                updateProgress(progressDiv, percent, 'Processing ' + fileData.file + '...');
-                updateFileProgress(progressDiv, fileProgress);
-            });
-            
-            updateProgress(progressDiv, 90, 'Finalizing...');
-            
-            const response = await fetch('/admin/artists/delete?id=' + id);
-            const result = await response.json();
-            
-            if (result.success) {
-                updateProgress(progressDiv, 100, '✅ Artist moved to trash!');
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                throw new Error(result.message || 'Delete failed');
+                const progressDiv = createProgressBar('#9b59b6', 'Moving ' + artistName + ' to trash...');
+                
+                const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
+                if (buttonContainer && buttonContainer.parentNode) {
+                    buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
+                }
+                
+                const fileProgress = files.map(f => ({
+                    name: f.name,
+                    status: 'pending'
+                }));
+                
+                try {
+                    updateProgress(progressDiv, 10, 'Preparing...');
+                    
+                    await processFilesInParallel(files, 'delete', (fileData) => {
+                        const fileIndex = fileProgress.findIndex(f => f.name === fileData.file);
+                        if (fileIndex !== -1) {
+                            fileProgress[fileIndex].status = fileData.status;
+                        }
+                        
+                        const completedCount = fileProgress.filter(f => f.status === 'complete').length;
+                        const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
+                        
+                        updateProgress(progressDiv, percent, 'Processing ' + (fileData.file.split('/').pop() || 'file') + '...');
+                        updateFileProgress(progressDiv, fileProgress);
+                    });
+                    
+                    updateProgress(progressDiv, 90, 'Finalizing...');
+                    
+                    const response = await fetch('/admin/artists/delete?id=' + id);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        updateProgress(progressDiv, 100, '✅ ' + artistName + ' moved to trash!');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        throw new Error(result.message || 'Delete failed');
+                    }
+                    
+                } catch (error) {
+                    console.error('Delete error:', error);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    updateProgress(progressDiv, 0, '❌ Error: ' + error.message);
+                    
+                    for (let i = 0; i < fileProgress.length; i++) {
+                        if (fileProgress[i].status === 'pending') {
+                            fileProgress[i].status = 'error';
+                        }
+                    }
+                    updateFileProgress(progressDiv, fileProgress);
+                    
+                    setTimeout(() => progressDiv.remove(), 3000);
+                }
             }
-            
-        } catch (error) {
-            console.error('Delete error:', error);
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-            updateProgress(progressDiv, 0, '❌ Error: ' + error.message);
-            
-            fileProgress.forEach(f => {
-                if (f.status === 'pending') f.status = 'error';
-            });
-            updateFileProgress(progressDiv, fileProgress);
-            
-            setTimeout(() => progressDiv.remove(), 3000);
-        }
-    }
-};
-       
+        };
     </script>
   `;
 
@@ -747,7 +744,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
+// ===== HANDLE ARTIST DELETION =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -1002,7 +999,7 @@ function generateMobileCard(artist) {
             <span><i class="fas fa-music"></i> ${artist.songCount} songs</span>
             <span><i class="fas fa-compact-disc"></i> ${artist.albumCount} albums</span>
             <span><i class="fas fa-headphones" style="color:#9b59b6;"></i> ${formatNumber(artist.monthlyListeners)}</span>
-            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
+            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">Since ${date}</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -1037,7 +1034,7 @@ function generateGridCard(artist) {
                 <span><i class="fas fa-music"></i> ${artist.songCount}</span>
                 <span><i class="fas fa-compact-disc"></i> ${artist.albumCount}</span>
                 <span><i class="fas fa-headphones"></i> ${formatNumber(artist.monthlyListeners)}</span>
-                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views || 0)}</span>
+                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(artist.views)}</span>
             </div>
             <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
                 <button onclick="previewModal.show('artist', '${artist.id}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">
