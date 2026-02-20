@@ -861,6 +861,207 @@ if (path === '/trash/settings' && req.method === 'POST') {
     });
   }
   
+// ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
+  if (path === '/announcements') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-bullhorn"></i>
+            <h3>Announcement System</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Create site-wide announcements</li>
+                <li style="margin-bottom: 8px;">✓ Schedule announcements for later</li>
+                <li style="margin-bottom: 8px;">✓ Target specific pages</li>
+                <li style="margin-bottom: 8px;">✓ Make announcements dismissible by users</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/settings" class="btn btn-primary">
+                    <i class="fas fa-cog"></i> System Settings
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('Announcement System', content, auth, 'announcements'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  // ===== CONTENT MODERATION (Placeholder) =====
+  if (path === '/moderation') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-shield-alt"></i>
+            <h3>Content Moderation</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Review reported inappropriate content</li>
+                <li style="margin-bottom: 8px;">✓ Flag and manage duplicate uploads</li>
+                <li style="margin-bottom: 8px;">✓ Approve or reject pending content</li>
+                <li style="margin-bottom: 8px;">✓ View user reports dashboard</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/reports" class="btn btn-primary">
+                    <i class="fas fa-flag"></i> View Reports
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('Content Moderation', content, auth, 'moderation'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  // ===== USER MANAGEMENT (Placeholder) =====
+  if (path === '/user-management') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-users-cog"></i>
+            <h3>User Management</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ View all registered users</li>
+                <li style="margin-bottom: 8px;">✓ Ban or unban users</li>
+                <li style="margin-bottom: 8px;">✓ View detailed user activity logs</li>
+                <li style="margin-bottom: 8px;">✓ Check download history per user</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/users" class="btn btn-primary">
+                    <i class="fas fa-users"></i> View Users
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('User Management', content, auth, 'user-management'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  
+  // ===== SCHEDULED TASKS (Placeholder) =====
+  if (path === '/scheduled-tasks') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-clock"></i>
+            <h3>Scheduled Tasks</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Schedule album releases for later</li>
+                <li style="margin-bottom: 8px;">✓ Schedule playlist updates</li>
+                <li style="margin-bottom: 8px;">✓ Schedule content removal</li>
+                <li style="margin-bottom: 8px;">✓ View and manage all scheduled tasks</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/calendar" class="btn btn-primary">
+                    <i class="fas fa-calendar-alt"></i> View Calendar
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  // ===== AI-POWERED TAGGING (Placeholder) =====
+  if (path === '/ai-tagging') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-robot"></i>
+            <h3>AI-Powered Tagging</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Auto-tag songs with genres based on metadata</li>
+                <li style="margin-bottom: 8px;">✓ Analyze song titles and artist names</li>
+                <li style="margin-bottom: 8px;">✓ Suggest genres automatically</li>
+                <li style="margin-bottom: 8px;">✓ Auto-categorize content</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/songs" class="btn btn-primary">
+                    <i class="fas fa-music"></i> Browse Songs
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  // ===== AD MANAGEMENT (Placeholder) =====
+  if (path === '/ad-management') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-ad"></i>
+            <h3>Ad Management</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Create and manage ad campaigns</li>
+                <li style="margin-bottom: 8px;">✓ Set ad placement positions</li>
+                <li style="margin-bottom: 8px;">✓ Track ad performance</li>
+                <li style="margin-bottom: 8px;">✓ Schedule ad rotations</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/analytics" class="btn btn-primary">
+                    <i class="fas fa-chart-line"></i> View Analytics
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('Ad Management', content, auth, 'ad-management'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  
+  // ===== SYSTEM SETTINGS (Placeholder) =====
+  if (path === '/system-settings') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-cogs"></i>
+            <h3>System Settings</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Configure site-wide preferences</li>
+                <li style="margin-bottom: 8px;">✓ Manage API keys and integrations</li>
+                <li style="margin-bottom: 8px;">✓ Set default system behaviors</li>
+                <li style="margin-bottom: 8px;">✓ Configure caching and performance</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/dashboard" class="btn btn-primary">
+                    <i class="fas fa-tachometer-alt"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('System Settings', content, auth, 'system-settings'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  // ===== THEME CUSTOMIZER (Placeholder) =====
+  if (path === '/theme-customizer') {
+    const content = `
+        <div class="empty-state">
+            <i class="fas fa-palette"></i>
+            <h3>Theme Customizer</h3>
+            <p>This feature is coming soon. You'll be able to:</p>
+            <ul style="list-style: none; margin-top: 15px; color: #666;">
+                <li style="margin-bottom: 8px;">✓ Customize site colors and branding</li>
+                <li style="margin-bottom: 8px;">✓ Upload custom logo and favicon</li>
+                <li style="margin-bottom: 8px;">✓ Choose font styles and sizes</li>
+                <li style="margin-bottom: 8px;">✓ Preview changes in real-time</li>
+            </ul>
+            <div style="margin-top: 30px;">
+                <a href="/admin/settings" class="btn btn-primary">
+                    <i class="fas fa-cog"></i> System Settings
+                </a>
+            </div>
+        </div>
+    `;
+    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
 
   // ===== 404 - Page Not Found (MUST BE LAST) =====
   return new Response(`
