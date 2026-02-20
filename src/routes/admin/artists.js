@@ -454,26 +454,21 @@ function updateFileProgress(container, files) {
         const originalText = btn.innerHTML;
         const card = btn.closest('.artist-grid-card, .mobile-card');
         
-        // Disable button and show spinner
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Moving to trash...';
         btn.disabled = true;
         
-        // Get artist name from the card
         const artistName = card.querySelector('.artist-name')?.textContent || 'Artist';
         
-        // Files to delete (artist image)
+        // FIXED: Use string concatenation instead of template literals
         const files = [
-            { name: `artists/thumbnails/${id}.jpg`, type: 'image' }
+            { name: 'artists/thumbnails/' + id + '.jpg', type: 'image' }
         ];
         
-        // Create progress bar
-        const progressDiv = createProgressBar('#9b59b6', `Moving ${artistName} to trash...`);
+        const progressDiv = createProgressBar('#9b59b6', 'Moving ' + artistName + ' to trash...');
         
-        // Add progress bar after the button container
         const buttonContainer = btn.closest('div[style*="gap:8px;"]') || btn.parentNode;
         buttonContainer.parentNode.insertBefore(progressDiv, buttonContainer.nextSibling);
         
-        // Track file progress
         const fileProgress = files.map(f => ({
             name: f.name,
             status: 'pending'
@@ -482,25 +477,21 @@ function updateFileProgress(container, files) {
         try {
             updateProgress(progressDiv, 10, 'Preparing...');
             
-            // Process files in parallel (even if just one file)
             const results = await processFilesInParallel(files, 'delete', (fileData) => {
-                // Update file progress
                 const fileIndex = fileProgress.findIndex(f => f.name === fileData.file);
                 if (fileIndex !== -1) {
                     fileProgress[fileIndex].status = fileData.status;
                 }
                 
-                // Calculate overall progress
                 const completedCount = fileProgress.filter(f => f.status === 'complete').length;
                 const percent = Math.min(80, Math.round((completedCount / files.length) * 80) + 10);
                 
-                updateProgress(progressDiv, percent, `Processing ${fileData.file}...`);
+                updateProgress(progressDiv, percent, 'Processing ' + fileData.file + '...');
                 updateFileProgress(progressDiv, fileProgress);
             });
             
             updateProgress(progressDiv, 90, 'Finalizing...');
             
-            // Make the actual delete API call
             const response = await fetch('/admin/artists/delete?id=' + id);
             const result = await response.json();
             
@@ -517,7 +508,6 @@ function updateFileProgress(container, files) {
             btn.disabled = false;
             updateProgress(progressDiv, 0, '❌ Error: ' + error.message);
             
-            // Mark all pending files as error
             fileProgress.forEach(f => {
                 if (f.status === 'pending') f.status = 'error';
             });
