@@ -1,8 +1,3 @@
-// src/routes/admin/duplicateDetector.js
-import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
-import { formatNumber } from '../../helpers/formatting.js';
-import { adminLayout } from './layout.js';
-
 // ===== DUPLICATE DETECTOR DASHBOARD =====
 export async function handleDuplicateDetector(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -21,7 +16,7 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
             <i class="fas fa-copy" style="color: #ff5500;"></i>
             Duplicate Detector
           </h2>
-          <p style="color: #666; margin-bottom: 20px;">Find and merge duplicate artists, albums, playlists, and songs. Default threshold is 50% to catch variations like "Chile One" and "Chile One Mrzambia".</p>
+          <p style="color: #666; margin-bottom: 20px;">Find and merge duplicate artists, albums, playlists, and songs. Default threshold is 50% to catch common variations.</p>
         </div>
 
         <!-- Stats Cards - Mobile First -->
@@ -126,7 +121,7 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
                 <span>Strict (100%)</span>
               </div>
               <p style="font-size: 0.8rem; color: #ff5500; margin-top: 8px; background: #fff3e0; padding: 8px; border-radius: 6px;">
-                <i class="fas fa-info-circle"></i> 50% catches variations like "Chile One" and "Chile One Mrzambia"
+                <i class="fas fa-info-circle"></i> 50% catches common variations like stage names and featuring artists
               </p>
             </div>
             
@@ -320,7 +315,7 @@ export async function handleDuplicateDetectorMerge(req, env, ctx, auth) {
   });
 }
 
-// Mobile-optimized duplicate group renderer (NO HORIZONTAL SCROLLING)
+// Mobile-optimized duplicate group renderer with HORIZONTAL duplicate cards (no scrolling)
 function renderDuplicateGroupMobile(group, type, index) {
   const primary = group.primary;
   const duplicates = group.duplicates;
@@ -340,11 +335,26 @@ function renderDuplicateGroupMobile(group, type, index) {
       case 'artists':
         return `${primary.songCount || 0} songs • ${primary.albumCount || 0} albums`;
       case 'albums':
-        return `${primary.primaryArtist} • ${primary.songCount || 0} tracks`;
+        return `${primary.songCount || 0} tracks`;
       case 'playlists':
-        return `${primary.curator} • ${primary.songCount || 0} songs`;
+        return `${primary.songCount || 0} songs`;
       case 'songs':
-        return `${primary.artistName}${primary.duration ? ` • ${formatDuration(primary.duration)}` : ''}`;
+        return primary.duration ? formatDuration(primary.duration) : '';
+      default:
+        return '';
+    }
+  };
+
+  const getDuplicateDetails = (dup) => {
+    switch(type) {
+      case 'artists':
+        return `${dup.songCount || 0} songs`;
+      case 'albums':
+        return `${dup.songCount || 0} tracks`;
+      case 'playlists':
+        return `${dup.songCount || 0} songs`;
+      case 'songs':
+        return dup.duration ? formatDuration(dup.duration) : '';
       default:
         return '';
     }
@@ -354,68 +364,60 @@ function renderDuplicateGroupMobile(group, type, index) {
     <div class="duplicate-group" style="background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e8e8e8;">
       <!-- Primary Item -->
       <div style="background: #f8f9fa; padding: 15px; border-bottom: 2px solid #ff5500;">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
           <i class="fas ${getTypeIcon()}" style="color: #ff5500; font-size: 1.2rem;"></i>
           <h4 style="font-size: 1.1rem; margin:0; flex:1;">${primary.name || primary.title}</h4>
           <span style="background: #ff5500; color: white; padding: 3px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600;">PRIMARY</span>
         </div>
-        <div style="font-size: 0.8rem; color: #666;">${getPrimaryDetails()}</div>
+        ${getPrimaryDetails() ? `<div style="font-size: 0.8rem; color: #666;">${getPrimaryDetails()}</div>` : ''}
       </div>
       
-      <!-- Duplicates List -->
-      <div style="padding: 10px;">
-        <p style="font-size: 0.9rem; font-weight: 600; margin-bottom: 10px; color: #666;">
-          <i class="fas fa-copy"></i> ${duplicates.length} Potential Duplicates:
+      <!-- Duplicates - HORIZONTAL LAYOUT (no scroll) -->
+      <div style="padding: 15px;">
+        <p style="font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; color: #666;">
+          <i class="fas fa-copy"></i> ${duplicates.length} Duplicates:
         </p>
         
-        ${duplicates.map(dup => `
-          <div style="background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 4px solid ${dup.similarityScore > 0.8 ? '#28a745' : dup.similarityScore > 0.6 ? '#ffc107' : '#ff5500'};">
-            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
-              <div style="font-weight: 600; font-size: 0.95rem;">${dup.name || dup.title}</div>
-              <span style="
-                background: ${dup.similarityScore > 0.8 ? '#d4edda' : dup.similarityScore > 0.6 ? '#fff3cd' : '#ff5500'};
-                color: ${dup.similarityScore > 0.8 ? '#155724' : dup.similarityScore > 0.6 ? '#856404' : 'white'};
-                padding: 2px 8px;
-                border-radius: 20px;
-                font-size: 0.7rem;
-                font-weight: 600;
-              ">${Math.round(dup.similarityScore * 100)}%</span>
-            </div>
-            
-            <div style="font-size: 0.8rem; color: #666; margin-bottom: 8px;">
-              ${type === 'artists' ? `${dup.songCount || 0} songs` : ''}
-              ${type === 'albums' ? dup.primaryArtist : ''}
-              ${type === 'playlists' ? dup.curator : ''}
-              ${type === 'songs' ? dup.artistName : ''}
-            </div>
-            
-            ${dup.reasons && dup.reasons.length > 0 ? `
-              <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px;">
-                ${dup.reasons.map(reason => `
-                  <span style="background: #e8e8e8; padding: 2px 6px; border-radius: 12px; font-size: 0.65rem; color: #666;">
-                    ${reason.factor} ${Math.round(reason.score * 100)}%
-                  </span>
-                `).join('')}
+        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+          ${duplicates.map(dup => `
+            <div style="flex: 1 1 calc(50% - 5px); min-width: 140px; background: #f8f9fa; border-radius: 10px; padding: 12px; border-left: 4px solid ${dup.similarityScore > 0.8 ? '#28a745' : dup.similarityScore > 0.6 ? '#ffc107' : '#ff5500'};">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                <div style="font-weight: 600; font-size: 0.9rem; line-height: 1.3; max-width: 70%;">${dup.name || dup.title}</div>
+                <span style="
+                  background: ${dup.similarityScore > 0.8 ? '#d4edda' : dup.similarityScore > 0.6 ? '#fff3cd' : '#ff5500'};
+                  color: ${dup.similarityScore > 0.8 ? '#155724' : dup.similarityScore > 0.6 ? '#856404' : 'white'};
+                  padding: 2px 6px;
+                  border-radius: 12px;
+                  font-size: 0.65rem;
+                  font-weight: 600;
+                  white-space: nowrap;
+                ">${Math.round(dup.similarityScore * 100)}%</span>
               </div>
-            ` : ''}
-            
-            <div style="display: flex; gap: 8px; margin-top: 8px;">
-              <a href="/admin/duplicate-detector/merge?type=${type}&primary=${primary.id}&duplicate=${dup.id}" 
-                 class="btn btn-primary btn-sm" style="flex: 1; padding: 8px; font-size: 0.8rem;">
-                <i class="fas fa-compress-alt"></i> Merge
-              </a>
-              <button onclick="previewModal.show('${type.slice(0,-1)}', '${dup.id}')" 
-                      class="btn btn-secondary btn-sm" style="flex: 1; padding: 8px; font-size: 0.8rem;">
-                <i class="fas fa-eye"></i> Preview
-              </button>
+              
+              ${getDuplicateDetails(dup) ? `
+                <div style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">
+                  ${getDuplicateDetails(dup)}
+                </div>
+              ` : ''}
+              
+              <div style="display: flex; gap: 5px; margin-top: 8px;">
+                <a href="/admin/duplicate-detector/merge?type=${type}&primary=${primary.id}&duplicate=${dup.id}" 
+                   class="btn btn-primary btn-sm" style="flex: 1; padding: 6px; font-size: 0.7rem;">
+                  Merge
+                </a>
+                <button onclick="previewModal.show('${type.slice(0,-1)}', '${dup.id}')" 
+                        class="btn btn-secondary btn-sm" style="flex: 1; padding: 6px; font-size: 0.7rem;">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </div>
             </div>
-          </div>
-        `).join('')}
+          `).join('')}
+        </div>
         
         <!-- Merge All Button -->
         ${duplicates.length > 1 ? `
           <a href="/admin/duplicate-detector/merge?type=${type}&primary=${primary.id}&${duplicates.map(d => `duplicate=${d.id}`).join('&')}" 
-             class="btn btn-primary" style="display: block; text-align: center; padding: 12px; margin-top: 10px;">
+             class="btn btn-primary" style="display: block; text-align: center; padding: 12px; margin-top: 15px;">
             <i class="fas fa-compress-alt"></i> Merge All ${duplicates.length} Duplicates
           </a>
         ` : ''}
