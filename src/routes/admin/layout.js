@@ -1,8 +1,9 @@
 // src/routes/admin/layout.js
 
-export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = { total: 0 }) {
+export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = { total: 0 }, missingCounts = { total: 0 }) {
   const username = auth?.session?.username || 'Admin';
   const totalDuplicates = duplicateCounts.total || 0;
+  const totalMissingIssues = missingCounts.total || 0;
   
   return `
 <!DOCTYPE html>
@@ -647,11 +648,11 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     ${totalDuplicates > 0 ? `<span class="tab-badge ${activePage !== 'duplicate-detector' ? 'pulse' : ''}">${totalDuplicates}</span>` : ''}
                 </a>
 
-<!-- MISSING METADATA TAB WITH BADGE -->
-<a href="/admin/missing-metadata" class="tab-btn ${activePage === 'missing-metadata' ? 'active' : ''}">
-    <i class="fas fa-exclamation-triangle"></i> Missing Metadata
-    ${totalMissingIssues > 0 ? `<span class="tab-badge ${activePage !== 'missing-metadata' ? 'pulse' : ''}">${totalMissingIssues}</span>` : ''}
-</a>
+                <!-- MISSING METADATA TAB WITH BADGE -->
+                <a href="/admin/missing-metadata" class="tab-btn ${activePage === 'missing-metadata' ? 'active' : ''}">
+                    <i class="fas fa-exclamation-triangle"></i> Missing Metadata
+                    ${totalMissingIssues > 0 ? `<span class="tab-badge ${activePage !== 'missing-metadata' ? 'pulse' : ''}">${totalMissingIssues}</span>` : ''}
+                </a>
                 <!-- Announcement System -->
                 <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
                     <i class="fas fa-bullhorn"></i> Announcements
