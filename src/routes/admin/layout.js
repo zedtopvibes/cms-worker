@@ -1,4 +1,4 @@
-// src/routes/admin/layout.js
+//src/routes/admin/layout.js
 
 export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = { total: 0 }, missingCounts = { total: 0 }, qualityCounts = { total: 0 }) {
   const username = auth?.session?.username || 'Admin';
