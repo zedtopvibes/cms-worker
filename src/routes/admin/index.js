@@ -83,10 +83,11 @@ import {
 } from './duplicateDetector.js';
 import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
 
-// ===== MISSING METADATA DETECTOR ROUTES =====
-if (path === '/missing-metadata' || path.startsWith('/missing-metadata/')) {
-  return await handleMissingMetadata(req, env, ctx, auth);
-}
+// ===== MISSING METADATA DETECTOR IMPORTS =====
+import { 
+  handleMissingMetadata
+} from './missingMetadata.js';
+import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.js';
 
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
@@ -111,6 +112,16 @@ export async function handleAdmin(req, env, ctx) {
   const duplicateStats = await detector.getDuplicateStats();
   const totalDuplicates = duplicateStats.total.artists + duplicateStats.total.albums + 
                          duplicateStats.total.playlists + duplicateStats.total.songs;
+
+  // Get missing metadata counts for the badge
+  const missingDetector = new MissingMetadataDetector(env);
+  const missingStats = await missingDetector.scanAll();
+  const totalMissingIssues = missingStats.totals.songsMissingInfo + 
+                            missingStats.totals.songsMissingThumbnails + 
+                            missingStats.totals.emptyAlbums + 
+                            missingStats.totals.emptyPlaylists + 
+                            missingStats.totals.playlistsMissingThumbnails +
+                            missingStats.totals.orphanedFiles;
 
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
@@ -368,7 +379,7 @@ export async function handleAdmin(req, env, ctx) {
       </div>
     `;
       
-    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -377,7 +388,7 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/album/create') {
     if (req.method === 'GET') {
       const content = await handleAdminAlbumCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Album', content, auth, 'albums', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Create Album', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -390,7 +401,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -401,7 +412,7 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/artist/create') {
     if (req.method === 'GET') {
       const content = await handleAdminArtistCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Artist', content, auth, 'artists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Create Artist', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -414,7 +425,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -425,7 +436,7 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/playlist/create') {
     if (req.method === 'GET') {
       const content = await handleAdminPlaylistCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Playlist', content, auth, 'playlists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Create Playlist', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -438,7 +449,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -449,7 +460,7 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/upload') {
     if (req.method === 'GET') {
       const content = await handleAdminUpload(req, env, ctx, auth);
-      return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -465,7 +476,7 @@ export async function handleAdmin(req, env, ctx) {
               <i class="fas fa-arrow-left"></i> Try Again
           </a>
         `;
-        return new Response(adminLayout('Upload Failed', content, auth, 'upload', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Upload Failed', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -504,7 +515,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
       `;
-      return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -513,7 +524,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== ALBUMS MANAGEMENT =====
   if (path === '/albums') {
     const content = await handleAdminAlbums(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -524,7 +535,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -537,7 +548,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -553,7 +564,7 @@ export async function handleAdmin(req, env, ctx) {
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -565,7 +576,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -578,7 +589,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -588,7 +599,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== ARTISTS MANAGEMENT =====
   if (path === '/artists') {
     const content = await handleAdminArtists(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Artists', content, auth, 'artists', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Manage Artists', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -599,7 +610,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Artist', result.content, auth, 'artists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Edit Artist', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -612,7 +623,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -628,7 +639,7 @@ export async function handleAdmin(req, env, ctx) {
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -640,7 +651,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -653,7 +664,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -663,7 +674,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== PLAYLISTS MANAGEMENT =====
   if (path === '/playlists') {
     const content = await handleAdminPlaylists(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -674,7 +685,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -687,7 +698,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -703,7 +714,7 @@ export async function handleAdmin(req, env, ctx) {
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -715,7 +726,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -728,7 +739,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -738,7 +749,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== STATISTICS =====
   if (path === '/stats') {
     const content = await handleAdminStats(req, env, ctx, auth);
-    return new Response(adminLayout('Statistics', content, auth, 'stats', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Statistics', content, auth, 'stats', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -746,7 +757,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== SONGS MANAGEMENT =====
   if (path === '/songs') {
     const content = await handleAdminSongs(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Songs', content, auth, 'songs', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Manage Songs', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -760,7 +771,7 @@ export async function handleAdmin(req, env, ctx) {
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -772,7 +783,7 @@ export async function handleAdmin(req, env, ctx) {
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Song', result.content, auth, 'songs', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout('Edit Song', result.content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -785,7 +796,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }), {
+        return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -795,7 +806,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== SEARCH =====
   if (path === '/search') {
     const content = await handleAdminSearch(req, env, ctx, auth);
-    return new Response(adminLayout('Search', content, auth, 'search', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Search', content, auth, 'search', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -804,7 +815,7 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/bulk') {
     if (req.method === 'GET') {
       const result = await handleAdminBulk(req, env, ctx, auth);
-      return new Response(adminLayout(result.title, result.content, auth, 'bulk', 0, { total: totalDuplicates }), {
+      return new Response(adminLayout(result.title, result.content, auth, 'bulk', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     } else if (req.method === 'POST') {
@@ -815,7 +826,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== ACTIVITY LOG =====
   if (path === '/activity') {
     const result = await handleAdminActivity(req, env, ctx, auth);
-    return new Response(adminLayout(result.title, result.content, auth, 'activity', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout(result.title, result.content, auth, 'activity', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -832,7 +843,7 @@ export async function handleAdmin(req, env, ctx) {
   // ===== TRASH / RECYCLE BIN =====
   if (path === '/trash') {
     const result = await handleAdminTrash(req, env, ctx, auth);
-    return new Response(adminLayout(result.title, result.content, auth, 'trash', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout(result.title, result.content, auth, 'trash', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -866,6 +877,11 @@ export async function handleAdmin(req, env, ctx) {
     return await handleDuplicateDetectorMerge(req, env, ctx, auth);
   }
 
+  // ===== MISSING METADATA DETECTOR ROUTES =====
+  if (path === '/missing-metadata' || path.startsWith('/missing-metadata/')) {
+    return await handleMissingMetadata(req, env, ctx, auth);
+  }
+
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
     const content = `
@@ -886,7 +902,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Announcement System', content, auth, 'announcements', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Announcement System', content, auth, 'announcements', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -911,7 +927,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Content Moderation', content, auth, 'moderation', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Content Moderation', content, auth, 'moderation', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -936,7 +952,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('User Management', content, auth, 'user-management', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('User Management', content, auth, 'user-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -961,7 +977,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -986,7 +1002,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1011,7 +1027,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Ad Management', content, auth, 'ad-management', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Ad Management', content, auth, 'ad-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1036,7 +1052,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('System Settings', content, auth, 'system-settings', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('System Settings', content, auth, 'system-settings', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1061,7 +1077,7 @@ export async function handleAdmin(req, env, ctx) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer', 0, { total: totalDuplicates }), {
+    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
