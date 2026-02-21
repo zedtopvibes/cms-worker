@@ -75,6 +75,14 @@ import {
   handleTrashEmpty,
   handleTrashSettings
 } from './trash.js';
+ 
+// ===== DUPLICATE DETECTOR =====
+import { 
+  handleDuplicateDetector,
+  handleDuplicateDetectorScan,
+  handleDuplicateDetectorMerge 
+} from './duplicateDetector.js';
+
 
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
@@ -836,30 +844,18 @@ if (path === '/trash/settings' && req.method === 'POST') {
   return await handleTrashSettings(req, env, ctx, auth);
 }
 
-// ===== DUPLICATE DETECTOR (Placeholder) =====
-  if (path === '/duplicate-detector') {
-    const content = `
-        <div class="empty-state">
-            <i class="fas fa-search"></i>
-            <h3>Duplicate Detector</h3>
-            <p>This feature is coming soon. You'll be able to:</p>
-            <ul style="list-style: none; margin-top: 15px; color: #666;">
-                <li style="margin-bottom: 8px;">✓ Find and merge duplicate content</li>
-                <li style="margin-bottom: 8px;">✓ Scan for duplicate songs by title/artist</li>
-                <li style="margin-bottom: 8px;">✓ Preview duplicates before merging</li>
-                <li style="margin-bottom: 8px;">✓ Auto-merge with configurable rules</li>
-            </ul>
-            <div style="margin-top: 30px;">
-                <a href="/admin/songs" class="btn btn-primary">
-                    <i class="fas fa-music"></i> View Songs
-                </a>
-            </div>
-        </div>
-    `;
-    return new Response(adminLayout('Duplicate Detector', content, auth, 'duplicate-detector'), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
+// ===== DUPLICATE DETECTOR ROUTES =====
+if (path === '/duplicate-detector') {
+  return await handleDuplicateDetector(req, env, ctx, auth);
+}
+
+if (path === '/duplicate-detector/scan') {
+  return await handleDuplicateDetectorScan(req, env, ctx, auth);
+}
+
+if (path === '/duplicate-detector/merge' && req.method === 'GET') {
+  return await handleDuplicateDetectorMerge(req, env, ctx, auth);
+}
   
 // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
