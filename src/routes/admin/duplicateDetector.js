@@ -23,42 +23,54 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
           <p style="color: #666; margin-bottom: 20px;">Find and merge duplicate artists, albums, playlists, and songs. Default threshold is 50% to catch common variations.</p>
         </div>
 
-        <!-- Stats Cards - Mobile First -->
-        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 25px;">
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 0.8rem; opacity: 0.9;">DUPLICATE ARTISTS</div>
-              <div style="font-size: 2rem; font-weight: 700;">${stats.total.artists}</div>
-              <div style="font-size: 0.8rem;">${stats.items.artists} duplicate items</div>
+        <!-- Stats Cards - 2 per row layout -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 25px;">
+          <!-- Artists Card -->
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-microphone" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE ARTISTS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.artists}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.artists} duplicate items</div>
+              </div>
             </div>
-            <i class="fas fa-microphone" style="font-size: 2.5rem; opacity: 0.5;"></i>
           </div>
           
-          <div style="background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 0.8rem; opacity: 0.9;">DUPLICATE ALBUMS</div>
-              <div style="font-size: 2rem; font-weight: 700;">${stats.total.albums}</div>
-              <div style="font-size: 0.8rem;">${stats.items.albums} duplicate items</div>
+          <!-- Albums Card -->
+          <div style="background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-compact-disc" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE ALBUMS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.albums}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.albums} duplicate items</div>
+              </div>
             </div>
-            <i class="fas fa-compact-disc" style="font-size: 2.5rem; opacity: 0.5;"></i>
           </div>
           
-          <div style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 0.8rem; opacity: 0.9;">DUPLICATE PLAYLISTS</div>
-              <div style="font-size: 2rem; font-weight: 700;">${stats.total.playlists}</div>
-              <div style="font-size: 0.8rem;">${stats.items.playlists} duplicate items</div>
+          <!-- Playlists Card -->
+          <div style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-list" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE PLAYLISTS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.playlists}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.playlists} duplicate items</div>
+              </div>
             </div>
-            <i class="fas fa-list" style="font-size: 2.5rem; opacity: 0.5;"></i>
           </div>
           
-          <div style="background: linear-gradient(135deg, #4a90e2, #357abd); color: white; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 0.8rem; opacity: 0.9;">DUPLICATE SONGS</div>
-              <div style="font-size: 2rem; font-weight: 700;">${stats.total.songs}</div>
-              <div style="font-size: 0.8rem;">${stats.items.songs} duplicate items</div>
+          <!-- Songs Card -->
+          <div style="background: linear-gradient(135deg, #4a90e2, #357abd); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-music" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE SONGS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.songs}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.songs} duplicate items</div>
+              </div>
             </div>
-            <i class="fas fa-music" style="font-size: 2.5rem; opacity: 0.5;"></i>
           </div>
         </div>
 
@@ -165,6 +177,11 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
             
             .scan-card h3 {
               font-size: 1.2rem !important;
+            }
+            
+            /* On desktop, stats cards become 4 per row */
+            .stats-grid {
+              grid-template-columns: repeat(4, 1fr) !important;
             }
           }
         </style>
