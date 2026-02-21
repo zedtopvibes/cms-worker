@@ -115,7 +115,7 @@ export async function handleContentQuality(req, env, ctx, auth) {
               </div>
             </div>
           </div>
-
+ 
           <!-- Artists No Image -->
           <div style="background: ${scan.totals.artistsNoImage > 0 ? 'linear-gradient(135deg, #9b59b6, #8e44ad)' : 'linear-gradient(135deg, #7bed9f, #2ed573)'}; color: white; padding: 16px; border-radius: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
