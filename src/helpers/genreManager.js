@@ -1,11 +1,9 @@
 // src/helpers/genreManager.js
-import { getStorage } from './storage.js';
 import { getArtists, getAlbums, getPlaylists, getMetadata } from './storage.js';
 
 export class GenreManager {
   constructor(env) {
     this.env = env;
-    this.storage = getStorage(env);
     this.genresCache = null;
   }
 
@@ -15,7 +13,7 @@ export class GenreManager {
     if (this.genresCache) return this.genresCache;
     
     try {
-      const obj = await this.storage.get('genres.json');
+      const obj = await this.env.media.get('genres.json');
       if (obj) {
         const text = await obj.text();
         this.genresCache = JSON.parse(text);
@@ -48,7 +46,7 @@ export class GenreManager {
 
   async saveGenres(genresData) {
     genresData.lastUpdated = Date.now();
-    await this.storage.put('genres.json', JSON.stringify(genresData, null, 2), {
+    await this.env.media.put('genres.json', JSON.stringify(genresData, null, 2), {
       httpMetadata: { contentType: 'application/json' }
     });
     this.genresCache = genresData;
