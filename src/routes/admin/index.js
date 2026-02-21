@@ -93,8 +93,6 @@ import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.j
 import { handleContentQuality } from './contentQuality.js';
 import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js';
 
-
-
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
@@ -129,11 +127,10 @@ export async function handleAdmin(req, env, ctx) {
                             missingStats.totals.playlistsMissingThumbnails +
                             missingStats.totals.orphanedFiles;
 
-
-// Get content quality counts for the badge
-const qualityAnalyzer = new ContentQualityAnalyzer(env);
-const qualityStats = await qualityAnalyzer.scanAll();
-const totalQualityIssues = qualityStats.totals.total;
+  // Get content quality counts for the badge
+  const qualityAnalyzer = new ContentQualityAnalyzer(env);
+  const qualityStats = await qualityAnalyzer.scanAll();
+  const totalQualityIssues = qualityStats.totals.total;
 
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
@@ -391,7 +388,7 @@ const totalQualityIssues = qualityStats.totals.total;
       </div>
     `;
       
-    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -400,7 +397,7 @@ const totalQualityIssues = qualityStats.totals.total;
   if (path === '/album/create') {
     if (req.method === 'GET') {
       const content = await handleAdminAlbumCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Album', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Create Album', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -413,7 +410,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -424,7 +421,7 @@ const totalQualityIssues = qualityStats.totals.total;
   if (path === '/artist/create') {
     if (req.method === 'GET') {
       const content = await handleAdminArtistCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Artist', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Create Artist', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -437,7 +434,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -448,7 +445,7 @@ const totalQualityIssues = qualityStats.totals.total;
   if (path === '/playlist/create') {
     if (req.method === 'GET') {
       const content = await handleAdminPlaylistCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Playlist', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Create Playlist', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -461,7 +458,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -472,7 +469,7 @@ const totalQualityIssues = qualityStats.totals.total;
   if (path === '/upload') {
     if (req.method === 'GET') {
       const content = await handleAdminUpload(req, env, ctx, auth);
-      return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -488,7 +485,7 @@ const totalQualityIssues = qualityStats.totals.total;
               <i class="fas fa-arrow-left"></i> Try Again
           </a>
         `;
-        return new Response(adminLayout('Upload Failed', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Upload Failed', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -527,7 +524,7 @@ const totalQualityIssues = qualityStats.totals.total;
             </div>
         </div>
       `;
-      return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -536,7 +533,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== ALBUMS MANAGEMENT =====
   if (path === '/albums') {
     const content = await handleAdminAlbums(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -547,7 +544,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -560,7 +557,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -576,7 +573,7 @@ const totalQualityIssues = qualityStats.totals.total;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -588,7 +585,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -601,7 +598,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -611,7 +608,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== ARTISTS MANAGEMENT =====
   if (path === '/artists') {
     const content = await handleAdminArtists(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Artists', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Manage Artists', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -622,7 +619,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Artist', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Edit Artist', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -635,7 +632,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -651,7 +648,7 @@ const totalQualityIssues = qualityStats.totals.total;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -663,7 +660,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -676,7 +673,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -686,7 +683,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== PLAYLISTS MANAGEMENT =====
   if (path === '/playlists') {
     const content = await handleAdminPlaylists(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -697,7 +694,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -710,7 +707,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -726,7 +723,7 @@ const totalQualityIssues = qualityStats.totals.total;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -738,7 +735,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -751,7 +748,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -761,7 +758,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== STATISTICS =====
   if (path === '/stats') {
     const content = await handleAdminStats(req, env, ctx, auth);
-    return new Response(adminLayout('Statistics', content, auth, 'stats', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Statistics', content, auth, 'stats', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -769,7 +766,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== SONGS MANAGEMENT =====
   if (path === '/songs') {
     const content = await handleAdminSongs(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Songs', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Manage Songs', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -783,7 +780,7 @@ const totalQualityIssues = qualityStats.totals.total;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -795,7 +792,7 @@ const totalQualityIssues = qualityStats.totals.total;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Song', result.content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout('Edit Song', result.content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -808,7 +805,7 @@ const totalQualityIssues = qualityStats.totals.total;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -818,7 +815,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== SEARCH =====
   if (path === '/search') {
     const content = await handleAdminSearch(req, env, ctx, auth);
-    return new Response(adminLayout('Search', content, auth, 'search', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Search', content, auth, 'search', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -827,7 +824,7 @@ const totalQualityIssues = qualityStats.totals.total;
   if (path === '/bulk') {
     if (req.method === 'GET') {
       const result = await handleAdminBulk(req, env, ctx, auth);
-      return new Response(adminLayout(result.title, result.content, auth, 'bulk', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+      return new Response(adminLayout(result.title, result.content, auth, 'bulk', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
         headers: { 'Content-Type': 'text/html' }
       });
     } else if (req.method === 'POST') {
@@ -838,7 +835,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== ACTIVITY LOG =====
   if (path === '/activity') {
     const result = await handleAdminActivity(req, env, ctx, auth);
-    return new Response(adminLayout(result.title, result.content, auth, 'activity', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout(result.title, result.content, auth, 'activity', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -855,7 +852,7 @@ const totalQualityIssues = qualityStats.totals.total;
   // ===== TRASH / RECYCLE BIN =====
   if (path === '/trash') {
     const result = await handleAdminTrash(req, env, ctx, auth);
-    return new Response(adminLayout(result.title, result.content, auth, 'trash', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout(result.title, result.content, auth, 'trash', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -876,12 +873,6 @@ const totalQualityIssues = qualityStats.totals.total;
     return await handleTrashSettings(req, env, ctx, auth);
   }
 
-
-// ===== CONTENT QUALITY ROUTES =====
-if (path === '/content-quality' || path.startsWith('/content-quality/')) {
-  return await handleContentQuality(req, env, ctx, auth);
-}
-
   // ===== DUPLICATE DETECTOR ROUTES =====
   if (path === '/duplicate-detector') {
     return await handleDuplicateDetector(req, env, ctx, auth);
@@ -898,6 +889,11 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
   // ===== MISSING METADATA DETECTOR ROUTES =====
   if (path === '/missing-metadata' || path.startsWith('/missing-metadata/')) {
     return await handleMissingMetadata(req, env, ctx, auth);
+  }
+
+  // ===== CONTENT QUALITY ROUTES =====
+  if (path === '/content-quality' || path.startsWith('/content-quality/')) {
+    return await handleContentQuality(req, env, ctx, auth);
   }
 
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
@@ -920,7 +916,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Announcement System', content, auth, 'announcements', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Announcement System', content, auth, 'announcements', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -945,7 +941,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Content Moderation', content, auth, 'moderation', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Content Moderation', content, auth, 'moderation', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -970,7 +966,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('User Management', content, auth, 'user-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('User Management', content, auth, 'user-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -995,7 +991,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1020,7 +1016,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1045,7 +1041,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Ad Management', content, auth, 'ad-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Ad Management', content, auth, 'ad-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1070,7 +1066,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('System Settings', content, auth, 'system-settings', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('System Settings', content, auth, 'system-settings', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1095,7 +1091,7 @@ if (path === '/content-quality' || path.startsWith('/content-quality/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer', 0, { total: totalDuplicates }, { total: totalMissingIssues }), {
+    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
