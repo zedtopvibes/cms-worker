@@ -136,6 +136,12 @@ export async function handleAdmin(req, env, ctx) {
   const qualityStats = await qualityAnalyzer.scanAll();
   const totalQualityIssues = qualityStats.totals.total;
 
+
+// Get genre stats for badge (optional)
+const genreManager = new GenreManager(env);
+const genresData = await genreManager.getGenres();
+const totalGenres = genresData.genres.length;
+
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
     const stats = await getDashboardStats(env);
