@@ -93,6 +93,10 @@ import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.j
 import { handleContentQuality } from './contentQuality.js';
 import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js';
 
+// ===== GENRE MANAGEMENT IMPORTS =====
+import { handleGenres } from './genres.js';
+import { GenreManager } from '../../helpers/genreManager.js';
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
@@ -895,6 +899,11 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/content-quality' || path.startsWith('/content-quality/')) {
     return await handleContentQuality(req, env, ctx, auth);
   }
+
+// ===== GENRE MANAGEMENT ROUTES =====
+if (path === '/genres' || path.startsWith('/genres/')) {
+  return await handleGenres(req, env, ctx, auth);
+}
 
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
