@@ -1,14 +1,16 @@
 // src/routes/admin/duplicateDetector.js
 import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
 import { formatNumber } from '../../helpers/formatting.js';
+import { adminLayout } from './layout.js';
 
+// ===== DUPLICATE DETECTOR DASHBOARD =====
 export async function handleDuplicateDetector(req, env, ctx, auth) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin/duplicate-detector', '') || '/';
   
   const detector = new DuplicateDetector(env);
 
-  // Dashboard
+  // Main dashboard
   if (path === '/' || path === '') {
     const stats = await detector.getDuplicateStats();
     
@@ -159,54 +161,57 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
     });
   }
 
-  // Scan for duplicates
-  if (path === '/scan') {
-    const type = url.searchParams.get('type') || 'artists';
-    const threshold = parseFloat(url.searchParams.get('threshold') || '0.85');
+  return new Response('Not Found', { status: 404 });
+}
+
+// ===== SCAN FOR DUPLICATES =====
+export async function handleDuplicateDetectorScan(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const type = url.searchParams.get('type') || 'artists';
+  const threshold = parseFloat(url.searchParams.get('threshold') || '0.85');
+  const results = url.searchParams.get('results') === '1';
+  
+  const detector = new DuplicateDetector(env);
+  
+  // Show loading state if not results yet
+  if (!results) {
+    const loadingContent = `
+      <div style="text-align: center; padding: 60px 20px;">
+        <div style="width: 80px; height: 80px; margin: 0 auto 20px; border: 4px solid #f0f0f0; border-top-color: #ff5500; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <h3 style="margin-bottom: 10px;">Scanning for duplicate ${type}...</h3>
+        <p style="color: #666;">This may take a moment depending on your library size</p>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        <meta http-equiv="refresh" content="2;url=/admin/duplicate-detector/scan?type=${type}&threshold=${threshold}&results=1">
+      </div>
+    `;
     
+    return new Response(adminLayout('Scanning...', loadingContent, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  // Actually perform the scan
+  try {
     let duplicates = [];
     let title = '';
 
-    // Show loading state immediately
-    if (req.method === 'GET' && !url.searchParams.get('results')) {
-      const loadingContent = `
-        <div style="text-align: center; padding: 60px 20px;">
-          <div style="width: 80px; height: 80px; margin: 0 auto 20px; border: 4px solid #f0f0f0; border-top-color: #ff5500; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-          <h3 style="margin-bottom: 10px;">Scanning for duplicates...</h3>
-          <p style="color: #666;">This may take a moment depending on your library size</p>
-          <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
-          <meta http-equiv="refresh" content="2;url=${url.pathname}?type=${type}&threshold=${threshold}&results=1">
-        </div>
-      `;
-      
-      return new Response(adminLayout('Scanning...', loadingContent, auth, 'duplicate-detector'), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-
-    // Actually perform the scan
-    try {
-      switch(type) {
-        case 'artists':
-          duplicates = await detector.findDuplicateArtists({ threshold });
-          title = 'Duplicate Artists';
-          break;
-        case 'albums':
-          duplicates = await detector.findDuplicateAlbums({ threshold });
-          title = 'Duplicate Albums';
-          break;
-        case 'playlists':
-          duplicates = await detector.findDuplicatePlaylists({ threshold });
-          title = 'Duplicate Playlists';
-          break;
-        case 'songs':
-          duplicates = await detector.findDuplicateSongs({ threshold });
-          title = 'Duplicate Songs';
-          break;
-      }
-    } catch (error) {
-      console.error('Scan error:', error);
-      duplicates = [];
+    switch(type) {
+      case 'artists':
+        duplicates = await detector.findDuplicateArtists({ threshold });
+        title = 'Duplicate Artists';
+        break;
+      case 'albums':
+        duplicates = await detector.findDuplicateAlbums({ threshold });
+        title = 'Duplicate Albums';
+        break;
+      case 'playlists':
+        duplicates = await detector.findDuplicatePlaylists({ threshold });
+        title = 'Duplicate Playlists';
+        break;
+      case 'songs':
+        duplicates = await detector.findDuplicateSongs({ threshold });
+        title = 'Duplicate Songs';
+        break;
     }
 
     const totalDuplicates = duplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
@@ -248,41 +253,64 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
     return new Response(adminLayout('Scan Results', content, auth, 'duplicate-detector'), {
       headers: { 'Content-Type': 'text/html' }
     });
+  } catch (error) {
+    console.error('Scan error:', error);
+    const errorContent = `
+      <div class="empty-state" style="text-align: center; padding: 60px 20px;">
+        <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545;"></i>
+        <h3 style="margin: 20px 0 10px;">Scan Failed</h3>
+        <p style="color: #666;">${error.message}</p>
+        <a href="/admin/duplicate-detector" class="btn btn-primary" style="margin-top: 20px;">
+          Try Again
+        </a>
+      </div>
+    `;
+    
+    return new Response(adminLayout('Scan Failed', errorContent, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
   }
+}
 
-  // View merge page - redirect to appropriate management page
-  if (path === '/merge') {
-    const type = url.searchParams.get('type');
-    const primaryId = url.searchParams.get('primary');
-    const duplicateIds = url.searchParams.getAll('duplicate');
+// ===== MERGE DUPLICATES (Redirects to appropriate page) =====
+export async function handleDuplicateDetectorMerge(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const type = url.searchParams.get('type');
+  const primaryId = url.searchParams.get('primary');
+  const duplicateIds = url.searchParams.getAll('duplicate');
 
-    // Build the redirect URL based on type
-    let redirectUrl = '';
-    switch(type) {
-      case 'artists':
-        redirectUrl = `/admin/artists/merge?primary=${primaryId}&duplicate=${duplicateIds.join('&duplicate=')}`;
-        break;
-      case 'albums':
-        // For now, just go to albums page - you can add merge functionality later
-        redirectUrl = `/admin/albums?highlight=${primaryId}`;
-        break;
-      case 'playlists':
-        redirectUrl = `/admin/playlists?highlight=${primaryId}`;
-        break;
-      case 'songs':
-        redirectUrl = `/admin/songs?highlight=${primaryId}`;
-        break;
-    }
-
+  if (!type || !primaryId || duplicateIds.length === 0) {
     return new Response(null, {
       status: 302,
-      headers: { Location: redirectUrl }
+      headers: { Location: '/admin/duplicate-detector?error=missing_params' }
     });
   }
 
-  return new Response('Not Found', { status: 404 });
+  // Build the redirect URL based on type
+  let redirectUrl = '';
+  switch(type) {
+    case 'artists':
+      redirectUrl = `/admin/artists/merge?primary=${primaryId}&duplicate=${duplicateIds.join('&duplicate=')}`;
+      break;
+    case 'albums':
+      // You can add album merge functionality later
+      redirectUrl = `/admin/albums?highlight=${primaryId}`;
+      break;
+    case 'playlists':
+      redirectUrl = `/admin/playlists?highlight=${primaryId}`;
+      break;
+    case 'songs':
+      redirectUrl = `/admin/songs?highlight=${primaryId}`;
+      break;
+  }
+
+  return new Response(null, {
+    status: 302,
+    headers: { Location: redirectUrl }
+  });
 }
 
+// Helper function to render duplicate groups
 function renderDuplicateGroup(group, type, index) {
   const primary = group.primary;
   const duplicates = group.duplicates;
@@ -428,7 +456,7 @@ function renderDuplicateGroup(group, type, index) {
   `;
 }
 
-// Helper function for formatting duration (add this if not already imported)
+// Helper function for formatting duration
 function formatDuration(seconds) {
   if (!seconds) return '0:00';
   const mins = Math.floor(seconds / 60);
