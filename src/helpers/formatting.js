@@ -23,5 +23,5 @@ export const formatDuration = (seconds) => {
 export function fallbackDurationParser(arrayBuffer) {
   const fileSize = arrayBuffer.byteLength;
   return Math.floor(fileSize / (128 * 125)); // 128kbps estimate
-}
+} 
 
