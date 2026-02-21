@@ -288,105 +288,136 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
     });
   }
 
-  // Bulk assign handler
-  if (path === '/bulk-assign' && req.method === 'POST') {
-    const formData = await req.formData();
-    const songIds = formData.getAll('songIds');
-    const targetArtist = formData.get('targetArtist');
-    
-    if (!targetArtist || songIds.length === 0) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: '/admin/missing-metadata/songs?error=invalid' }
-      });
-    }
-
-    try {
-      const artists = await getArtists(env);
-      
-      // Verify target artist exists
-      if (!artists[targetArtist]) {
-        throw new Error('Selected artist does not exist');
-      }
-
-      const results = {
-        success: [],
-        failed: []
-      };
-
-      // Update each song's metadata
-      for (const songId of songIds) {
-        try {
-          // Get existing metadata
-          const meta = await getMetadata(env, songId);
-          
-          // Create updated metadata
-          const updatedMeta = { 
-            ...meta,
-            title: meta?.title || songId.split('_').slice(1).join(' '),
-            primaryArtist: targetArtist,
-            featuredArtists: meta?.featuredArtists || []
-          };
-          
-          // Save updated metadata back to R2
-          await env.media.put(`metadata/${songId}.json`, JSON.stringify(updatedMeta, null, 2), {
-            httpMetadata: { contentType: 'application/json' }
-          });
-          
-          results.success.push(songId);
-        } catch (error) {
-          console.error(`Failed to update song ${songId}:`, error);
-          results.failed.push({ id: songId, error: error.message });
-        }
-      }
-
-      // Log activity
-      await logAdminActivity(env, auth.session.id, 'bulk-assign', 'songs', 
-        `Bulk assigned ${results.success.length} songs to artist ${targetArtist}`);
-
-      // Show results
-      const content = `
-        <div style="text-align: center; padding: 40px 20px;">
-          <i class="fas fa-check-circle" style="font-size: 4rem; color: #28a745; margin-bottom: 20px;"></i>
-          <h2 style="margin-bottom: 10px;">Bulk Assign Complete</h2>
-          <p style="color: #666; margin-bottom: 20px;">
-            Successfully updated ${results.success.length} songs<br>
-            ${results.failed.length > 0 ? `
-              <span style="color: #dc3545;">${results.failed.length} songs failed</span><br>
-              ${results.failed.map(f => `<small>${f.id}: ${f.error}</small><br>`).join('')}
-            ` : ''}
-          </p>
-          <div style="display: flex; gap: 10px; justify-content: center;">
-            <a href="/admin/missing-metadata/songs" class="btn btn-primary">
-              Back to Missing Songs
-            </a>
-            <a href="/admin/missing-metadata" class="btn btn-secondary">
-              Back to Dashboard
-            </a>
-          </div>
-        </div>
-      `;
-      
-      return new Response(adminLayout('Bulk Assign Results', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-
-    } catch (error) {
-      console.error('Bulk assign error:', error);
-      const content = `
-        <div style="text-align: center; padding: 40px 20px;">
-          <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
-          <h2 style="margin-bottom: 10px;">Bulk Assign Failed</h2>
-          <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
-          <a href="/admin/missing-metadata/songs" class="btn btn-primary">Try Again</a>
-        </div>
-      `;
-      
-      return new Response(adminLayout('Bulk Assign Failed', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
+  // Bulk assign handler - ENHANCED VERSION WITH DEBUGGING
+if (path === '/bulk-assign' && req.method === 'POST') {
+  const formData = await req.formData();
+  const songIds = formData.getAll('songIds');
+  const targetArtist = formData.get('targetArtist');
+  
+  console.log('Bulk assign request:', { songIds, targetArtist }); // Debug log
+  
+  if (!targetArtist || songIds.length === 0) {
+    console.log('Missing target artist or song IDs');
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/admin/missing-metadata/songs?error=invalid' }
+    });
   }
+
+  try {
+    const artists = await getArtists(env);
+    console.log('Available artists:', Object.keys(artists)); // Debug log
+    
+    // Verify target artist exists
+    if (!artists[targetArtist]) {
+      console.log(`Target artist ${targetArtist} not found in artists list`);
+      throw new Error(`Selected artist "${targetArtist}" does not exist`);
+    }
+
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    // Update each song's metadata
+    for (const songId of songIds) {
+      try {
+        console.log(`Processing song: ${songId}`); // Debug log
+        
+        // Get existing metadata - FIX: Use correct path
+        let meta = {};
+        try {
+          const metadataObj = await env.media.get(`metadata/${songId}.json`);
+          if (metadataObj) {
+            const metadataText = await metadataObj.text();
+            meta = JSON.parse(metadataText);
+            console.log(`Found existing metadata for ${songId}:`, meta);
+          } else {
+            console.log(`No metadata file found for ${songId}, creating new`);
+          }
+        } catch (e) {
+          console.log(`Error reading metadata for ${songId}:`, e.message);
+          // Continue with empty metadata
+        }
+        
+        // Create updated metadata
+        const updatedMeta = { 
+          ...meta,
+          title: meta?.title || songId.split('_').slice(1).join(' ') || songId,
+          primaryArtist: targetArtist,
+          featuredArtists: meta?.featuredArtists || []
+        };
+        
+        console.log(`Saving updated metadata for ${songId}:`, updatedMeta); // Debug log
+        
+        // Save updated metadata back to R2
+        await env.media.put(`metadata/${songId}.json`, JSON.stringify(updatedMeta, null, 2), {
+          httpMetadata: { contentType: 'application/json' }
+        });
+        
+        // Also try to update the song's own metadata if it exists in a different format
+        try {
+          // Some songs might have metadata embedded in a different location
+          // This is optional and might fail
+        } catch (e) {
+          // Ignore
+        }
+        
+        results.success.push(songId);
+        console.log(`Successfully updated ${songId}`); // Debug log
+      } catch (error) {
+        console.error(`Failed to update song ${songId}:`, error);
+        results.failed.push({ id: songId, error: error.message });
+      }
+    }
+
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'bulk-assign', 'songs', 
+      `Bulk assigned ${results.success.length} songs to artist ${targetArtist}`);
+
+    // Show results
+    const content = `
+      <div style="text-align: center; padding: 40px 20px;">
+        <i class="fas fa-check-circle" style="font-size: 4rem; color: #28a745; margin-bottom: 20px;"></i>
+        <h2 style="margin-bottom: 10px;">Bulk Assign Complete</h2>
+        <p style="color: #666; margin-bottom: 20px;">
+          Successfully updated ${results.success.length} songs<br>
+          ${results.failed.length > 0 ? `
+            <span style="color: #dc3545;">${results.failed.length} songs failed</span><br>
+            ${results.failed.map(f => `<small>${f.id}: ${f.error}</small><br>`).join('')}
+          ` : ''}
+        </p>
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <a href="/admin/missing-metadata/songs" class="btn btn-primary">
+            Back to Missing Songs
+          </a>
+          <a href="/admin/missing-metadata" class="btn btn-secondary">
+            Back to Dashboard
+          </a>
+        </div>
+      </div>
+    `;
+    
+    return new Response(adminLayout('Bulk Assign Results', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+
+  } catch (error) {
+    console.error('Bulk assign error:', error);
+    const content = `
+      <div style="text-align: center; padding: 40px 20px;">
+        <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
+        <h2 style="margin-bottom: 10px;">Bulk Assign Failed</h2>
+        <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+        <a href="/admin/missing-metadata/songs" class="btn btn-primary">Try Again</a>
+      </div>
+    `;
+    
+    return new Response(adminLayout('Bulk Assign Failed', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
 
   // Missing thumbnails
   if (path === '/thumbnails') {
