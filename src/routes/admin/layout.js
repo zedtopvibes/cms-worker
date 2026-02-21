@@ -1,10 +1,11 @@
-//src/routes/admin/layout.js
+// src/routes/admin/layout.js
 
-export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = { total: 0 }, missingCounts = { total: 0 }, qualityCounts = { total: 0 }) {
+export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = { total: 0 }, missingCounts = { total: 0 }, qualityCounts = { total: 0 }, genreCounts = { total: 0 }) {
   const username = auth?.session?.username || 'Admin';
   const totalDuplicates = duplicateCounts.total || 0;
   const totalMissingIssues = missingCounts.total || 0;
-  const totalQualityIssues = qualityCounts.total || 0;  // ADD THIS LINE
+  const totalQualityIssues = qualityCounts.total || 0;
+  const totalGenres = genreCounts.total || 0;
   
   return `
 <!DOCTYPE html>
@@ -661,11 +662,12 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     ${totalQualityIssues > 0 ? `<span class="tab-badge ${activePage !== 'content-quality' ? 'pulse' : ''}">${totalQualityIssues}</span>` : ''}
                 </a>
 
-<!-- GENRE MANAGEMENT TAB -->
-<a href="/admin/genres" class="tab-btn ${activePage === 'genres' ? 'active' : ''}">
-    <i class="fas fa-tags"></i> Genres
-    ${totalGenres > 0 ? `<span class="tab-badge">${totalGenres}</span>` : ''}
-</a>
+                <!-- GENRE MANAGEMENT TAB -->
+                <a href="/admin/genres" class="tab-btn ${activePage === 'genres' ? 'active' : ''}">
+                    <i class="fas fa-tags"></i> Genres
+                    ${totalGenres > 0 ? `<span class="tab-badge">${totalGenres}</span>` : ''}
+                </a>
+
                 <!-- Announcement System -->
                 <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
                     <i class="fas fa-bullhorn"></i> Announcements
