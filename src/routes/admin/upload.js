@@ -2,7 +2,7 @@
 import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSongToAlbum, addSongToPlaylist, addSongToArtist, addAlbumToArtist, addArtistToAlbum } from '../../helpers/storage.js';
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-import { GenreManager } from '../../helpers/genreManager.js'; // ADD THIS IMPORT
+import { GenreManager } from '../../helpers/genreManager.js';
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
@@ -494,10 +494,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         }
         
         function selectGenre(id, name, color) {
-            if (selectedGenre !== id) {
-                selectedGenre = id;
-                updateGenreTag(name, color);
-            }
+            selectedGenre = id;
+            updateGenreTag(name, color);
             document.getElementById('genreDropdown').style.display = 'none';
         }
         
@@ -597,20 +595,24 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             input.value = JSON.stringify(featuredArtists);
         }
         
-        // Genre Tag
+        // Genre Tag - UPDATED with "No genres added" message
         function updateGenreTag(name, color) {
             const container = document.getElementById('selectedGenreContainer');
             const input = document.getElementById('genreInput');
             
             container.innerHTML = '';
             
-            const tag = document.createElement('div');
-            tag.className = 'genre-tag';
-            tag.style.background = color;
-            tag.innerHTML = \`<span>\${name}</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>\`;
-            container.appendChild(tag);
-            
-            input.value = selectedGenre;
+            if (selectedGenre) {
+                const tag = document.createElement('div');
+                tag.className = 'genre-tag';
+                tag.style.background = color;
+                tag.innerHTML = \`<span>\${name}</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>\`;
+                container.appendChild(tag);
+                input.value = selectedGenre;
+            } else {
+                container.innerHTML = '<div style="color:#999; font-style:italic; padding:8px 0;">No genres added</div>';
+                input.value = '';
+            }
         }
         
         window.removeFeatured = function(index) {
@@ -620,8 +622,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         
         window.removeGenre = function() {
             selectedGenre = null;
-            document.getElementById('selectedGenreContainer').innerHTML = '';
-            document.getElementById('genreInput').value = '';
+            updateGenreTag(); // This will now show "No genres added"
         };
         
         // Close dropdown on outside click
@@ -699,6 +700,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         
         // Initialize
         updateFeaturedTags();
+        updateGenreTag(); // Initialize genre with "No genres added" message
     </script>
   `;
 
