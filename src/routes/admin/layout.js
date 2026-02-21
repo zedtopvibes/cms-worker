@@ -642,11 +642,6 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                 <a href="/admin/trash" class="tab-btn ${activePage === 'trash' ? 'active' : ''}">
                     <i class="fas fa-trash-alt"></i> Trash
                 </a
-<!-- CONTENT QUALITY TAB WITH BADGE -->
-<a href="/admin/content-quality" class="tab-btn ${activePage === 'content-quality' ? 'active' : ''}">
-    <i class="fas fa-chart-line"></i> Content Quality
-    ${totalQualityIssues > 0 ? `<span class="tab-badge ${activePage !== 'content-quality' ? 'pulse' : ''}">${totalQualityIssues}</span>` : ''}
-</a>
                 <!-- DUPLICATE DETECTOR TAB WITH BADGE -->
                 <a href="/admin/duplicate-detector" class="tab-btn ${activePage === 'duplicate-detector' ? 'active' : ''}">
                     <i class="fas fa-copy"></i> Duplicate Detector
@@ -658,6 +653,13 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     <i class="fas fa-exclamation-triangle"></i> Missing Metadata
                     ${totalMissingIssues > 0 ? `<span class="tab-badge ${activePage !== 'missing-metadata' ? 'pulse' : ''}">${totalMissingIssues}</span>` : ''}
                 </a>
+
+
+<!-- CONTENT QUALITY TAB WITH BADGE -->
+<a href="/admin/content-quality" class="tab-btn ${activePage === 'content-quality' ? 'active' : ''}">
+    <i class="fas fa-chart-line"></i> Content Quality
+    ${totalQualityIssues > 0 ? `<span class="tab-badge ${activePage !== 'content-quality' ? 'pulse' : ''}">${totalQualityIssues}</span>` : ''}
+</a>
                 <!-- Announcement System -->
                 <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
                     <i class="fas fa-bullhorn"></i> Announcements
