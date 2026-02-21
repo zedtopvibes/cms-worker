@@ -1,6 +1,6 @@
 // src/routes/admin/missingMetadata.js
 import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.js';
-import { getArtists, saveArtists } from '../../helpers/storage.js';
+import { getArtists, getMetadata } from '../../helpers/storage.js';  // Added getMetadata here!
 import { adminLayout } from './layout.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
@@ -317,20 +317,25 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       // Update each song's metadata
       for (const songId of songIds) {
         try {
+          // Get existing metadata
           const meta = await getMetadata(env, songId);
+          
+          // Create updated metadata
           const updatedMeta = { 
-            ...meta, 
+            ...meta,
+            title: meta?.title || songId.split('_').slice(1).join(' '),
             primaryArtist: targetArtist,
-            // Optionally keep featured artists if they exist
             featuredArtists: meta?.featuredArtists || []
           };
           
+          // Save updated metadata back to R2
           await env.media.put(`metadata/${songId}.json`, JSON.stringify(updatedMeta, null, 2), {
             httpMetadata: { contentType: 'application/json' }
           });
           
           results.success.push(songId);
         } catch (error) {
+          console.error(`Failed to update song ${songId}:`, error);
           results.failed.push({ id: songId, error: error.message });
         }
       }
@@ -346,7 +351,10 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
           <h2 style="margin-bottom: 10px;">Bulk Assign Complete</h2>
           <p style="color: #666; margin-bottom: 20px;">
             Successfully updated ${results.success.length} songs<br>
-            ${results.failed.length > 0 ? `${results.failed.length} songs failed` : ''}
+            ${results.failed.length > 0 ? `
+              <span style="color: #dc3545;">${results.failed.length} songs failed</span><br>
+              ${results.failed.map(f => `<small>${f.id}: ${f.error}</small><br>`).join('')}
+            ` : ''}
           </p>
           <div style="display: flex; gap: 10px; justify-content: center;">
             <a href="/admin/missing-metadata/songs" class="btn btn-primary">
@@ -364,6 +372,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       });
 
     } catch (error) {
+      console.error('Bulk assign error:', error);
       const content = `
         <div style="text-align: center; padding: 40px 20px;">
           <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
