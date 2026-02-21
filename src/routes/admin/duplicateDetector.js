@@ -1,521 +1,624 @@
-// src/helpers/duplicateDetector.js
-import { getArtists, getAlbums, getPlaylists, getMetadata } from './storage.js';
+// src/routes/admin/duplicateDetector.js
+import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
+import { getArtists, getAlbums, getPlaylists, saveArtists, saveAlbums, savePlaylists } from '../../helpers/storage.js';
+import { adminLayout } from './layout.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
-export class DuplicateDetector {
-  constructor(env) {
-    this.env = env;
-  }
+// ===== DUPLICATE DETECTOR DASHBOARD =====
+export async function handleDuplicateDetector(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const path = url.pathname.replace('/admin/duplicate-detector', '') || '/';
+  
+  const detector = new DuplicateDetector(env);
 
-  // ==================== ARTIST DUPLICATE DETECTION ====================
-  // Threshold: 50% - Catches variations like "Chile One" vs "Chile One Mrzambia"
+  // Main dashboard
+  if (path === '/' || path === '') {
+    const stats = await detector.getDuplicateStats();
+    
+    const content = `
+      <div class="duplicate-detector">
+        <div style="margin-bottom: 20px;">
+          <h2 style="font-size: 1.5rem; margin-bottom: 15px;">
+            <i class="fas fa-copy" style="color: #ff5500;"></i>
+            Duplicate Detector
+          </h2>
+          <p style="color: #666; margin-bottom: 20px;">Find and merge duplicate artists, albums, playlists, and songs. Default threshold is 50% to catch common variations.</p>
+        </div>
 
-  async findDuplicateArtists(options = {}) {
-    const {
-      threshold = 0.5,
-      includeDeleted = false,
-      checkNameVariations = true
-    } = options;
-
-    const artists = await getArtists(this.env);
-    const artistsList = Object.entries(artists).map(([id, artist]) => ({
-      id,
-      name: artist.name,
-      bio: artist.bio || '',
-      image: artist.image,
-      songCount: artist.songCount || 0,
-      albumCount: artist.albumCount || 0,
-      created: artist.created
-    }));
-
-    const duplicates = [];
-    const processed = new Set();
-
-    // Common name variations
-    const variations = {
-      '&': ['and', 'n'],
-      'feat.': ['featuring', 'ft.', 'ft'],
-      'vs.': ['versus', 'vs'],
-      'pres.': ['presents', 'present'],
-      'the': [''],
-      'dj': ['deejay'],
-      'mc': ['emcee'],
-      'dr.': ['doctor', 'dr'],
-      'mr.': ['mister', 'mr']
-    };
-
-    for (let i = 0; i < artistsList.length; i++) {
-      if (processed.has(artistsList[i].id)) continue;
-
-      const artist = artistsList[i];
-      const matches = [];
-
-      for (let j = i + 1; j < artistsList.length; j++) {
-        if (processed.has(artistsList[j].id)) continue;
-
-        const other = artistsList[j];
-        
-        // Direct name similarity
-        let score = this.calculateSimilarity(artist.name, other.name);
-        const reasons = [{ factor: 'name', score }];
-
-        // Check name variations
-        if (checkNameVariations && score < threshold) {
-          const normalizedName = this.normalizeArtistName(artist.name, variations);
-          const normalizedOther = this.normalizeArtistName(other.name, variations);
+        <!-- Stats Cards - 2 per row layout -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 25px;">
+          <!-- Artists Card -->
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-microphone" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE ARTISTS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.artists}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.artists} duplicate items</div>
+              </div>
+            </div>
+          </div>
           
-          if (normalizedName !== artist.name || normalizedOther !== other.name) {
-            const variationScore = this.calculateSimilarity(normalizedName, normalizedOther);
-            if (variationScore > score) {
-              score = variationScore;
-              reasons.push({ factor: 'normalized', score: variationScore });
+          <!-- Albums Card -->
+          <div style="background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-compact-disc" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE ALBUMS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.albums}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.albums} duplicate items</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Playlists Card -->
+          <div style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-list" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE PLAYLISTS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.playlists}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.playlists} duplicate items</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Songs Card -->
+          <div style="background: linear-gradient(135deg, #4a90e2, #357abd); color: white; padding: 16px; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fas fa-music" style="font-size: 2rem; opacity: 0.8;"></i>
+              <div style="flex: 1;">
+                <div style="font-size: 0.75rem; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px;">DUPLICATE SONGS</div>
+                <div style="font-size: 2.2rem; font-weight: 700; line-height: 1.2;">${stats.total.songs}</div>
+                <div style="font-size: 0.8rem; opacity: 0.8;">${stats.items.songs} duplicate items</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scan Options - Mobile Friendly Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px;">
+          <a href="/admin/duplicate-detector/scan?type=artists" class="scan-card">
+            <i class="fas fa-microphone" style="font-size: 1.8rem; color: #667eea;"></i>
+            <h3 style="font-size: 1rem; margin: 8px 0;">Artists</h3>
+            <span class="badge" style="background: ${stats.total.artists > 0 ? '#ff5500' : '#28a745'}; color: white; display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">
+              ${stats.total.artists > 0 ? `${stats.total.artists} groups` : 'Clean'}
+            </span>
+          </a>
+          
+          <a href="/admin/duplicate-detector/scan?type=albums" class="scan-card">
+            <i class="fas fa-compact-disc" style="font-size: 1.8rem; color: #ff5500;"></i>
+            <h3 style="font-size: 1rem; margin: 8px 0;">Albums</h3>
+            <span class="badge" style="background: ${stats.total.albums > 0 ? '#ff5500' : '#28a745'}; color: white; display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">
+              ${stats.total.albums > 0 ? `${stats.total.albums} groups` : 'Clean'}
+            </span>
+          </a>
+          
+          <a href="/admin/duplicate-detector/scan?type=playlists" class="scan-card">
+            <i class="fas fa-list" style="font-size: 1.8rem; color: #28a745;"></i>
+            <h3 style="font-size: 1rem; margin: 8px 0;">Playlists</h3>
+            <span class="badge" style="background: ${stats.total.playlists > 0 ? '#ff5500' : '#28a745'}; color: white; display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">
+              ${stats.total.playlists > 0 ? `${stats.total.playlists} groups` : 'Clean'}
+            </span>
+          </a>
+          
+          <a href="/admin/duplicate-detector/scan?type=songs" class="scan-card">
+            <i class="fas fa-music" style="font-size: 1.8rem; color: #4a90e2;"></i>
+            <h3 style="font-size: 1rem; margin: 8px 0;">Songs</h3>
+            <span class="badge" style="background: ${stats.total.songs > 0 ? '#ff5500' : '#28a745'}; color: white; display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">
+              ${stats.total.songs > 0 ? `${stats.total.songs} groups` : 'Clean'}
+            </span>
+          </a>
+        </div>
+
+        <!-- Threshold Settings - Mobile Optimized -->
+        <div style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+          <h3 style="margin-bottom: 15px; font-size: 1.1rem;">
+            <i class="fas fa-sliders-h" style="color: #ff5500;"></i> Scan Settings
+          </h3>
+          
+          <form id="scanForm" action="/admin/duplicate-detector/scan" method="GET">
+            <div style="margin-bottom: 20px;">
+              <label style="display: block; margin-bottom: 8px; font-weight: 600;">Entity Type</label>
+              <select name="type" class="form-control" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1rem;">
+                <option value="artists">Artists</option>
+                <option value="albums">Albums</option>
+                <option value="playlists">Playlists</option>
+                <option value="songs">Songs</option>
+              </select>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display: block; margin-bottom: 8px; font-weight: 600;">Similarity Threshold: <span id="thresholdValue" style="color: #ff5500;">0.50</span></label>
+              <input type="range" id="threshold" name="threshold" min="0.3" max="1" step="0.05" value="0.5" 
+                     oninput="document.getElementById('thresholdValue').textContent = parseFloat(this.value).toFixed(2)" 
+                     style="width: 100%; height: 44px;">
+              <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.7rem; color: #666;">
+                <span>Loose (30%)</span>
+                <span>Balanced (50%)</span>
+                <span>Strict (100%)</span>
+              </div>
+              <p style="font-size: 0.8rem; color: #ff5500; margin-top: 8px; background: #fff3e0; padding: 8px; border-radius: 6px;">
+                <i class="fas fa-info-circle"></i> 50% catches common variations like stage names and featuring artists
+              </p>
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1rem;">
+              <i class="fas fa-search"></i> Start Scan
+            </button>
+          </form>
+        </div>
+
+        <style>
+          .scan-card {
+            display: block;
+            padding: 15px 10px;
+            background: white;
+            border-radius: 12px;
+            text-decoration: none;
+            color: #333;
+            text-align: center;
+            border: 1px solid #e8e8e8;
+            transition: all 0.3s;
+          }
+          
+          .scan-card:hover {
+            border-color: #ff5500;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+          }
+          
+          @media (min-width: 768px) {
+            .scan-card {
+              padding: 20px;
+            }
+            
+            .scan-card i {
+              font-size: 2.2rem !important;
+            }
+            
+            .scan-card h3 {
+              font-size: 1.2rem !important;
             }
           }
-        }
+        </style>
+      </div>
+    `;
 
-        if (score >= threshold) {
-          matches.push({
-            ...other,
-            similarityScore: score,
-            reasons: reasons.filter(r => r.score < 1)
-          });
-        }
-      }
+    return new Response(adminLayout('Duplicate Detector', content, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
 
-      if (matches.length > 0) {
-        duplicates.push({
-          primary: artist,
-          duplicates: matches.sort((a, b) => b.similarityScore - a.similarityScore)
+  return new Response('Not Found', { status: 404 });
+}
+
+// ===== SCAN FOR DUPLICATES =====
+export async function handleDuplicateDetectorScan(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const type = url.searchParams.get('type') || 'artists';
+  const threshold = parseFloat(url.searchParams.get('threshold') || '0.5');
+  const results = url.searchParams.get('results') === '1';
+  
+  const detector = new DuplicateDetector(env);
+  
+  // Show loading state if not results yet
+  if (!results) {
+    const loadingContent = `
+      <div style="text-align: center; padding: 40px 20px;">
+        <div style="width: 60px; height: 60px; margin: 0 auto 20px; border: 4px solid #f0f0f0; border-top-color: #ff5500; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <h3 style="margin-bottom: 10px;">Scanning for duplicate ${type}...</h3>
+        <p style="color: #666;">This may take a moment</p>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        <meta http-equiv="refresh" content="2;url=/admin/duplicate-detector/scan?type=${type}&threshold=${threshold}&results=1">
+      </div>
+    `;
+    
+    return new Response(adminLayout('Scanning...', loadingContent, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  // Actually perform the scan
+  try {
+    let duplicates = [];
+    let title = '';
+
+    switch(type) {
+      case 'artists':
+        duplicates = await detector.findDuplicateArtists({ threshold });
+        title = 'Duplicate Artists';
+        break;
+      case 'albums':
+        duplicates = await detector.findDuplicateAlbums({ threshold });
+        title = 'Duplicate Albums';
+        break;
+      case 'playlists':
+        duplicates = await detector.findDuplicatePlaylists({ threshold });
+        title = 'Duplicate Playlists';
+        break;
+      case 'songs':
+        duplicates = await detector.findDuplicateSongs({ threshold });
+        title = 'Duplicate Songs';
+        break;
+    }
+
+    const totalDuplicates = duplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
+
+    const content = `
+      <div class="scan-results">
+        <div style="margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <a href="/admin/duplicate-detector" class="btn btn-secondary btn-sm" style="padding: 8px 12px;">
+              <i class="fas fa-arrow-left"></i>
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">${title}</h2>
+          </div>
+          <p style="color: #666; background: #f8f9fa; padding: 10px; border-radius: 8px;">
+            <i class="fas fa-info-circle"></i> 
+            Found ${duplicates.length} groups with ${totalDuplicates} potential duplicates
+            (Threshold: ${Math.round(threshold * 100)}%)
+          </p>
+        </div>
+
+        ${duplicates.length === 0 ? `
+          <div class="empty-state" style="text-align: center; padding: 40px 20px;">
+            <i class="fas fa-check-circle" style="font-size: 3rem; color: #28a745;"></i>
+            <h3 style="margin: 15px 0 10px;">No Duplicates Found</h3>
+            <p style="color: #666; margin-bottom: 20px;">No duplicate ${type} were found with ${Math.round(threshold * 100)}% threshold.</p>
+            <a href="/admin/duplicate-detector" class="btn btn-primary">Try Different Settings</a>
+          </div>
+        ` : `
+          <div class="duplicate-groups" style="display: flex; flex-direction: column; gap: 15px;">
+            ${duplicates.map((group, index) => renderDuplicateGroupMobile(group, type, index)).join('')}
+          </div>
+        `}
+      </div>
+    `;
+
+    return new Response(adminLayout('Scan Results', content, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  } catch (error) {
+    console.error('Scan error:', error);
+    const errorContent = `
+      <div class="empty-state" style="text-align: center; padding: 40px 20px;">
+        <i class="fas fa-exclamation-circle" style="font-size: 3rem; color: #dc3545;"></i>
+        <h3 style="margin: 15px 0 10px;">Scan Failed</h3>
+        <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+        <a href="/admin/duplicate-detector" class="btn btn-primary">Try Again</a>
+      </div>
+    `;
+    
+    return new Response(adminLayout('Scan Failed', errorContent, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+// ===== MERGE DUPLICATES =====
+export async function handleDuplicateDetectorMerge(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const type = url.searchParams.get('type');
+  const primaryId = url.searchParams.get('primary');
+  const duplicateIds = url.searchParams.getAll('duplicate');
+
+  if (!type || !primaryId || duplicateIds.length === 0) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/admin/duplicate-detector?error=missing_params' }
+    });
+  }
+
+  try {
+    let result;
+    
+    switch(type) {
+      case 'artists':
+        result = await mergeArtists(env, primaryId, duplicateIds, auth);
+        break;
+      case 'albums':
+        result = await mergeAlbums(env, primaryId, duplicateIds, auth);
+        break;
+      case 'playlists':
+        result = await mergePlaylists(env, primaryId, duplicateIds, auth);
+        break;
+      case 'songs':
+        // Songs merge is more complex - redirect to songs page for now
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/admin/songs?highlight=${primaryId}` }
         });
-        matches.forEach(m => processed.add(m.id));
-      }
-      processed.add(artist.id);
     }
 
-    return duplicates;
-  }
+    if (result.success) {
+      // Log activity
+      await logAdminActivity(env, auth.session.id, 'merge', type, primaryId, 
+        `Merged ${duplicateIds.length} duplicates into ${primaryId}`);
 
-  // ==================== ALBUM DUPLICATE DETECTION ====================
-  // Threshold: 60% - Stricter because albums are more structured
-
-  async findDuplicateAlbums(options = {}) {
-    const {
-      threshold = 0.6,
-      includeDeleted = false,
-      sameArtist = true
-    } = options;
-
-    const albums = await getAlbums(this.env);
-    const artists = await getArtists(this.env);
+      // Show success message
+      const content = `
+        <div style="text-align: center; padding: 40px 20px;">
+          <i class="fas fa-check-circle" style="font-size: 4rem; color: #28a745; margin-bottom: 20px;"></i>
+          <h2 style="margin-bottom: 10px;">Merge Successful!</h2>
+          <p style="color: #666; margin-bottom: 30px;">Successfully merged ${duplicateIds.length} duplicate items.</p>
+          <a href="/admin/duplicate-detector" class="btn btn-primary">
+            <i class="fas fa-arrow-left"></i> Back to Duplicate Detector
+          </a>
+        </div>
+      `;
+      
+      return new Response(adminLayout('Merge Successful', content, auth, 'duplicate-detector'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    } else {
+      throw new Error(result.error || 'Merge failed');
+    }
+  } catch (error) {
+    console.error('Merge error:', error);
+    const errorContent = `
+      <div style="text-align: center; padding: 40px 20px;">
+        <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
+        <h2 style="margin-bottom: 10px;">Merge Failed</h2>
+        <p style="color: #666; margin-bottom: 30px;">${error.message}</p>
+        <a href="/admin/duplicate-detector" class="btn btn-primary">
+          <i class="fas fa-arrow-left"></i> Back to Duplicate Detector
+        </a>
+      </div>
+    `;
     
-    const albumsList = await Promise.all(
-      Object.entries(albums).map(async ([id, album]) => {
-        // Get artist names
-        const artistNames = album.artists?.map(aid => artists[aid]?.name || aid).join(', ') || 'Various';
-        const primaryArtist = album.artists?.[0] ? artists[album.artists[0]]?.name || album.artists[0] : 'Various';
+    return new Response(adminLayout('Merge Failed', errorContent, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+// ===== MERGE FUNCTIONS =====
+
+async function mergeArtists(env, primaryId, duplicateIds, auth) {
+  try {
+    const artists = await getArtists(env);
+    
+    if (!artists[primaryId]) {
+      return { success: false, error: 'Primary artist not found' };
+    }
+    
+    const primary = artists[primaryId];
+    const duplicates = duplicateIds.map(id => artists[id]).filter(a => a);
+    
+    // Merge song counts and album counts
+    primary.songCount = (primary.songCount || 0) + duplicates.reduce((sum, a) => sum + (a.songCount || 0), 0);
+    primary.albumCount = (primary.albumCount || 0) + duplicates.reduce((sum, a) => sum + (a.albumCount || 0), 0);
+    
+    // Merge bio if primary doesn't have one
+    if (!primary.bio && duplicates.some(d => d.bio)) {
+      primary.bio = duplicates.find(d => d.bio)?.bio;
+    }
+    
+    // Delete duplicates
+    for (const id of duplicateIds) {
+      delete artists[id];
+    }
+    
+    // Save updated artists
+    await saveArtists(env, artists);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function mergeAlbums(env, primaryId, duplicateIds, auth) {
+  try {
+    const albums = await getAlbums(env);
+    
+    if (!albums[primaryId]) {
+      return { success: false, error: 'Primary album not found' };
+    }
+    
+    const primary = albums[primaryId];
+    const duplicates = duplicateIds.map(id => albums[id]).filter(a => a);
+    
+    // Merge songs arrays (remove duplicates)
+    const allSongs = new Set(primary.songs || []);
+    duplicates.forEach(dup => {
+      (dup.songs || []).forEach(song => allSongs.add(song));
+    });
+    primary.songs = Array.from(allSongs);
+    
+    // Merge artists arrays
+    const allArtists = new Set(primary.artists || []);
+    duplicates.forEach(dup => {
+      (dup.artists || []).forEach(artist => allArtists.add(artist));
+    });
+    primary.artists = Array.from(allArtists);
+    
+    // Use best description
+    if (!primary.description && duplicates.some(d => d.description)) {
+      primary.description = duplicates.find(d => d.description)?.description;
+    }
+    
+    // Use best thumbnail
+    if (!primary.thumbnail && duplicates.some(d => d.thumbnail)) {
+      primary.thumbnail = duplicates.find(d => d.thumbnail)?.thumbnail;
+    }
+    
+    // Delete duplicates
+    for (const id of duplicateIds) {
+      delete albums[id];
+    }
+    
+    // Save updated albums
+    await saveAlbums(env, albums);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function mergePlaylists(env, primaryId, duplicateIds, auth) {
+  try {
+    const playlists = await getPlaylists(env);
+    
+    if (!playlists[primaryId]) {
+      return { success: false, error: 'Primary playlist not found' };
+    }
+    
+    const primary = playlists[primaryId];
+    const duplicates = duplicateIds.map(id => playlists[id]).filter(p => p);
+    
+    // Merge songs arrays (remove duplicates)
+    const allSongs = new Set(primary.songs || []);
+    duplicates.forEach(dup => {
+      (dup.songs || []).forEach(song => allSongs.add(song));
+    });
+    primary.songs = Array.from(allSongs);
+    primary.songCount = primary.songs.length;
+    
+    // Use best description
+    if (!primary.description && duplicates.some(d => d.description)) {
+      primary.description = duplicates.find(d => d.description)?.description;
+    }
+    
+    // Use best thumbnail
+    if (!primary.thumbnail && duplicates.some(d => d.thumbnail)) {
+      primary.thumbnail = duplicates.find(d => d.thumbnail)?.thumbnail;
+    }
+    
+    // Update timestamp
+    primary.updated = Date.now();
+    
+    // Delete duplicates
+    for (const id of duplicateIds) {
+      delete playlists[id];
+    }
+    
+    // Save updated playlists
+    await savePlaylists(env, playlists);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Mobile-optimized duplicate group renderer with HORIZONTAL duplicate cards (no scrolling)
+function renderDuplicateGroupMobile(group, type, index) {
+  const primary = group.primary;
+  const duplicates = group.duplicates;
+
+  const getTypeIcon = () => {
+    switch(type) {
+      case 'artists': return 'fa-microphone';
+      case 'albums': return 'fa-compact-disc';
+      case 'playlists': return 'fa-list';
+      case 'songs': return 'fa-music';
+      default: return 'fa-copy';
+    }
+  };
+
+  const getPrimaryDetails = () => {
+    switch(type) {
+      case 'artists':
+        return `${primary.songCount || 0} songs • ${primary.albumCount || 0} albums`;
+      case 'albums':
+        return `${primary.songCount || 0} tracks`;
+      case 'playlists':
+        return `${primary.songCount || 0} songs`;
+      case 'songs':
+        return primary.duration ? formatDuration(primary.duration) : '';
+      default:
+        return '';
+    }
+  };
+
+  const getDuplicateDetails = (dup) => {
+    switch(type) {
+      case 'artists':
+        return `${dup.songCount || 0} songs`;
+      case 'albums':
+        return `${dup.songCount || 0} tracks`;
+      case 'playlists':
+        return `${dup.songCount || 0} songs`;
+      case 'songs':
+        return dup.duration ? formatDuration(dup.duration) : '';
+      default:
+        return '';
+    }
+  };
+
+  return `
+    <div class="duplicate-group" style="background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e8e8e8;">
+      <!-- Primary Item -->
+      <div style="background: #f8f9fa; padding: 15px; border-bottom: 2px solid #ff5500;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+          <i class="fas ${getTypeIcon()}" style="color: #ff5500; font-size: 1.2rem;"></i>
+          <h4 style="font-size: 1.1rem; margin:0; flex:1;">${primary.name || primary.title}</h4>
+          <span style="background: #ff5500; color: white; padding: 3px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600;">PRIMARY</span>
+        </div>
+        ${getPrimaryDetails() ? `<div style="font-size: 0.8rem; color: #666;">${getPrimaryDetails()}</div>` : ''}
+      </div>
+      
+      <!-- Duplicates - HORIZONTAL LAYOUT (no scroll) -->
+      <div style="padding: 15px;">
+        <p style="font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; color: #666;">
+          <i class="fas fa-copy"></i> ${duplicates.length} Duplicates:
+        </p>
         
-        return {
-          id,
-          title: album.title,
-          description: album.description || '',
-          thumbnail: album.thumbnail,
-          primaryArtist,
-          artistNames,
-          artists: album.artists || [],
-          songs: album.songs || [],
-          songCount: album.songs?.length || 0,
-          created: album.created
-        };
-      })
-    );
-
-    const duplicates = [];
-    const processed = new Set();
-
-    for (let i = 0; i < albumsList.length; i++) {
-      if (processed.has(albumsList[i].id)) continue;
-
-      const album = albumsList[i];
-      const matches = [];
-
-      for (let j = i + 1; j < albumsList.length; j++) {
-        if (processed.has(albumsList[j].id)) continue;
-
-        const other = albumsList[j];
+        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+          ${duplicates.map(dup => `
+            <div style="flex: 1 1 calc(50% - 5px); min-width: 140px; background: #f8f9fa; border-radius: 10px; padding: 12px; border-left: 4px solid ${dup.similarityScore > 0.8 ? '#28a745' : dup.similarityScore > 0.6 ? '#ffc107' : '#ff5500'};">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                <div style="font-weight: 600; font-size: 0.9rem; line-height: 1.3; max-width: 70%;">${dup.name || dup.title}</div>
+                <span style="
+                  background: ${dup.similarityScore > 0.8 ? '#d4edda' : dup.similarityScore > 0.6 ? '#fff3cd' : '#ff5500'};
+                  color: ${dup.similarityScore > 0.8 ? '#155724' : dup.similarityScore > 0.6 ? '#856404' : 'white'};
+                  padding: 2px 6px;
+                  border-radius: 12px;
+                  font-size: 0.65rem;
+                  font-weight: 600;
+                  white-space: nowrap;
+                ">${Math.round(dup.similarityScore * 100)}%</span>
+              </div>
+              
+              ${getDuplicateDetails(dup) ? `
+                <div style="font-size: 0.75rem; color: #666; margin-bottom: 10px;">
+                  ${getDuplicateDetails(dup)}
+                </div>
+              ` : ''}
+              
+              <div style="display: flex; gap: 5px; margin-top: 8px;">
+                <a href="/admin/duplicate-detector/merge?type=${type}&primary=${primary.id}&duplicate=${dup.id}" 
+                   class="btn btn-primary btn-sm" style="flex: 1; padding: 6px; font-size: 0.7rem;">
+                  Merge
+                </a>
+                <button onclick="previewModal.show('${type.slice(0,-1)}', '${dup.id}')" 
+                        class="btn btn-secondary btn-sm" style="flex: 1; padding: 6px; font-size: 0.7rem;">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
         
-        // Title similarity
-        const titleScore = this.calculateSimilarity(album.title, other.title);
-        if (titleScore < 0.3) continue;
-        
-        let score = titleScore * 0.4;
-        const reasons = [{ factor: 'title', score: titleScore }];
+        <!-- Merge All Button -->
+        ${duplicates.length > 1 ? `
+          <a href="/admin/duplicate-detector/merge?type=${type}&primary=${primary.id}&${duplicates.map(d => `duplicate=${d.id}`).join('&')}" 
+             class="btn btn-primary" style="display: block; text-align: center; padding: 12px; margin-top: 15px;">
+            <i class="fas fa-compress-alt"></i> Merge All ${duplicates.length} Duplicates
+          </a>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
 
-        // Artist match (important for albums)
-        if (sameArtist) {
-          // Check if they share at least one artist
-          const commonArtists = album.artists.filter(aid => other.artists.includes(aid));
-          let artistScore = 0;
-          
-          if (commonArtists.length > 0) {
-            artistScore = 0.9; // Same artist(s)
-          } else {
-            // Compare artist names
-            const artistSim = this.calculateSimilarity(album.artistNames, other.artistNames);
-            artistScore = artistSim * 0.5;
-          }
-          
-          score += artistScore * 0.4;
-          reasons.push({ factor: 'artist', score: artistScore });
-        }
-
-        // Track count similarity
-        if (album.songCount > 0 && other.songCount > 0) {
-          const trackDiff = Math.abs(album.songCount - other.songCount);
-          const trackScore = Math.max(0, 1 - (trackDiff / Math.max(album.songCount, other.songCount)));
-          score += trackScore * 0.2;
-          reasons.push({ factor: 'tracks', score: trackScore });
-        }
-
-        if (score >= threshold) {
-          matches.push({
-            ...other,
-            similarityScore: score,
-            reasons: reasons.filter(r => r.score < 1)
-          });
-        }
-      }
-
-      if (matches.length > 0) {
-        duplicates.push({
-          primary: album,
-          duplicates: matches.sort((a, b) => b.similarityScore - a.similarityScore)
-        });
-        matches.forEach(m => processed.add(m.id));
-      }
-      processed.add(album.id);
-    }
-
-    return duplicates;
-  }
-
-  // ==================== PLAYLIST DUPLICATE DETECTION ====================
-  // Threshold: 40% - Looser because playlist names are creative
-
-  async findDuplicatePlaylists(options = {}) {
-    const {
-      threshold = 0.4,
-      includeDeleted = false,
-      minSongOverlap = 0.3
-    } = options;
-
-    const playlists = await getPlaylists(this.env);
-    
-    const playlistsList = Object.entries(playlists).map(([id, playlist]) => ({
-      id,
-      title: playlist.title,
-      description: playlist.description || '',
-      curator: playlist.curator || 'ZEDALBUMS',
-      thumbnail: playlist.thumbnail,
-      songs: playlist.songs || [],
-      songCount: playlist.songs?.length || 0,
-      created: playlist.created,
-      updated: playlist.updated
-    }));
-
-    const duplicates = [];
-    const processed = new Set();
-
-    for (let i = 0; i < playlistsList.length; i++) {
-      if (processed.has(playlistsList[i].id)) continue;
-
-      const playlist = playlistsList[i];
-      const matches = [];
-
-      for (let j = i + 1; j < playlistsList.length; j++) {
-        if (processed.has(playlistsList[j].id)) continue;
-
-        const other = playlistsList[j];
-        
-        // Title similarity (less important for playlists)
-        const titleScore = this.calculateSimilarity(playlist.title, other.title);
-        
-        let score = titleScore * 0.2;
-        const reasons = [{ factor: 'title', score: titleScore }];
-
-        // Song overlap (most important for playlists)
-        if (playlist.songCount > 0 && other.songCount > 0) {
-          const overlap = this.calculatePlaylistOverlap(playlist.songs, other.songs);
-          
-          if (overlap >= minSongOverlap) {
-            score += overlap * 0.7;
-            reasons.push({ factor: 'songs', score: overlap });
-          }
-        }
-
-        // Curator similarity
-        if (playlist.curator && other.curator) {
-          const curatorScore = this.calculateSimilarity(playlist.curator, other.curator);
-          score += curatorScore * 0.1;
-          reasons.push({ factor: 'curator', score: curatorScore });
-        }
-
-        if (score >= threshold) {
-          matches.push({
-            ...other,
-            similarityScore: score,
-            reasons: reasons.filter(r => r.score < 1)
-          });
-        }
-      }
-
-      if (matches.length > 0) {
-        duplicates.push({
-          primary: playlist,
-          duplicates: matches.sort((a, b) => b.similarityScore - a.similarityScore)
-        });
-        matches.forEach(m => processed.add(m.id));
-      }
-      processed.add(playlist.id);
-    }
-
-    return duplicates;
-  }
-
-  // ==================== SONG DUPLICATE DETECTION ====================
-  // Threshold: 55% with heavy artist weighting (60%) to avoid merging different artists with same title
-
-  async findDuplicateSongs(options = {}) {
-    const {
-      threshold = 0.55,
-      includeDeleted = false,
-      sameArtist = true,
-      checkDuration = true,
-      durationTolerance = 10, // seconds
-      artistWeight = 0.6,      // Artist is 60% of decision
-      titleWeight = 0.3,       // Title is 30%
-      durationWeight = 0.1     // Duration is 10%
-    } = options;
-
-    // Get all songs from R2
-    const songList = await this.env.media.list({ prefix: "songs/" });
-    const songs = songList.objects || [];
-    const artists = await getArtists(this.env);
-    const albums = await getAlbums(this.env);
-    
-    const songsList = await Promise.all(
-      songs.map(async (song) => {
-        const fileName = song.key.split('/')[1];
-        const baseName = fileName.replace('.mp3', '');
-        const meta = await getMetadata(this.env, baseName);
-        const [artistId] = baseName.split('_');
-        
-        // Find album
-        let albumInfo = null;
-        for (const [id, album] of Object.entries(albums)) {
-          if (album.songs?.includes(baseName)) {
-            albumInfo = { id, title: album.title };
-            break;
-          }
-        }
-
-        return {
-          id: baseName,
-          title: meta?.title || baseName.split('_').slice(1).join(' '),
-          artistId: meta?.primaryArtist || artistId,
-          artistName: artists[meta?.primaryArtist || artistId]?.name || meta?.primaryArtist || artistId,
-          featuredArtists: meta?.featuredArtists || [],
-          album: albumInfo,
-          duration: meta?.duration || 0,
-          created: song.uploaded
-        };
-      })
-    );
-
-    const duplicates = [];
-    const processed = new Set();
-
-    for (let i = 0; i < songsList.length; i++) {
-      if (processed.has(songsList[i].id)) continue;
-
-      const song = songsList[i];
-      const matches = [];
-
-      for (let j = i + 1; j < songsList.length; j++) {
-        if (processed.has(songsList[j].id)) continue;
-
-        const other = songsList[j];
-        
-        // Title similarity
-        const titleScore = this.calculateSimilarity(song.title, other.title);
-        if (titleScore < 0.3) continue;
-        
-        let score = titleScore * titleWeight;
-        const reasons = [{ factor: 'title', score: titleScore }];
-
-        // Artist match (heavily weighted - 60% of decision)
-        let artistScore = 0;
-        if (song.artistId === other.artistId) {
-          artistScore = 1; // Same artist ID = perfect match
-        } else {
-          // Different artists - calculate name similarity but with penalty
-          const nameSim = this.calculateSimilarity(song.artistName, other.artistName);
-          artistScore = nameSim * 0.7; // 30% penalty for different artist IDs
-        }
-        score += artistScore * artistWeight;
-        reasons.push({ factor: 'artist', score: artistScore });
-
-        // Duration check (light weight - 10% of decision)
-        if (checkDuration && song.duration > 0 && other.duration > 0) {
-          const durationDiff = Math.abs(song.duration - other.duration);
-          const durationScore = Math.max(0, 1 - (durationDiff / durationTolerance));
-          score += durationScore * durationWeight;
-          reasons.push({ factor: 'duration', score: durationScore });
-        }
-
-        if (score >= threshold) {
-          matches.push({
-            ...other,
-            similarityScore: score,
-            reasons: reasons.filter(r => r.score < 1)
-          });
-        }
-      }
-
-      if (matches.length > 0) {
-        duplicates.push({
-          primary: song,
-          duplicates: matches.sort((a, b) => b.similarityScore - a.similarityScore)
-        });
-        matches.forEach(m => processed.add(m.id));
-      }
-      processed.add(song.id);
-    }
-
-    return duplicates;
-  }
-
-  // ==================== UTILITY METHODS ====================
-
-  calculateSimilarity(str1, str2) {
-    if (!str1 || !str2) return 0;
-    
-    str1 = str1.toLowerCase().trim();
-    str2 = str2.toLowerCase().trim();
-    
-    if (str1 === str2) return 1;
-    
-    // Remove common words
-    const commonWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'];
-    const words1 = str1.split(/\s+/).filter(w => !commonWords.includes(w));
-    const words2 = str2.split(/\s+/).filter(w => !commonWords.includes(w));
-    
-    if (words1.length === 0 || words2.length === 0) {
-      // Fall back to character-based similarity
-      return this.charSimilarity(str1, str2);
-    }
-    
-    // Jaccard similarity with word importance
-    let matches = 0;
-    for (const word1 of words1) {
-      for (const word2 of words2) {
-        if (word1 === word2 || word1.includes(word2) || word2.includes(word1)) {
-          matches++;
-          break;
-        }
-      }
-    }
-    
-    return matches / Math.max(words1.length, words2.length);
-  }
-
-  charSimilarity(str1, str2) {
-    const len1 = str1.length;
-    const len2 = str2.length;
-    const maxLen = Math.max(len1, len2);
-    
-    if (maxLen === 0) return 1;
-    
-    // Check if one is substring of the other
-    if (str1.includes(str2) || str2.includes(str1)) {
-      return 0.8;
-    }
-    
-    // Simple character-based similarity
-    let matches = 0;
-    const minLen = Math.min(len1, len2);
-    
-    for (let i = 0; i < minLen; i++) {
-      if (str1[i] === str2[i]) matches++;
-    }
-    
-    return matches / maxLen;
-  }
-
-  normalizeArtistName(name, variations) {
-    let normalized = name.toLowerCase().trim();
-    
-    // Apply variations
-    for (const [pattern, replacements] of Object.entries(variations)) {
-      for (const replacement of replacements) {
-        normalized = normalized.replace(
-          new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
-          replacement
-        );
-      }
-    }
-    
-    // Remove parenthetical content
-    normalized = normalized.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
-    normalized = normalized.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim();
-    
-    // Remove extra spaces
-    normalized = normalized.replace(/\s+/g, ' ').trim();
-    
-    return normalized;
-  }
-
-  calculatePlaylistOverlap(songs1, songs2) {
-    if (!songs1 || !songs2 || songs1.length === 0 || songs2.length === 0) return 0;
-    
-    const set1 = new Set(songs1);
-    const set2 = new Set(songs2);
-    
-    const intersection = new Set([...set1].filter(x => set2.has(x)));
-    const smaller = Math.min(set1.size, set2.size);
-    
-    return intersection.size / smaller; // Use smaller set for percentage
-  }
-
-  // ==================== STATISTICS ====================
-
-  async getDuplicateStats() {
-    try {
-      const [artists, albums, playlists, songs] = await Promise.all([
-        this.findDuplicateArtists({ threshold: 0.5 }).catch(() => []),
-        this.findDuplicateAlbums({ threshold: 0.6 }).catch(() => []),
-        this.findDuplicatePlaylists({ threshold: 0.4 }).catch(() => []),
-        this.findDuplicateSongs({ threshold: 0.55 }).catch(() => [])
-      ]);
-
-      return {
-        total: {
-          artists: artists.length,
-          albums: albums.length,
-          playlists: playlists.length,
-          songs: songs.length
-        },
-        items: {
-          artists: artists.reduce((sum, g) => sum + g.duplicates.length, 0),
-          albums: albums.reduce((sum, g) => sum + g.duplicates.length, 0),
-          playlists: playlists.reduce((sum, g) => sum + g.duplicates.length, 0),
-          songs: songs.reduce((sum, g) => sum + g.duplicates.length, 0)
-        }
-      };
-    } catch (error) {
-      console.error('Error getting duplicate stats:', error);
-      return {
-        total: { artists: 0, albums: 0, playlists: 0, songs: 0 },
-        items: { artists: 0, albums: 0, playlists: 0, songs: 0 }
-      };
-    }
-  }
+// Helper function for formatting duration
+function formatDuration(seconds) {
+  if (!seconds) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
