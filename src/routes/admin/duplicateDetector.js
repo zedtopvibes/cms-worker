@@ -1,3 +1,7 @@
+// src/routes/admin/duplicateDetector.js
+import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
+import { adminLayout } from './layout.js';
+
 // ===== DUPLICATE DETECTOR DASHBOARD =====
 export async function handleDuplicateDetector(req, env, ctx, auth) {
   const url = new URL(req.url);
