@@ -1,4 +1,4 @@
-// src/routes/genre.js
+//  src/routes/genre.js
 import { GenreManager } from '../helpers/genreManager.js';
 import { getArtists, getAlbums, getPlaylists, getMetadata } from '../helpers/storage.js';
 import { formatDuration } from '../helpers/formatting.js';
