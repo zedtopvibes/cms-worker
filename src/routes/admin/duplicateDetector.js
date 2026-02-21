@@ -1,6 +1,8 @@
 // src/routes/admin/duplicateDetector.js
 import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
+import { getArtists, getAlbums, getPlaylists, saveArtists, saveAlbums, savePlaylists } from '../../helpers/storage.js';
 import { adminLayout } from './layout.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 // ===== DUPLICATE DETECTOR DASHBOARD =====
 export async function handleDuplicateDetector(req, env, ctx, auth) {
@@ -178,11 +180,6 @@ export async function handleDuplicateDetector(req, env, ctx, auth) {
             .scan-card h3 {
               font-size: 1.2rem !important;
             }
-            
-            /* On desktop, stats cards become 4 per row */
-            .stats-grid {
-              grid-template-columns: repeat(4, 1fr) !important;
-            }
           }
         </style>
       </div>
@@ -313,27 +310,198 @@ export async function handleDuplicateDetectorMerge(req, env, ctx, auth) {
     });
   }
 
-  // Build the redirect URL based on type
-  let redirectUrl = '';
-  switch(type) {
-    case 'artists':
-      redirectUrl = `/admin/artists/merge?primary=${primaryId}&duplicate=${duplicateIds.join('&duplicate=')}`;
-      break;
-    case 'albums':
-      redirectUrl = `/admin/albums?highlight=${primaryId}`;
-      break;
-    case 'playlists':
-      redirectUrl = `/admin/playlists?highlight=${primaryId}`;
-      break;
-    case 'songs':
-      redirectUrl = `/admin/songs?highlight=${primaryId}`;
-      break;
-  }
+  try {
+    let result;
+    
+    switch(type) {
+      case 'artists':
+        result = await mergeArtists(env, primaryId, duplicateIds, auth);
+        break;
+      case 'albums':
+        result = await mergeAlbums(env, primaryId, duplicateIds, auth);
+        break;
+      case 'playlists':
+        result = await mergePlaylists(env, primaryId, duplicateIds, auth);
+        break;
+      case 'songs':
+        // Songs merge is more complex - redirect to songs page for now
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/admin/songs?highlight=${primaryId}` }
+        });
+    }
 
-  return new Response(null, {
-    status: 302,
-    headers: { Location: redirectUrl }
-  });
+    if (result.success) {
+      // Log activity
+      await logAdminActivity(env, auth.session.id, 'merge', type, primaryId, 
+        `Merged ${duplicateIds.length} duplicates into ${primaryId}`);
+
+      // Show success message
+      const content = `
+        <div style="text-align: center; padding: 40px 20px;">
+          <i class="fas fa-check-circle" style="font-size: 4rem; color: #28a745; margin-bottom: 20px;"></i>
+          <h2 style="margin-bottom: 10px;">Merge Successful!</h2>
+          <p style="color: #666; margin-bottom: 30px;">Successfully merged ${duplicateIds.length} duplicate items.</p>
+          <a href="/admin/duplicate-detector" class="btn btn-primary">
+            <i class="fas fa-arrow-left"></i> Back to Duplicate Detector
+          </a>
+        </div>
+      `;
+      
+      return new Response(adminLayout('Merge Successful', content, auth, 'duplicate-detector'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    } else {
+      throw new Error(result.error || 'Merge failed');
+    }
+  } catch (error) {
+    console.error('Merge error:', error);
+    const errorContent = `
+      <div style="text-align: center; padding: 40px 20px;">
+        <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
+        <h2 style="margin-bottom: 10px;">Merge Failed</h2>
+        <p style="color: #666; margin-bottom: 30px;">${error.message}</p>
+        <a href="/admin/duplicate-detector" class="btn btn-primary">
+          <i class="fas fa-arrow-left"></i> Back to Duplicate Detector
+        </a>
+      </div>
+    `;
+    
+    return new Response(adminLayout('Merge Failed', errorContent, auth, 'duplicate-detector'), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+}
+
+// ===== MERGE FUNCTIONS =====
+
+async function mergeArtists(env, primaryId, duplicateIds, auth) {
+  try {
+    const artists = await getArtists(env);
+    
+    if (!artists[primaryId]) {
+      return { success: false, error: 'Primary artist not found' };
+    }
+    
+    const primary = artists[primaryId];
+    const duplicates = duplicateIds.map(id => artists[id]).filter(a => a);
+    
+    // Merge song counts and album counts
+    primary.songCount = (primary.songCount || 0) + duplicates.reduce((sum, a) => sum + (a.songCount || 0), 0);
+    primary.albumCount = (primary.albumCount || 0) + duplicates.reduce((sum, a) => sum + (a.albumCount || 0), 0);
+    
+    // Merge bio if primary doesn't have one
+    if (!primary.bio && duplicates.some(d => d.bio)) {
+      primary.bio = duplicates.find(d => d.bio)?.bio;
+    }
+    
+    // Delete duplicates
+    for (const id of duplicateIds) {
+      delete artists[id];
+    }
+    
+    // Save updated artists
+    await saveArtists(env, artists);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function mergeAlbums(env, primaryId, duplicateIds, auth) {
+  try {
+    const albums = await getAlbums(env);
+    
+    if (!albums[primaryId]) {
+      return { success: false, error: 'Primary album not found' };
+    }
+    
+    const primary = albums[primaryId];
+    const duplicates = duplicateIds.map(id => albums[id]).filter(a => a);
+    
+    // Merge songs arrays (remove duplicates)
+    const allSongs = new Set(primary.songs || []);
+    duplicates.forEach(dup => {
+      (dup.songs || []).forEach(song => allSongs.add(song));
+    });
+    primary.songs = Array.from(allSongs);
+    
+    // Merge artists arrays
+    const allArtists = new Set(primary.artists || []);
+    duplicates.forEach(dup => {
+      (dup.artists || []).forEach(artist => allArtists.add(artist));
+    });
+    primary.artists = Array.from(allArtists);
+    
+    // Use best description
+    if (!primary.description && duplicates.some(d => d.description)) {
+      primary.description = duplicates.find(d => d.description)?.description;
+    }
+    
+    // Use best thumbnail
+    if (!primary.thumbnail && duplicates.some(d => d.thumbnail)) {
+      primary.thumbnail = duplicates.find(d => d.thumbnail)?.thumbnail;
+    }
+    
+    // Delete duplicates
+    for (const id of duplicateIds) {
+      delete albums[id];
+    }
+    
+    // Save updated albums
+    await saveAlbums(env, albums);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function mergePlaylists(env, primaryId, duplicateIds, auth) {
+  try {
+    const playlists = await getPlaylists(env);
+    
+    if (!playlists[primaryId]) {
+      return { success: false, error: 'Primary playlist not found' };
+    }
+    
+    const primary = playlists[primaryId];
+    const duplicates = duplicateIds.map(id => playlists[id]).filter(p => p);
+    
+    // Merge songs arrays (remove duplicates)
+    const allSongs = new Set(primary.songs || []);
+    duplicates.forEach(dup => {
+      (dup.songs || []).forEach(song => allSongs.add(song));
+    });
+    primary.songs = Array.from(allSongs);
+    primary.songCount = primary.songs.length;
+    
+    // Use best description
+    if (!primary.description && duplicates.some(d => d.description)) {
+      primary.description = duplicates.find(d => d.description)?.description;
+    }
+    
+    // Use best thumbnail
+    if (!primary.thumbnail && duplicates.some(d => d.thumbnail)) {
+      primary.thumbnail = duplicates.find(d => d.thumbnail)?.thumbnail;
+    }
+    
+    // Update timestamp
+    primary.updated = Date.now();
+    
+    // Delete duplicates
+    for (const id of duplicateIds) {
+      delete playlists[id];
+    }
+    
+    // Save updated playlists
+    await savePlaylists(env, playlists);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
 // Mobile-optimized duplicate group renderer with HORIZONTAL duplicate cards (no scrolling)
