@@ -1,4 +1,4 @@
-//  ==================== ADMIN MAIN ROUTER ====================
+// ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
@@ -136,11 +136,10 @@ export async function handleAdmin(req, env, ctx) {
   const qualityStats = await qualityAnalyzer.scanAll();
   const totalQualityIssues = qualityStats.totals.total;
 
-
-// Get genre stats for badge (optional)
-const genreManager = new GenreManager(env);
-const genresData = await genreManager.getGenres();
-const totalGenres = genresData.genres.length;
+  // Get genre counts for the badge
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const totalGenres = genresData.genres.length;
 
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
@@ -398,7 +397,12 @@ const totalGenres = genresData.genres.length;
       </div>
     `;
       
-    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -407,7 +411,12 @@ const totalGenres = genresData.genres.length;
   if (path === '/album/create') {
     if (req.method === 'GET') {
       const content = await handleAdminAlbumCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Album', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Create Album', content, auth, 'albums', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -420,7 +429,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -431,7 +445,12 @@ const totalGenres = genresData.genres.length;
   if (path === '/artist/create') {
     if (req.method === 'GET') {
       const content = await handleAdminArtistCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Artist', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Create Artist', content, auth, 'artists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -444,7 +463,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -455,7 +479,12 @@ const totalGenres = genresData.genres.length;
   if (path === '/playlist/create') {
     if (req.method === 'GET') {
       const content = await handleAdminPlaylistCreate(req, env, ctx, auth);
-      return new Response(adminLayout('Create Playlist', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Create Playlist', content, auth, 'playlists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -468,7 +497,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -479,7 +513,12 @@ const totalGenres = genresData.genres.length;
   if (path === '/upload') {
     if (req.method === 'GET') {
       const content = await handleAdminUpload(req, env, ctx, auth);
-      return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -495,7 +534,12 @@ const totalGenres = genresData.genres.length;
               <i class="fas fa-arrow-left"></i> Try Again
           </a>
         `;
-        return new Response(adminLayout('Upload Failed', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Upload Failed', content, auth, 'upload', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -534,7 +578,12 @@ const totalGenres = genresData.genres.length;
             </div>
         </div>
       `;
-      return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -543,7 +592,12 @@ const totalGenres = genresData.genres.length;
   // ===== ALBUMS MANAGEMENT =====
   if (path === '/albums') {
     const content = await handleAdminAlbums(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -554,7 +608,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -567,7 +626,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -583,7 +647,12 @@ const totalGenres = genresData.genres.length;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'albums', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -595,7 +664,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -608,7 +682,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -618,7 +697,12 @@ const totalGenres = genresData.genres.length;
   // ===== ARTISTS MANAGEMENT =====
   if (path === '/artists') {
     const content = await handleAdminArtists(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Artists', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Manage Artists', content, auth, 'artists', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -629,7 +713,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Artist', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Edit Artist', result.content, auth, 'artists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -642,7 +731,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -658,7 +752,12 @@ const totalGenres = genresData.genres.length;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'artists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -670,7 +769,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -683,7 +787,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'artists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'artists', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -693,7 +802,12 @@ const totalGenres = genresData.genres.length;
   // ===== PLAYLISTS MANAGEMENT =====
   if (path === '/playlists') {
     const content = await handleAdminPlaylists(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Manage Playlists', content, auth, 'playlists', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -704,7 +818,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Edit Playlist', result.content, auth, 'playlists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -717,7 +836,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -733,7 +857,12 @@ const totalGenres = genresData.genres.length;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'playlists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -745,7 +874,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -758,7 +892,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'playlists', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'playlists', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -768,7 +907,12 @@ const totalGenres = genresData.genres.length;
   // ===== STATISTICS =====
   if (path === '/stats') {
     const content = await handleAdminStats(req, env, ctx, auth);
-    return new Response(adminLayout('Statistics', content, auth, 'stats', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Statistics', content, auth, 'stats', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -776,7 +920,12 @@ const totalGenres = genresData.genres.length;
   // ===== SONGS MANAGEMENT =====
   if (path === '/songs') {
     const content = await handleAdminSongs(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Songs', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Manage Songs', content, auth, 'songs', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -790,7 +939,12 @@ const totalGenres = genresData.genres.length;
       });
     } else {
       const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Error', content, auth, 'songs', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -802,7 +956,12 @@ const totalGenres = genresData.genres.length;
       if (result.redirect) {
         return new Response(null, { status: 302, headers: { Location: result.redirect } });
       }
-      return new Response(adminLayout('Edit Song', result.content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout('Edit Song', result.content, auth, 'songs', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -815,7 +974,12 @@ const totalGenres = genresData.genres.length;
         });
       } else {
         const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'songs', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+        return new Response(adminLayout('Error', content, auth, 'songs', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
           headers: { 'Content-Type': 'text/html' }
         });
       }
@@ -825,7 +989,12 @@ const totalGenres = genresData.genres.length;
   // ===== SEARCH =====
   if (path === '/search') {
     const content = await handleAdminSearch(req, env, ctx, auth);
-    return new Response(adminLayout('Search', content, auth, 'search', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Search', content, auth, 'search', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -834,7 +1003,12 @@ const totalGenres = genresData.genres.length;
   if (path === '/bulk') {
     if (req.method === 'GET') {
       const result = await handleAdminBulk(req, env, ctx, auth);
-      return new Response(adminLayout(result.title, result.content, auth, 'bulk', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+      return new Response(adminLayout(result.title, result.content, auth, 'bulk', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
         headers: { 'Content-Type': 'text/html' }
       });
     } else if (req.method === 'POST') {
@@ -845,7 +1019,12 @@ const totalGenres = genresData.genres.length;
   // ===== ACTIVITY LOG =====
   if (path === '/activity') {
     const result = await handleAdminActivity(req, env, ctx, auth);
-    return new Response(adminLayout(result.title, result.content, auth, 'activity', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout(result.title, result.content, auth, 'activity', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -862,7 +1041,12 @@ const totalGenres = genresData.genres.length;
   // ===== TRASH / RECYCLE BIN =====
   if (path === '/trash') {
     const result = await handleAdminTrash(req, env, ctx, auth);
-    return new Response(adminLayout(result.title, result.content, auth, 'trash', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout(result.title, result.content, auth, 'trash', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -906,10 +1090,10 @@ const totalGenres = genresData.genres.length;
     return await handleContentQuality(req, env, ctx, auth);
   }
 
-// ===== GENRE MANAGEMENT ROUTES =====
-if (path === '/genres' || path.startsWith('/genres/')) {
-  return await handleGenres(req, env, ctx, auth);
-}
+  // ===== GENRE MANAGEMENT ROUTES =====
+  if (path === '/genres' || path.startsWith('/genres/')) {
+    return await handleGenres(req, env, ctx, auth);
+  }
 
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
@@ -931,7 +1115,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Announcement System', content, auth, 'announcements', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Announcement System', content, auth, 'announcements', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -956,7 +1145,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Content Moderation', content, auth, 'moderation', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Content Moderation', content, auth, 'moderation', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -981,7 +1175,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('User Management', content, auth, 'user-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('User Management', content, auth, 'user-management', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1006,7 +1205,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Scheduled Tasks', content, auth, 'scheduled-tasks', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1031,7 +1235,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('AI-Powered Tagging', content, auth, 'ai-tagging', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1056,7 +1265,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Ad Management', content, auth, 'ad-management', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Ad Management', content, auth, 'ad-management', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1081,7 +1295,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('System Settings', content, auth, 'system-settings', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('System Settings', content, auth, 'system-settings', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -1106,7 +1325,12 @@ if (path === '/genres' || path.startsWith('/genres/')) {
             </div>
         </div>
     `;
-    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer', 0, { total: totalDuplicates }, { total: totalMissingIssues }, { total: totalQualityIssues }), {
+    return new Response(adminLayout('Theme Customizer', content, auth, 'theme-customizer', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
