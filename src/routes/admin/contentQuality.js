@@ -1,7 +1,7 @@
 // src/routes/admin/contentQuality.js
 import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js';
 import { adminLayout } from './layout.js';
-import { formatDuration, formatFileSize } from '../../helpers/formatting.js';
+import { formatDuration } from '../../helpers/formatting.js';
 
 export async function handleContentQuality(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -599,4 +599,13 @@ export async function handleContentQuality(req, env, ctx, auth) {
   }
 
   return new Response('Not Found', { status: 404 });
+}
+
+// Local formatFileSize function
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
