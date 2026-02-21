@@ -1,4 +1,4 @@
-//src/routes/admin/genres.js
+// src/routes/admin/genres.js
 import { GenreManager } from '../../helpers/genreManager.js';
 import { adminLayout } from './layout.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
@@ -133,7 +133,7 @@ export async function handleGenres(req, env, ctx, auth) {
       </style>
     `;
 
-    return new Response(adminLayout('Genre Management', content, auth, 'genres'), {
+    return new Response(adminLayout('Genre Management', content, auth, 'genres', 0, { total: 0 }, { total: 0 }, { total: 0 }, { total: genres.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -229,7 +229,7 @@ export async function handleGenres(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Create Genre', content, auth, 'genres'), {
+    return new Response(adminLayout('Create Genre', content, auth, 'genres', 0, { total: 0 }, { total: 0 }, { total: 0 }, { total: 0 }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -260,7 +260,7 @@ export async function handleGenres(req, env, ctx, auth) {
           <a href="/admin/genres/create" class="btn btn-primary" style="margin-top: 20px;">Try Again</a>
         </div>
       `;
-      return new Response(adminLayout('Error', content, auth, 'genres'), {
+      return new Response(adminLayout('Error', content, auth, 'genres', 0, { total: 0 }, { total: 0 }, { total: 0 }, { total: 0 }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
@@ -342,7 +342,7 @@ export async function handleGenres(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Edit Genre', content, auth, 'genres'), {
+    return new Response(adminLayout('Edit Genre', content, auth, 'genres', 0, { total: 0 }, { total: 0 }, { total: 0 }, { total: 0 }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -373,7 +373,7 @@ export async function handleGenres(req, env, ctx, auth) {
           <a href="/admin/genres/edit?id=${id}" class="btn btn-primary" style="margin-top: 20px;">Try Again</a>
         </div>
       `;
-      return new Response(adminLayout('Error', content, auth, 'genres'), {
+      return new Response(adminLayout('Error', content, auth, 'genres', 0, { total: 0 }, { total: 0 }, { total: 0 }, { total: 0 }), {
         headers: { 'Content-Type': 'text/html' }
       });
     }
