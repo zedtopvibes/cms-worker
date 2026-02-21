@@ -1,8 +1,8 @@
 // src/routes/admin/missingMetadata.js
 import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.js';
+import { getArtists, saveArtists } from '../../helpers/storage.js';
 import { adminLayout } from './layout.js';
-// Remove this import - we'll use local function instead
-// import { formatFileSize } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
 
 export async function handleMissingMetadata(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -177,10 +177,16 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
     });
   }
 
-  // Songs missing info
+  // Songs missing info (with bulk assign)
   if (path === '/songs') {
     const songs = await detector.findSongsMissingInfo();
+    const artists = await getArtists(env);
     
+    // Build artist options for dropdown
+    const artistOptions = Object.entries(artists).map(([id, artist]) => 
+      `<option value="${id}">${artist.name} (${id})</option>`
+    ).join('');
+
     const content = `
       <div>
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
@@ -197,23 +203,82 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
             <p>All songs have proper metadata.</p>
           </div>
         ` : `
-          <div class="mobile-cards">
-            ${songs.map(song => `
-              <div class="mobile-card">
-                <div style="font-weight:600; margin-bottom:5px;">${song.title}</div>
-                <div style="font-size:0.8rem; color:#666; margin-bottom:8px;">${song.baseName}</div>
-                <div style="margin-bottom:8px;">
-                  ${song.issues.map(issue => `
-                    <span class="badge" style="background:#ff5500; color:white; margin-right:5px;">${issue}</span>
-                  `).join('')}
-                </div>
-                <div style="display:flex; gap:8px;">
-                  <a href="/admin/songs/edit?name=${song.baseName}" class="btn btn-primary btn-sm" style="flex:1;">Edit</a>
-                  <button onclick="previewModal.show('song', '${song.baseName}')" class="btn btn-secondary btn-sm">Preview</button>
-                </div>
-              </div>
-            `).join('')}
+          <!-- Bulk Assign Bar -->
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 15px; margin-bottom: 20px; border: 1px solid #e0e0e0;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+              <i class="fas fa-tasks" style="color: #ff5500;"></i>
+              <span style="font-weight: 600;">Bulk Assign:</span>
+              <select id="bulkArtistSelect" class="form-control" style="width: auto; min-width: 200px; flex: 1;">
+                <option value="">-- Select Artist --</option>
+                ${artistOptions}
+              </select>
+              <button onclick="bulkAssign()" class="btn btn-primary">
+                <i class="fas fa-check-double"></i> Assign to Selected
+              </button>
+              <button onclick="selectAll()" class="btn btn-secondary btn-sm">Select All</button>
+              <button onclick="deselectAll()" class="btn btn-secondary btn-sm">Deselect All</button>
+            </div>
+            <p style="font-size:0.8rem; color:#666; margin-top:10px;">
+              <i class="fas fa-info-circle"></i> Select songs below, then choose an artist to assign them all at once.
+            </p>
           </div>
+
+          <form id="bulkAssignForm" method="POST" action="/admin/missing-metadata/bulk-assign">
+            <div class="mobile-cards">
+              ${songs.map(song => `
+                <div class="mobile-card" style="margin-bottom: 10px;">
+                  <label style="display: flex; align-items: start; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" name="songIds" value="${song.baseName}" class="song-checkbox" style="margin-top: 3px;">
+                    <div style="flex: 1;">
+                      <div style="font-weight:600; margin-bottom:5px;">${song.title}</div>
+                      <div style="font-size:0.8rem; color:#666; margin-bottom:8px;">${song.baseName}</div>
+                      <div style="margin-bottom:8px;">
+                        ${song.issues.map(issue => `
+                          <span class="badge" style="background:#ff5500; color:white; margin-right:5px;">${issue}</span>
+                        `).join('')}
+                      </div>
+                      <div style="font-size:0.8rem; color:#ff5500;">
+                        Current Artist ID: <strong>${song.artistId}</strong>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              `).join('')}
+            </div>
+            
+            <!-- Hidden field for selected artist -->
+            <input type="hidden" name="targetArtist" id="targetArtist">
+          </form>
+
+          <script>
+            function selectAll() {
+              document.querySelectorAll('.song-checkbox').forEach(cb => cb.checked = true);
+            }
+            
+            function deselectAll() {
+              document.querySelectorAll('.song-checkbox').forEach(cb => cb.checked = false);
+            }
+            
+            function bulkAssign() {
+              const selectedArtist = document.getElementById('bulkArtistSelect').value;
+              const selectedSongs = document.querySelectorAll('.song-checkbox:checked');
+              
+              if (!selectedArtist) {
+                alert('Please select an artist to assign to.');
+                return;
+              }
+              
+              if (selectedSongs.length === 0) {
+                alert('Please select at least one song.');
+                return;
+              }
+              
+              if (confirm(\`Assign \${selectedSongs.length} song(s) to the selected artist?\`)) {
+                document.getElementById('targetArtist').value = selectedArtist;
+                document.getElementById('bulkAssignForm').submit();
+              }
+            }
+          </script>
         `}
       </div>
     `;
@@ -221,6 +286,97 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
     return new Response(adminLayout('Missing Song Info', content, auth, 'missing-metadata', 0, { total: 0 }, { total: songs.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
+  }
+
+  // Bulk assign handler
+  if (path === '/bulk-assign' && req.method === 'POST') {
+    const formData = await req.formData();
+    const songIds = formData.getAll('songIds');
+    const targetArtist = formData.get('targetArtist');
+    
+    if (!targetArtist || songIds.length === 0) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/admin/missing-metadata/songs?error=invalid' }
+      });
+    }
+
+    try {
+      const artists = await getArtists(env);
+      
+      // Verify target artist exists
+      if (!artists[targetArtist]) {
+        throw new Error('Selected artist does not exist');
+      }
+
+      const results = {
+        success: [],
+        failed: []
+      };
+
+      // Update each song's metadata
+      for (const songId of songIds) {
+        try {
+          const meta = await getMetadata(env, songId);
+          const updatedMeta = { 
+            ...meta, 
+            primaryArtist: targetArtist,
+            // Optionally keep featured artists if they exist
+            featuredArtists: meta?.featuredArtists || []
+          };
+          
+          await env.media.put(`metadata/${songId}.json`, JSON.stringify(updatedMeta, null, 2), {
+            httpMetadata: { contentType: 'application/json' }
+          });
+          
+          results.success.push(songId);
+        } catch (error) {
+          results.failed.push({ id: songId, error: error.message });
+        }
+      }
+
+      // Log activity
+      await logAdminActivity(env, auth.session.id, 'bulk-assign', 'songs', 
+        `Bulk assigned ${results.success.length} songs to artist ${targetArtist}`);
+
+      // Show results
+      const content = `
+        <div style="text-align: center; padding: 40px 20px;">
+          <i class="fas fa-check-circle" style="font-size: 4rem; color: #28a745; margin-bottom: 20px;"></i>
+          <h2 style="margin-bottom: 10px;">Bulk Assign Complete</h2>
+          <p style="color: #666; margin-bottom: 20px;">
+            Successfully updated ${results.success.length} songs<br>
+            ${results.failed.length > 0 ? `${results.failed.length} songs failed` : ''}
+          </p>
+          <div style="display: flex; gap: 10px; justify-content: center;">
+            <a href="/admin/missing-metadata/songs" class="btn btn-primary">
+              Back to Missing Songs
+            </a>
+            <a href="/admin/missing-metadata" class="btn btn-secondary">
+              Back to Dashboard
+            </a>
+          </div>
+        </div>
+      `;
+      
+      return new Response(adminLayout('Bulk Assign Results', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+
+    } catch (error) {
+      const content = `
+        <div style="text-align: center; padding: 40px 20px;">
+          <i class="fas fa-exclamation-circle" style="font-size: 4rem; color: #dc3545; margin-bottom: 20px;"></i>
+          <h2 style="margin-bottom: 10px;">Bulk Assign Failed</h2>
+          <p style="color: #666; margin-bottom: 20px;">${error.message}</p>
+          <a href="/admin/missing-metadata/songs" class="btn btn-primary">Try Again</a>
+        </div>
+      `;
+      
+      return new Response(adminLayout('Bulk Assign Failed', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
   }
 
   // Missing thumbnails
@@ -528,7 +684,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
   return new Response('Not Found', { status: 404 });
 }
 
-// Local formatFileSize function (not imported)
+// Local formatFileSize function
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
