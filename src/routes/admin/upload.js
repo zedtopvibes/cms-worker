@@ -2,21 +2,25 @@
 import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSongToAlbum, addSongToPlaylist, addSongToArtist, addAlbumToArtist, addArtistToAlbum } from '../../helpers/storage.js';
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { GenreManager } from '../../helpers/genreManager.js'; // ADD THIS IMPORT
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
   const artists = await getArtists(env);
   const playlists = await getPlaylists(env);
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
   
   const albumOptions = Object.keys(albums).map(id => {
     const album = albums[id];
-    return `<option value="${id}">${album.title} (${album.songs?.length || 0} tracks)</option>`;
+    return `<option value="${id}">${album.title} (${album.songs?.length || 0} tracks)${album.genre ? ` - ${album.genre}` : ''}</option>`;
   }).join("");
 
   const artistOptions = Object.keys(artists).map(id => {
     const artist = artists[id];
     const songCount = artist.songs?.length || 0;
-    return `<option value="${id}">${artist.name} (${songCount} songs)</option>`;
+    return `<option value="${id}">${artist.name} (${songCount} songs)${artist.genre ? ` - ${artist.genre}` : ''}</option>`;
   }).join("");
 
   const playlistOptions = Object.keys(playlists).map(id => {
@@ -127,6 +131,88 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <input type="hidden" name="featured" id="featuredInput" value="">
                 <p style="font-size: 0.8rem; color: #666; margin-top: 8px;">
                     <i class="fas fa-info-circle"></i> Click to search and select artists. Click ✕ on tags to remove.
+                </p>
+            </div>
+            
+            <!-- GENRE SELECTION - New section like featured artists -->
+            <div class="form-group">
+                <label>
+                    <i class="fas fa-tags" style="color: #ff5500; width: 20px;"></i>
+                    Genre
+                </label>
+                
+                <div id="selectedGenreContainer" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; min-height: 40px;"></div>
+                
+                <div class="searchable-select-container">
+                    <div class="searchable-select" onclick="toggleDropdown('genre')">
+                        <span id="genreSelectedDisplay">-- Add Genre --</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    
+                    <div id="genreDropdown" class="searchable-dropdown" style="display: none;">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="genreSearch" placeholder="Search genres..." onkeyup="filterGenres()">
+                        </div>
+                        <div class="artist-list" id="genreList"></div>
+                        <div class="dropdown-footer">
+                            <button type="button" onclick="showCreateGenre()" class="btn btn-secondary btn-sm" style="width: 100%;">
+                                <i class="fas fa-plus-circle"></i> Create New Genre
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="genreNewContainer" style="margin-top: 10px; display: none;">
+                    <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                            <input type="text" id="genreNewId" class="form-control" placeholder="Genre ID (e.g., dancehall)" style="flex: 1;">
+                            <input type="text" id="genreNewName" class="form-control" placeholder="Display Name (e.g., Dancehall)" style="flex: 1;">
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600;">Color</label>
+                            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
+                                ${genreManager.getColorPalette().map(color => `
+                                    <label style="display: block; cursor: pointer;">
+                                        <input type="radio" name="newGenreColor" value="${color}" style="display: none;">
+                                        <div style="height: 40px; background: ${color}; border-radius: 8px; border: 2px solid transparent;" 
+                                             onclick="this.parentNode.querySelector('input').checked = true; document.querySelectorAll('.color-preview').forEach(el => el.style.borderColor = 'transparent'); this.style.borderColor = '#333';">
+                                        </div>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600;">Icon</label>
+                            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;">
+                                ${genreManager.getIconOptions().map(icon => `
+                                    <label style="display: block; cursor: pointer; text-align: center;">
+                                        <input type="radio" name="newGenreIcon" value="${icon}" style="display: none;">
+                                        <div style="padding: 10px; border: 2px solid #e8e8e8; border-radius: 8px;" 
+                                             onclick="this.parentNode.querySelector('input').checked = true; document.querySelectorAll('.icon-preview').forEach(el => el.style.borderColor = '#e8e8e8'); this.style.borderColor = '#ff5500';">
+                                            <i class="fas ${icon}" style="font-size: 1.2rem;"></i>
+                                        </div>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" onclick="saveNewGenre()" class="btn btn-primary" style="flex: 1;">
+                                <i class="fas fa-save"></i> Create Genre
+                            </button>
+                            <button type="button" onclick="cancelNewGenre()" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <input type="hidden" name="genre" id="genreInput" value="">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 8px;">
+                    <i class="fas fa-info-circle"></i> Select a genre for this song. Click ✕ on tag to remove.
                 </p>
             </div>
             
@@ -270,15 +356,21 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             font-size: 0.9rem; border: 1px solid #e0e0e0;
             animation: slideIn 0.3s ease;
         }
+        .genre-tag {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #ff5500; color: white; border-radius: 30px; padding: 6px 15px;
+            font-size: 0.9rem; border: none;
+            animation: slideIn 0.3s ease;
+        }
+        .genre-tag i {
+            cursor: pointer; font-size: 1rem;
+            transition: transform 0.2s;
+        }
+        .genre-tag i:hover { transform: scale(1.2); }
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .featured-tag i {
-            color: #ff5500; cursor: pointer; font-size: 1rem;
-            transition: transform 0.2s;
-        }
-        .featured-tag i:hover { transform: scale(1.2); }
         @media (max-width: 768px) {
             .searchable-dropdown {
                 position: fixed; top: 50%; left: 50%;
@@ -287,7 +379,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             }
         }
         @media (max-width: 480px) {
-            .featured-tag { font-size: 0.8rem; padding: 4px 10px; }
+            .featured-tag, .genre-tag { font-size: 0.8rem; padding: 4px 10px; }
         }
     </style>
     
@@ -300,8 +392,12 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         ];
         artistsData.sort((a, b) => a.name.localeCompare(b.name));
         
+        // Genres data
+        const genresData = ${JSON.stringify(genres)};
+        
         // State
         let featuredArtists = [];
+        let selectedGenre = null;
         let audioContext = null;
         
         // DOM Elements
@@ -320,14 +416,21 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
             const dropdown = document.getElementById(type + 'Dropdown');
             dropdown.style.display = 'block';
-            renderArtistList(type);
-            setTimeout(() => {
-                document.getElementById(type + 'Search').focus();
-            }, 100);
+            if (type === 'genre') {
+                renderGenreList();
+                setTimeout(() => document.getElementById('genreSearch').focus(), 100);
+            } else {
+                renderArtistList(type);
+                setTimeout(() => document.getElementById(type + 'Search').focus(), 100);
+            }
         }
         
         function filterArtists(type) {
             renderArtistList(type);
+        }
+        
+        function filterGenres() {
+            renderGenreList();
         }
         
         function renderArtistList(type) {
@@ -355,6 +458,28 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             }).join('');
         }
         
+        function renderGenreList() {
+            const searchTerm = document.getElementById('genreSearch').value.toLowerCase();
+            const listContainer = document.getElementById('genreList');
+            
+            const filtered = genresData.filter(g => g.name.toLowerCase().includes(searchTerm) || g.id.toLowerCase().includes(searchTerm));
+            
+            if (filtered.length === 0) {
+                listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No genres found</div>';
+                return;
+            }
+            
+            listContainer.innerHTML = filtered.map(genre => \`
+                <div class="artist-item" onclick="selectGenre('\${genre.id}', '\${genre.name.replace(/'/g, "\\\\'")}', '\${genre.color}')">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <i class="fas \${genre.icon}" style="color: \${genre.color};"></i>
+                        <span class="artist-name">\${genre.name}</span>
+                    </span>
+                    <span class="artist-song-count">\${genre.id}</span>
+                </div>
+            \`).join('');
+        }
+        
         function selectArtist(type, id, name) {
             if (type === 'primary') {
                 document.getElementById('primaryArtistInput').value = id;
@@ -368,10 +493,24 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             document.getElementById(type + 'Dropdown').style.display = 'none';
         }
         
+        function selectGenre(id, name, color) {
+            if (selectedGenre !== id) {
+                selectedGenre = id;
+                updateGenreTag(name, color);
+            }
+            document.getElementById('genreDropdown').style.display = 'none';
+        }
+        
         function showCreateArtist(type) {
             document.getElementById(type + 'Dropdown').style.display = 'none';
             document.getElementById(type + 'NewArtistContainer').style.display = 'block';
             document.getElementById(type + 'NewArtistName').focus();
+        }
+        
+        function showCreateGenre() {
+            document.getElementById('genreDropdown').style.display = 'none';
+            document.getElementById('genreNewContainer').style.display = 'block';
+            document.getElementById('genreNewName').focus();
         }
         
         function saveNewArtist(type) {
@@ -394,9 +533,40 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             document.getElementById(type + 'NewArtistName').value = '';
         }
         
+        function saveNewGenre() {
+            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\\s+/g, '-');
+            const name = document.getElementById('genreNewName').value.trim();
+            const color = document.querySelector('input[name="newGenreColor"]:checked')?.value;
+            const icon = document.querySelector('input[name="newGenreIcon"]:checked')?.value;
+            
+            if (!id || !name || !color || !icon) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            // Add to UI immediately
+            const newGenre = { id, name, color, icon };
+            genresData.push(newGenre);
+            selectedGenre = id;
+            updateGenreTag(name, color);
+            
+            // Store in hidden input with special prefix
+            document.getElementById('genreInput').value = 'new_' + JSON.stringify(newGenre);
+            
+            document.getElementById('genreNewContainer').style.display = 'none';
+            document.getElementById('genreNewId').value = '';
+            document.getElementById('genreNewName').value = '';
+        }
+        
         function cancelNewArtist(type) {
             document.getElementById(type + 'NewArtistContainer').style.display = 'none';
             document.getElementById(type + 'NewArtistName').value = '';
+        }
+        
+        function cancelNewGenre() {
+            document.getElementById('genreNewContainer').style.display = 'none';
+            document.getElementById('genreNewId').value = '';
+            document.getElementById('genreNewName').value = '';
         }
         
         // Featured Tags
@@ -427,9 +597,31 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             input.value = JSON.stringify(featuredArtists);
         }
         
+        // Genre Tag
+        function updateGenreTag(name, color) {
+            const container = document.getElementById('selectedGenreContainer');
+            const input = document.getElementById('genreInput');
+            
+            container.innerHTML = '';
+            
+            const tag = document.createElement('div');
+            tag.className = 'genre-tag';
+            tag.style.background = color;
+            tag.innerHTML = \`<span>\${name}</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>\`;
+            container.appendChild(tag);
+            
+            input.value = selectedGenre;
+        }
+        
         window.removeFeatured = function(index) {
             featuredArtists.splice(index, 1);
             updateFeaturedTags();
+        };
+        
+        window.removeGenre = function() {
+            selectedGenre = null;
+            document.getElementById('selectedGenreContainer').innerHTML = '';
+            document.getElementById('genreInput').value = '';
         };
         
         // Close dropdown on outside click
@@ -523,9 +715,9 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     const imageFile = formData.get('image');
     const albumId = formData.get('album');
     const playlistId = formData.get('playlist');
-    const artistNameInput = formData.get('artist_name');
     const featuredJson = formData.get('featured');
     const browserDuration = formData.get('duration');
+    const genreInput = formData.get('genre'); // Get genre input
 
     if (!title || !audioFile || !imageFile) {
       return { success: false, error: 'Missing required fields' };
@@ -537,6 +729,20 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       featuredArtists = featuredJson ? JSON.parse(featuredJson) : [];
     } catch (e) {
       console.error('Error parsing featured artists:', e);
+    }
+
+    // Process genre
+    let genre = null;
+    if (genreInput) {
+      if (genreInput.startsWith('new_')) {
+        // Create new genre
+        const genreData = JSON.parse(genreInput.replace('new_', ''));
+        const genreManager = new GenreManager(env);
+        await genreManager.addGenre(genreData);
+        genre = genreData.id;
+      } else {
+        genre = genreInput;
+      }
     }
 
     // Process any new featured artists (those starting with 'new_')
@@ -614,7 +820,8 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       primaryArtist: artistId,
       featuredArtists: processedFeatured,
       description,
-      duration
+      duration,
+      genre // Add genre to metadata
     };
     await saveMetadata(env, baseName, metadata);
 
