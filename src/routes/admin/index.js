@@ -89,6 +89,20 @@ import {
 } from './missingMetadata.js';
 import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.js';
 
+// ===== CONTENT QUALITY IMPORTS =====
+import { handleContentQuality } from './contentQuality.js';
+import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js';
+
+// Get content quality counts for the badge
+const qualityAnalyzer = new ContentQualityAnalyzer(env);
+const qualityStats = await qualityAnalyzer.scanAll();
+const totalQualityIssues = qualityStats.totals.total;
+
+// ===== CONTENT QUALITY ROUTES =====
+if (path === '/content-quality' || path.startsWith('/content-quality/')) {
+  return await handleContentQuality(req, env, ctx, auth);
+}
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
