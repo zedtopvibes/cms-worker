@@ -83,6 +83,11 @@ import {
 } from './duplicateDetector.js';
 import { DuplicateDetector } from '../../helpers/duplicateDetector.js';
 
+// ===== MISSING METADATA DETECTOR ROUTES =====
+if (path === '/missing-metadata' || path.startsWith('/missing-metadata/')) {
+  return await handleMissingMetadata(req, env, ctx, auth);
+}
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
