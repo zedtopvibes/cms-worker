@@ -1,10 +1,11 @@
-// ==================== ADMIN ARTISTS  MANAGEMENT ====================
+// ==================== ADMIN ARTISTS MANAGEMENT ====================
 import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
+import { moveToTrash } from '../../helpers/trash.js';
+import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL ARTISTS =====
 export async function handleAdminArtists(req, env, ctx, auth) {
@@ -267,47 +268,141 @@ export async function handleAdminArtists(req, env, ctx, auth) {
 
 // ===== CREATE NEW ARTIST PAGE =====
 export async function handleAdminArtistCreate(req, env, ctx, auth) {
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #9b59b6;"></i> Create New Artist</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/artists" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-plus-circle" style="color: #9b59b6;"></i> Create New Artist
+            </h2>
+        </div>
         
-        <form action="/admin/artist/create" method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>Artist Name</label>
-                <input type="text" name="name" class="form-control" placeholder="e.g. Yo Maps" required>
+        <form action="/admin/artist/create" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Artist Name <span style="color: #ff5500;">*</span></label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Yo Maps" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Genre</label>
-                <input type="text" name="genre" class="form-control" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #9b59b6;"></i> Primary Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                            <i class="fas fa-ban" style="color: #999;"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => `
+                            <div class="genre-chip" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                                <i class="fas ${g.icon}" style="color: ${g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="">
+                </div>
             </div>
             
-            <div class="form-group">
-                <label>Bio</label>
-                <textarea name="description" class="form-control" rows="4" placeholder="Artist biography..."></textarea>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Bio</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Artist biography..." style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"></textarea>
             </div>
             
-            <div class="form-group">
-                <label>Origin/Location</label>
-                <input type="text" name="origin" class="form-control" placeholder="e.g. Lusaka, Zambia">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Origin/Location</label>
+                <input type="text" name="origin" class="form-control" placeholder="e.g. Lusaka, Zambia" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Artist Image</label>
-                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Artist Image</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" style="width: 100%; padding: 10px; border: 2px dashed #e0e0e0; border-radius: 8px;">
                 <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary" style="background: #9b59b6;">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 16px; background: #9b59b6;">
                     <i class="fas fa-save"></i> Create Artist
                 </button>
-                <a href="/admin/artists" class="btn btn-secondary">
+                <a href="/admin/artists" class="btn btn-secondary" style="width: 100%; padding: 14px; font-size: 16px; text-align: center; text-decoration: none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
         </form>
     </div>
+
+    <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#9b59b6';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#9b59b6';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+    </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return content;
@@ -380,63 +475,159 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
     return { redirect: '/admin/artists' };
   }
   
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+  const artistGenre = artist.genre || '';
+  
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Artist: ${artist.name}</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/artists" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Artist: ${artist.name}
+            </h2>
+        </div>
         
-        <form id="editForm" action="/admin/artists/edit" method="POST" enctype="multipart/form-data">
+        <form id="editForm" action="/admin/artists/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
             <input type="hidden" name="artistId" value="${artistId}">
             
-            <div class="form-group">
-                <label>Artist Name</label>
-                <input type="text" name="name" class="form-control" value="${artist.name}" required>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Artist Name</label>
+                <input type="text" name="name" class="form-control" value="${artist.name}" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Genre</label>
-                <input type="text" name="genre" class="form-control" value="${artist.genre || ''}" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #9b59b6;"></i> Primary Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip ${!artistGenre ? 'selected' : ''}" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${!artistGenre ? '#9b59b6' : '#f0f0f0'}; color: ${!artistGenre ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${!artistGenre ? '#9b59b6' : '#e0e0e0'};">
+                            <i class="fas fa-ban" style="color: ${!artistGenre ? 'white' : '#999'};"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => {
+                          const isSelected = artistGenre === g.id;
+                          return `
+                            <div class="genre-chip ${isSelected ? 'selected' : ''}" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${isSelected ? g.color : '#f0f0f0'}; color: ${isSelected ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${isSelected ? g.color : '#e0e0e0'};">
+                                <i class="fas ${g.icon}" style="color: ${isSelected ? 'white' : g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                          `;
+                        }).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="${artistGenre}">
+                </div>
             </div>
             
-            <div class="form-group">
-                <label>Bio</label>
-                <textarea name="description" class="form-control" rows="4">${artist.description || ''}</textarea>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Bio</label>
+                <textarea name="description" class="form-control" rows="4" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">${artist.description || ''}</textarea>
             </div>
             
-            <div class="form-group">
-                <label>Origin/Location</label>
-                <input type="text" name="origin" class="form-control" value="${artist.origin || ''}" placeholder="e.g. Lusaka, Zambia">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Origin/Location</label>
+                <input type="text" name="origin" class="form-control" value="${artist.origin || ''}" placeholder="e.g. Lusaka, Zambia" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Current Image</label>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Current Image</label>
                 ${artist.thumbnail ? 
-                    `<div style="margin-bottom:10px;">
+                    `<div style="margin-bottom:15px;">
                         <img src="/artists/thumbnails/${artistId}.jpg" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #9b59b6;">
                     </div>` : 
-                    '<p>No image</p>'
+                    '<p style="color:#999; margin-bottom:10px;">No image</p>'
                 }
                 <label>New Image (optional)</label>
-                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" style="width:100%; padding:10px; border:2px dashed #e0e0e0; border-radius:8px;">
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width:100%; padding:14px; font-size:16px;">
                     <i class="fas fa-save"></i> Save Changes
                 </button>
-                <a href="/admin/artists" class="btn btn-secondary">
+                <a href="/admin/artists" class="btn btn-secondary" style="width:100%; padding:14px; font-size:16px; text-align:center; text-decoration:none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
         </form>
     </div>
-    
+
     <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#9b59b6';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#9b59b6';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+        
         document.getElementById('editForm').addEventListener('submit', function(e) {
             if (!confirm('Save changes to this artist?')) {
                 e.preventDefault();
             }
         });
     </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return { content };
@@ -583,37 +774,45 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
       id,
       name: artist.name,
       songCount: artist.songs?.length || 0,
-      albumCount: artist.albums?.length || 0
+      albumCount: artist.albums?.length || 0,
+      genre: artist.genre || ''
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   
   const artistOptions = otherArtists.map(artist => 
-    `<option value="${artist.id}">${artist.name} (${artist.songCount} songs, ${artist.albumCount} albums)</option>`
+    `<option value="${artist.id}">${artist.name} (${artist.songCount} songs, ${artist.albumCount} albums)${artist.genre ? ` - ${artist.genre}` : ''}</option>`
   ).join('');
   
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-compress"></i> Merge Artists</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/artists" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-compress" style="color: #9b59b6;"></i> Merge Artists
+            </h2>
+        </div>
         
         <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #9b59b6;">
-            <p><strong>Main Artist:</strong> ${mainArtist.name}</p>
+            <p><strong>Main Artist:</strong> ${mainArtist.name} ${mainArtist.genre ? `(${mainArtist.genre})` : ''}</p>
             <p><i class="fas fa-info-circle"></i> This artist will receive all songs and albums from the merged artist.</p>
         </div>
         
-        <form id="mergeForm" action="/admin/artists/merge" method="POST">
+        <form id="mergeForm" action="/admin/artists/merge" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
             <input type="hidden" name="mainArtistId" value="${artistId}">
             
-            <div class="form-group">
-                <label>Select Artist to Merge into ${mainArtist.name}</label>
-                <select name="mergeArtistId" class="form-control" required>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Select Artist to Merge into ${mainArtist.name}</label>
+                <select name="mergeArtistId" class="form-control" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
                     <option value="">-- Select Artist --</option>
                     ${artistOptions}
                 </select>
             </div>
             
-            <div class="form-group">
-                <label>Action after merge</label>
-                <div style="display: flex; gap: 20px; margin-top: 10px;">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Action after merge</label>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
                     <label style="display: flex; align-items: center; gap: 5px;">
                         <input type="radio" name="deleteAfter" value="yes" checked> Delete merged artist
                     </label>
@@ -628,11 +827,11 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
                 <strong>Warning:</strong> This action cannot be undone. All songs and albums from the merged artist will be transferred to ${mainArtist.name}.
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary" onclick="return confirm('Are you sure you want to merge these artists?')">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width:100%; padding:14px; font-size:16px; background: #9b59b6;" onclick="return confirm('Are you sure you want to merge these artists?')">
                     <i class="fas fa-compress"></i> Merge Artists
                 </button>
-                <a href="/admin/artists" class="btn btn-secondary">
+                <a href="/admin/artists" class="btn btn-secondary" style="width:100%; padding:14px; font-size:16px; text-align:center; text-decoration:none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
@@ -735,9 +934,12 @@ function generateMobileCard(artist) {
     day: '2-digit', month: 'short', year: 'numeric'
   });
   
+  const genreHtml = artist.genre && artist.genre !== 'Various' ? 
+    `<span class="badge" style="background: #9b59b6; color: white; margin-left: 5px;">${artist.genre}</span>` : '';
+
   return `
     <div class="mobile-card">
-        <div style="font-weight:700; margin-bottom:5px;">${artist.name}</div>
+        <div style="font-weight:700; margin-bottom:5px;">${artist.name} ${genreHtml}</div>
         <div style="color:#9b59b6; margin-bottom:8px;">${artist.genre}</div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
             <span><i class="fas fa-music"></i> ${artist.songCount} songs</span>
