@@ -1,10 +1,11 @@
-// ==================== ADMIN  ALBUMS MANAGEMENT ====================
+// ==================== ADMIN ALBUMS MANAGEMENT ====================
 import { getAlbums, getArtists, saveAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
+import { moveToTrash } from '../../helpers/trash.js';
+import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL ALBUMS =====
 export async function handleAdminAlbums(req, env, ctx, auth) {
@@ -48,7 +49,8 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
         downloads: stats.downloads,
         views: pageViews,
         created: album.created,
-        hasThumbnail: !!album.thumbnail
+        hasThumbnail: !!album.thumbnail,
+        genre: album.genre || null  // ADD THIS
       };
     })
   );
@@ -269,37 +271,136 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
 
 // ===== CREATE NEW ALBUM PAGE =====
 export async function handleAdminAlbumCreate(req, env, ctx, auth) {
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #ff5500;"></i> Create New Album</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/albums" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-plus-circle" style="color: #ff5500;"></i> Create New Album
+            </h2>
+        </div>
         
-        <form action="/admin/album/create" method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>Album Title</label>
-                <input type="text" name="title" class="form-control" placeholder="e.g. My Awesome Album" required>
+        <form action="/admin/album/create" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Album Title <span style="color: #ff5500;">*</span></label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. My Awesome Album" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="4" placeholder="Album description..." required></textarea>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Album description..." required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"></textarea>
             </div>
             
-            <div class="form-group">
-                <label>Album Thumbnail</label>
-                <input type="file" name="thumbnail" accept="image/*" class="form-control" required>
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #ff5500;"></i> Album Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                            <i class="fas fa-ban" style="color: #999;"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => `
+                            <div class="genre-chip" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                                <i class="fas ${g.icon}" style="color: ${g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="">
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Album Thumbnail <span style="color: #ff5500;">*</span></label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" required style="width: 100%; padding: 10px; border: 2px dashed #e0e0e0; border-radius: 8px;">
                 <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 16px;">
                     <i class="fas fa-save"></i> Create Album
                 </button>
-                <a href="/admin/albums" class="btn btn-secondary">
+                <a href="/admin/albums" class="btn btn-secondary" style="width: 100%; padding: 14px; font-size: 16px; text-align: center; text-decoration: none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
         </form>
     </div>
+
+    <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#ff5500';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#ff5500';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+    </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return content;
@@ -311,6 +412,7 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
   const title = formData.get('title');
   const description = formData.get('description');
   const thumbnailFile = formData.get('thumbnail');
+  const genre = formData.get('genre');  // Get selected genre
 
   if (!title || !thumbnailFile) {
     return { success: false, error: 'Missing required fields' };
@@ -331,7 +433,8 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
     thumbnail: thumbnailKey,
     created: Date.now(),
     songs: [],
-    artists: []
+    artists: [],
+    genre: genre || undefined  // Save genre
   };
 
   await saveAlbums(env, albums);
@@ -362,6 +465,12 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
     return { redirect: '/admin/albums' };
   }
   
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+  const albumGenre = album.genre || '';
+  
   // Artist options for dropdown
   const artistOptions = Object.entries(artists).map(([id, artist]) => {
     const selected = album.artists?.includes(id) ? 'selected' : '';
@@ -369,60 +478,155 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
   }).join('');
   
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Album: ${album.title}</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/albums" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Album: ${album.title}
+            </h2>
+        </div>
         
-        <form id="editForm" action="/admin/albums/edit" method="POST" enctype="multipart/form-data">
+        <form id="editForm" action="/admin/albums/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
             <input type="hidden" name="albumId" value="${albumId}">
             
-            <div class="form-group">
-                <label>Album Title</label>
-                <input type="text" name="title" class="form-control" value="${album.title}" required>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Album Title</label>
+                <input type="text" name="title" class="form-control" value="${album.title}" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="4">${album.description || ''}</textarea>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">${album.description || ''}</textarea>
             </div>
             
-            <div class="form-group">
-                <label>Artists (select multiple)</label>
-                <select name="artists" multiple class="form-control" size="5">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Artists (select multiple)</label>
+                <select name="artists" multiple class="form-control" size="5" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
                     ${artistOptions}
                 </select>
-                <p style="font-size:0.8rem; color:#666;">Hold Ctrl/Cmd to select multiple artists</p>
+                <p style="font-size:0.8rem; color:#666; margin-top:5px;">Hold Ctrl/Cmd to select multiple artists</p>
             </div>
             
-            <div class="form-group">
-                <label>Current Thumbnail</label>
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #ff5500;"></i> Album Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip ${!albumGenre ? 'selected' : ''}" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${!albumGenre ? '#ff5500' : '#f0f0f0'}; color: ${!albumGenre ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${!albumGenre ? '#ff5500' : '#e0e0e0'};">
+                            <i class="fas fa-ban" style="color: ${!albumGenre ? 'white' : '#999'};"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => {
+                          const isSelected = albumGenre === g.id;
+                          return `
+                            <div class="genre-chip ${isSelected ? 'selected' : ''}" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${isSelected ? g.color : '#f0f0f0'}; color: ${isSelected ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${isSelected ? g.color : '#e0e0e0'};">
+                                <i class="fas ${g.icon}" style="color: ${isSelected ? 'white' : g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                          `;
+                        }).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="${albumGenre}">
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Current Thumbnail</label>
                 ${album.thumbnail ? 
-                    `<div style="margin-bottom:10px;">
+                    `<div style="margin-bottom:15px;">
                         <img src="/albums/thumbnails/${albumId}.jpg" style="max-width:200px; max-height:200px; border-radius:8px; border:1px solid #e0e0e0;">
                     </div>` : 
-                    '<p>No thumbnail</p>'
+                    '<p style="color:#999; margin-bottom:10px;">No thumbnail</p>'
                 }
                 <label>New Thumbnail (optional)</label>
-                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" style="width:100%; padding:10px; border:2px dashed #e0e0e0; border-radius:8px;">
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width:100%; padding:14px; font-size:16px;">
                     <i class="fas fa-save"></i> Save Changes
                 </button>
-                <a href="/admin/albums" class="btn btn-secondary">
+                <a href="/admin/albums" class="btn btn-secondary" style="width:100%; padding:14px; font-size:16px; text-align:center; text-decoration:none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
         </form>
     </div>
-    
+
     <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#ff5500';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#ff5500';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+        
         document.getElementById('editForm').addEventListener('submit', function(e) {
             if (!confirm('Save changes to this album?')) {
                 e.preventDefault();
             }
         });
     </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return { content };
@@ -435,6 +639,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   const title = formData.get('title');
   const description = formData.get('description');
   const artists = formData.getAll('artists');
+  const genre = formData.get('genre');  // Get selected genre
   const thumbnailFile = formData.get('thumbnail');
   
   if (!albumId || !title) {
@@ -452,6 +657,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     albums[albumId].title = title;
     albums[albumId].description = description;
     albums[albumId].artists = artists.filter(a => a);
+    albums[albumId].genre = genre || undefined;  // Save genre
     
     // Upload new thumbnail if provided
     if (thumbnailFile && thumbnailFile.size > 0) {
@@ -509,6 +715,7 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
       description: album?.description,
       artists: album?.artists,
       songs: album?.songs,
+      genre: album?.genre,
       created: album?.created,
       thumbnail: album?.thumbnail
     };
@@ -573,6 +780,7 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
       const artistName = artists[artistId]?.name || artistId;
       const meta = await getMetadata(env, baseName);
       const title = meta?.title || baseName;
+      const genre = meta?.genre ? ` (${meta.genre})` : '';
       
       return `
         <tr>
@@ -580,19 +788,28 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
             <td>${title}</td>
             <td>${artistName}</td>
             <td>${inAlbum ? '<span class="badge badge-success">In Album</span>' : '-'}</td>
+            <td>${genre}</td>
         </tr>
       `;
     })
   );
   
   const content = `
-    <div style="max-width: 800px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-music"></i> Manage Songs: ${album.title}</h2>
+    <div style="max-width: 900px; margin: 0 auto;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <a href="/admin/albums" class="btn btn-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-music"></i> Manage Songs: ${album.title}
+            </h2>
+            ${album.genre ? `<span class="badge" style="background: #ff5500; color: white; margin-left: 10px;">${album.genre}</span>` : ''}
+        </div>
         
-        <form id="songsForm" action="/admin/albums/songs" method="POST">
+        <form id="songsForm" action="/admin/albums/songs" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
             <input type="hidden" name="albumId" value="${albumId}">
             
-            <div style="margin-bottom: 20px;">
+            <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                 <button type="button" onclick="checkAll()" class="btn btn-secondary btn-sm">Select All</button>
                 <button type="button" onclick="uncheckAll()" class="btn btn-secondary btn-sm">Deselect All</button>
                 <span style="margin-left: 15px;">Total Songs: ${album.songs?.length || 0}</span>
@@ -602,17 +819,18 @@ export async function handleAdminAlbumSongs(req, env, ctx, auth) {
                 <table class="admin-table">
                     <thead>
                         <tr>
-                            <th><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
                             <th>Song</th>
                             <th>Artist</th>
                             <th>Status</th>
+                            <th>Genre</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${songOptions.join('')}
                         ${songOptions.length === 0 ? `
                             <tr>
-                                <td colspan="4" style="text-align: center; padding: 40px;">
+                                <td colspan="5" style="text-align: center; padding: 40px;">
                                     <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i><br>
                                     No songs found
                                 </td>
@@ -699,14 +917,16 @@ function generateMobileCard(album) {
     day: '2-digit', month: 'short', year: 'numeric'
   });
   
+  const genreHtml = album.genre ? 
+    `<span class="badge" style="background: #ff5500; color: white; margin-left: 5px;">${album.genre}</span>` : '';
+
   return `
     <div class="mobile-card">
-        <div style="font-weight:700; margin-bottom:5px;">${album.title}</div>
+        <div style="font-weight:700; margin-bottom:5px;">${album.title} ${genreHtml}</div>
         <div style="color:#ff5500; margin-bottom:8px;">${album.primaryArtist}</div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
             <span><i class="fas fa-music"></i> ${album.songCount} songs</span>
             <span><i class="fas fa-play" style="color:#ff5500;"></i> ${formatNumber(album.plays)}</span>
-            <span><i class="fas fa-download" style="color:#ff5500;"></i> ${formatNumber(album.downloads)}</span>
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">${date}</div>
@@ -729,10 +949,10 @@ function generateGridCard(album) {
         <div class="album-info">
             <div class="album-title" onclick="viewAlbum('${album.id}')">${album.title}</div>
             <div class="album-artist" onclick="viewAlbum('${album.id}')">${album.primaryArtist}</div>
+            ${album.genre ? `<div style="color: #ff5500; font-size: 0.8rem; margin-bottom: 5px;">${album.genre}</div>` : ''}
             <div class="album-stats">
                 <span><i class="fas fa-music"></i> ${album.songCount}</span>
                 <span><i class="fas fa-play"></i> ${formatNumber(album.plays)}</span>
-                <span><i class="fas fa-download"></i> ${formatNumber(album.downloads)}</span>
                 <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
             </div>
             <div style="display:flex; gap:8px; margin-top:12px;">
@@ -771,4 +991,4 @@ function generatePagination(currentPage, totalPages, search, sort) {
 }
 
 // Import getMetadata for songs page
-import { getMetadata } from '../../helpers/storage.js'; 
+import { getMetadata } from '../../helpers/storage.js';
