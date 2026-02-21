@@ -1,7 +1,8 @@
 // src/routes/admin/missingMetadata.js
 import { MissingMetadataDetector } from '../../helpers/missingMetadataDetector.js';
 import { adminLayout } from './layout.js';
-import { formatFileSize } from '../../helpers/formatting.js';
+// Remove this import - we'll use local function instead
+// import { formatFileSize } from '../../helpers/formatting.js';
 
 export async function handleMissingMetadata(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -171,7 +172,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Missing Metadata', content, auth, 'missing-metadata', 0, { total: totalIssues }), {
+    return new Response(adminLayout('Missing Metadata', content, auth, 'missing-metadata', 0, { total: 0 }, { total: totalIssues }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -217,7 +218,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Missing Song Info', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Missing Song Info', content, auth, 'missing-metadata', 0, { total: 0 }, { total: songs.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -258,7 +259,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Missing Thumbnails', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Missing Thumbnails', content, auth, 'missing-metadata', 0, { total: 0 }, { total: songs.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -299,7 +300,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Empty Albums', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Empty Albums', content, auth, 'missing-metadata', 0, { total: 0 }, { total: albums.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -340,7 +341,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Empty Playlists', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Empty Playlists', content, auth, 'missing-metadata', 0, { total: 0 }, { total: playlists.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -378,7 +379,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Playlists Missing Thumbnails', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Playlists Missing Thumbnails', content, auth, 'missing-metadata', 0, { total: 0 }, { total: playlists.length }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -494,7 +495,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
 
-    return new Response(adminLayout('Orphaned Files', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Orphaned Files', content, auth, 'missing-metadata', 0, { total: 0 }, { total: orphaned.total }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -519,7 +520,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
       </div>
     `;
     
-    return new Response(adminLayout('Cleanup Results', content, auth, 'missing-metadata'), {
+    return new Response(adminLayout('Cleanup Results', content, auth, 'missing-metadata', 0, { total: 0 }, { total: 0 }), {
       headers: { 'Content-Type': 'text/html' }
     });
   }
@@ -527,10 +528,7 @@ export async function handleMissingMetadata(req, env, ctx, auth) {
   return new Response('Not Found', { status: 404 });
 }
 
-// Remove this import line (line 4)
-// import { formatFileSize } from '../../helpers/formatting.js';
-
-// And add this function at the bottom of the file (before the final export)
+// Local formatFileSize function (not imported)
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
