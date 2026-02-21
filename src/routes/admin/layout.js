@@ -646,6 +646,12 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     <i class="fas fa-copy"></i> Duplicate Detector
                     ${totalDuplicates > 0 ? `<span class="tab-badge ${activePage !== 'duplicate-detector' ? 'pulse' : ''}">${totalDuplicates}</span>` : ''}
                 </a>
+
+<!-- MISSING METADATA TAB WITH BADGE -->
+<a href="/admin/missing-metadata" class="tab-btn ${activePage === 'missing-metadata' ? 'active' : ''}">
+    <i class="fas fa-exclamation-triangle"></i> Missing Metadata
+    ${totalMissingIssues > 0 ? `<span class="tab-badge ${activePage !== 'missing-metadata' ? 'pulse' : ''}">${totalMissingIssues}</span>` : ''}
+</a>
                 <!-- Announcement System -->
                 <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
                     <i class="fas fa-bullhorn"></i> Announcements
