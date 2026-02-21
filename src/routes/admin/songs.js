@@ -1,10 +1,11 @@
-// ==================== ADMIN SONGS  MANAGEMENT ====================
+// ==================== ADMIN SONGS MANAGEMENT ====================
 import { getArtists, getAlbums, getMetadata, saveMetadata } from '../../helpers/storage.js';
 import { getSongStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
+import { moveToTrash } from '../../helpers/trash.js';
+import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
 
 export async function handleAdminSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -59,7 +60,9 @@ export async function handleAdminSongs(req, env, ctx, auth) {
         downloads: stats.downloads,
         views: pageViews,
         uploaded: new Date(song.uploaded),
-        size: song.size
+        size: song.size,
+        genre: meta?.genre || null,  // ADD THIS
+        genres: meta?.genres || []    // ADD THIS
       };
     })
   );
@@ -180,11 +183,10 @@ export async function handleAdminSongs(req, env, ctx, auth) {
                         <th>Title</th>
                         <th>Artist</th>
                         <th>Album</th>
+                        <th>Genre</th>
                         <th>Duration</th>
                         <th>Plays</th>
-                        <th>Downloads</th>
                         <th>Views</th>
-                        <th>Added</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -192,7 +194,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
                     ${pageSongs.map(song => generateTableRow(song)).join('')}
                     ${pageSongs.length === 0 ? `
                         <tr>
-                            <td colspan="9" style="text-align: center; padding: 40px;">
+                            <td colspan="8" style="text-align: center; padding: 40px;">
                                 <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i><br>
                                 No songs found
                             </td>
@@ -285,7 +287,9 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
       featuredArtists: meta?.featuredArtists,
       description: meta?.description,
       duration: meta?.duration,
-      thumbnail: thumbnailPath
+      thumbnail: thumbnailPath,
+      genre: meta?.genre,
+      genres: meta?.genres
     };
     
     // Move to trash instead of deleting
@@ -327,6 +331,13 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   const artists = await getArtists(env);
   const albums = await getAlbums(env);
   
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+  const songGenre = meta?.genre || '';
+  const songGenres = meta?.genres || [];
+  
   // Find current album
   let currentAlbum = null;
   for (const [id, album] of Object.entries(albums)) {
@@ -344,56 +355,151 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   } catch (e) {}
   
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Song</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/songs" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Song
+            </h2>
+        </div>
         
-        <form id="editForm" action="/admin/songs/edit" method="POST">
+        <form id="editForm" action="/admin/songs/edit" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
             <input type="hidden" name="baseName" value="${baseName}">
             
-            <div class="form-group">
-                <label>Title</label>
-                <input type="text" name="title" class="form-control" value="${meta?.title || baseName.split('_').slice(1).join(' ')}" required>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Title</label>
+                <input type="text" name="title" class="form-control" value="${meta?.title || baseName.split('_').slice(1).join(' ')}" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Primary Artist ID</label>
-                <input type="text" name="primaryArtist" class="form-control" value="${meta?.primaryArtist || baseName.split('_')[0]}" required>
-                <p style="font-size: 0.8rem; color: #666;">Artist ID (e.g., yo_maps)</p>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Primary Artist ID</label>
+                <input type="text" name="primaryArtist" class="form-control" value="${meta?.primaryArtist || baseName.split('_')[0]}" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Artist ID (e.g., yo_maps)</p>
             </div>
             
-            <div class="form-group">
-                <label>Featured Artists (comma-separated IDs)</label>
-                <input type="text" name="featuredArtists" class="form-control" value="${meta?.featuredArtists?.join(', ') || ''}">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Featured Artists (comma-separated IDs)</label>
+                <input type="text" name="featuredArtists" class="form-control" value="${meta?.featuredArtists?.join(', ') || ''}" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="4">${description}</textarea>
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #ff5500;"></i> Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip ${!songGenre ? 'selected' : ''}" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${!songGenre ? '#ff5500' : '#f0f0f0'}; color: ${!songGenre ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${!songGenre ? '#ff5500' : '#e0e0e0'};">
+                            <i class="fas fa-ban" style="color: ${!songGenre ? 'white' : '#999'};"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => {
+                          const isSelected = songGenre === g.id;
+                          return `
+                            <div class="genre-chip ${isSelected ? 'selected' : ''}" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${isSelected ? g.color : '#f0f0f0'}; color: ${isSelected ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${isSelected ? g.color : '#e0e0e0'};">
+                                <i class="fas ${g.icon}" style="color: ${isSelected ? 'white' : g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                          `;
+                        }).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="${songGenre}">
+                </div>
             </div>
             
-            <div class="form-group">
-                <label>Duration (seconds)</label>
-                <input type="number" name="duration" class="form-control" value="${meta?.duration || 0}" step="0.001">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">${description}</textarea>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Duration (seconds)</label>
+                <input type="number" name="duration" class="form-control" value="${meta?.duration || 0}" step="0.001" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 16px;">
                     <i class="fas fa-save"></i> Save Changes
                 </button>
-                <a href="/admin/songs" class="btn btn-secondary">
+                <a href="/admin/songs" class="btn btn-secondary" style="width: 100%; padding: 14px; font-size: 16px; text-align: center; text-decoration: none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
         </form>
     </div>
-    
+
     <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#ff5500';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#ff5500';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+        
         document.getElementById('editForm').addEventListener('submit', function(e) {
             if (!confirm('Save changes to this song?')) {
                 e.preventDefault();
             }
         });
     </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return { content };
@@ -408,6 +514,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
   const featuredArtistsStr = formData.get('featuredArtists');
   const description = formData.get('description');
   const duration = parseFloat(formData.get('duration'));
+  const genre = formData.get('genre');  // Get selected genre
   
   if (!baseName || !title || !primaryArtist) {
     return { success: false, error: 'Missing required fields' };
@@ -425,7 +532,8 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
       primaryArtist,
       featuredArtists,
       description,
-      duration
+      duration,
+      genre: genre || undefined  // Save genre (undefined if empty)
     };
     await saveMetadata(env, baseName, metadata);
     
@@ -452,16 +560,18 @@ function generateMobileCard(song) {
         <i class="fas fa-users" style="color: #ff5500;"></i> ${song.featuredNames}
     </div>` : '';
 
+  const genreHtml = song.genre ? 
+    `<span class="badge" style="background: #ff5500; color: white; margin-left: 5px;">${song.genre}</span>` : '';
+
   return `
     <div class="mobile-card">
-        <div style="font-weight: 700; margin-bottom: 8px;">${song.title}</div>
+        <div style="font-weight: 700; margin-bottom: 5px;">${song.title} ${genreHtml}</div>
         <div style="color: #ff5500; font-size: 0.9rem; margin-bottom: 5px;">${song.primaryArtistName}</div>
         ${featuredHtml}
         <div style="font-size: 0.85rem; color: #666; margin: 5px 0;">Album: ${song.album?.title || '—'}</div>
         <div style="display: flex; gap: 15px; flex-wrap: wrap; margin: 8px 0;">
             <span><i class="fas fa-clock"></i> ${formatDuration(song.duration)}</span>
             <span><i class="fas fa-play" style="color: #ff5500;"></i> ${formatNumber(song.plays)}</span>
-            <span><i class="fas fa-download" style="color: #ff5500;"></i> ${formatNumber(song.downloads)}</span>
             <span><i class="fas fa-eye" style="color: #4a90e2;"></i> ${formatNumber(song.views || 0)}</span>
         </div>
         <div style="font-size: 0.75rem; color: #999; margin-bottom: 10px;">Added: ${date}</div>
@@ -486,16 +596,18 @@ function generateTableRow(song) {
     day: '2-digit', month: 'short', year: 'numeric'
   });
   
+  const genreHtml = song.genre ? 
+    `<span class="badge" style="background: #ff5500; color: white;">${song.genre}</span>` : '-';
+  
   return `
     <tr>
         <td><strong>${song.title}</strong></td>
         <td>${song.primaryArtistName}${song.featuredNames ? `<br><small>feat. ${song.featuredNames}</small>` : ''}</td>
         <td>${song.album?.title || '—'}</td>
+        <td>${genreHtml}</td>
         <td>${formatDuration(song.duration)}</td>
         <td>${formatNumber(song.plays)}</td>
-        <td>${formatNumber(song.downloads)}</td>
         <td><span style="color: #4a90e2; font-weight: 600;">${formatNumber(song.views || 0)}</span></td>
-        <td>${date}</td>
         <td style="white-space: nowrap;">
             <button onclick="previewModal.show('song', '${song.baseName}')" class="btn btn-info btn-sm" title="Quick Preview" style="background: #00b894; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
                 <i class="fas fa-eye"></i>
@@ -542,4 +654,4 @@ function generatePagination(currentPage, totalPages, search, sort) {
   
   html += '</div>';
   return html;
-} 
+}
