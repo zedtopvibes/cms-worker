@@ -660,6 +660,12 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     <i class="fas fa-chart-line"></i> Content Quality
                     ${totalQualityIssues > 0 ? `<span class="tab-badge ${activePage !== 'content-quality' ? 'pulse' : ''}">${totalQualityIssues}</span>` : ''}
                 </a>
+
+<!-- GENRE MANAGEMENT TAB -->
+<a href="/admin/genres" class="tab-btn ${activePage === 'genres' ? 'active' : ''}">
+    <i class="fas fa-tags"></i> Genres
+    ${totalGenres > 0 ? `<span class="tab-badge">${totalGenres}</span>` : ''}
+</a>
                 <!-- Announcement System -->
                 <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
                     <i class="fas fa-bullhorn"></i> Announcements
