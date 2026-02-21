@@ -12,7 +12,7 @@ export class DuplicateDetector {
 
   async findDuplicateArtists(options = {}) {
     const {
-      threshold = 0.85,
+      threshold = 0.5,  // CHANGED: Default to 50%
       includeDeleted = false,
       checkNameVariations = true
     } = options;
@@ -99,7 +99,7 @@ export class DuplicateDetector {
 
   async findDuplicateAlbums(options = {}) {
     const {
-      threshold = 0.8,
+      threshold = 0.5,  // CHANGED: Default to 50%
       includeDeleted = false,
       sameArtist = true
     } = options;
@@ -144,7 +144,7 @@ export class DuplicateDetector {
         
         // Title similarity
         const titleScore = this.calculateSimilarity(album.title, other.title);
-        if (titleScore < 0.5) continue;
+        if (titleScore < 0.3) continue; // Lower threshold for initial filter
         
         let score = titleScore * 0.5;
         const reasons = [{ factor: 'title', score: titleScore }];
@@ -201,9 +201,9 @@ export class DuplicateDetector {
 
   async findDuplicatePlaylists(options = {}) {
     const {
-      threshold = 0.75,
+      threshold = 0.5,  // CHANGED: Default to 50%
       includeDeleted = false,
-      minSongOverlap = 0.5
+      minSongOverlap = 0.3
     } = options;
 
     const playlists = await getPlaylists(this.env);
@@ -236,7 +236,7 @@ export class DuplicateDetector {
         
         // Title similarity
         const titleScore = this.calculateSimilarity(playlist.title, other.title);
-        if (titleScore < 0.5) continue;
+        if (titleScore < 0.3) continue;
         
         let score = titleScore * 0.3;
         const reasons = [{ factor: 'title', score: titleScore }];
@@ -284,11 +284,11 @@ export class DuplicateDetector {
 
   async findDuplicateSongs(options = {}) {
     const {
-      threshold = 0.85,
+      threshold = 0.5,  // CHANGED: Default to 50%
       includeDeleted = false,
       sameArtist = true,
       checkDuration = true,
-      durationTolerance = 5 // seconds
+      durationTolerance = 10 // seconds (increased from 5)
     } = options;
 
     // Get all songs from R2
@@ -342,7 +342,7 @@ export class DuplicateDetector {
         
         // Title similarity
         const titleScore = this.calculateSimilarity(song.title, other.title);
-        if (titleScore < 0.5) continue;
+        if (titleScore < 0.3) continue;
         
         let score = titleScore * 0.5;
         const reasons = [{ factor: 'title', score: titleScore }];
@@ -409,13 +409,18 @@ export class DuplicateDetector {
       return this.charSimilarity(str1, str2);
     }
     
-    // Jaccard similarity
-    const set1 = new Set(words1);
-    const set2 = new Set(words2);
-    const intersection = new Set([...set1].filter(x => set2.has(x)));
-    const union = new Set([...set1, ...set2]);
+    // Jaccard similarity with word importance
+    let matches = 0;
+    for (const word1 of words1) {
+      for (const word2 of words2) {
+        if (word1 === word2 || word1.includes(word2) || word2.includes(word1)) {
+          matches++;
+          break;
+        }
+      }
+    }
     
-    return intersection.size / union.size;
+    return matches / Math.max(words1.length, words2.length);
   }
 
   charSimilarity(str1, str2) {
@@ -424,6 +429,11 @@ export class DuplicateDetector {
     const maxLen = Math.max(len1, len2);
     
     if (maxLen === 0) return 1;
+    
+    // Check if one is substring of the other
+    if (str1.includes(str2) || str2.includes(str1)) {
+      return 0.8;
+    }
     
     // Simple character-based similarity
     let matches = 0;
@@ -466,9 +476,9 @@ export class DuplicateDetector {
     const set2 = new Set(songs2);
     
     const intersection = new Set([...set1].filter(x => set2.has(x)));
-    const union = new Set([...set1, ...set2]);
+    const smaller = Math.min(set1.size, set2.size);
     
-    return intersection.size / union.size;
+    return intersection.size / smaller; // Use smaller set for percentage
   }
 
   // ==================== STATISTICS ====================
@@ -476,10 +486,10 @@ export class DuplicateDetector {
   async getDuplicateStats() {
     try {
       const [artists, albums, playlists, songs] = await Promise.all([
-        this.findDuplicateArtists({ threshold: 0.85 }).catch(() => []),
-        this.findDuplicateAlbums({ threshold: 0.8 }).catch(() => []),
-        this.findDuplicatePlaylists({ threshold: 0.75 }).catch(() => []),
-        this.findDuplicateSongs({ threshold: 0.85 }).catch(() => [])
+        this.findDuplicateArtists({ threshold: 0.5 }).catch(() => []),
+        this.findDuplicateAlbums({ threshold: 0.5 }).catch(() => []),
+        this.findDuplicatePlaylists({ threshold: 0.5 }).catch(() => []),
+        this.findDuplicateSongs({ threshold: 0.5 }).catch(() => [])
       ]);
 
       return {
