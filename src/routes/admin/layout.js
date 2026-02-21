@@ -1,7 +1,10 @@
-// ==================== SHARED ADMIN LAYOUT ====================
+// src/routes/admin/layout.js
 
-export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0) {
+export async function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = {}) {
   const username = auth?.session?.username || 'Admin';
+  
+  // Calculate total duplicates for the badge
+  const totalDuplicates = (duplicateCounts?.total || 0) > 0 ? duplicateCounts.total : 0;
   
   return `
 <!DOCTYPE html>
@@ -137,6 +140,7 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
             align-items: center;
             gap: 6px;
             text-decoration: none;
+            position: relative;
         }
         
         .tab-btn i {
@@ -155,13 +159,32 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
         
         /* Badge for notifications */
         .tab-badge {
-            background: var(--orange);
+            background: #ff5500;
             color: white;
             padding: 2px 6px;
             border-radius: 12px;
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             font-weight: 600;
             margin-left: 5px;
+            min-width: 18px;
+            text-align: center;
+            line-height: 1.2;
+        }
+        
+        .tab-btn.active .tab-badge {
+            background: white;
+            color: #ff5500;
+        }
+        
+        /* Pulse animation for new notifications */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .tab-badge.pulse {
+            animation: pulse 1s ease-in-out;
         }
         
         /* Content Area */
@@ -606,10 +629,9 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                 <a href="/admin/stats" class="tab-btn ${activePage === 'stats' ? 'active' : ''}">
                     <i class="fas fa-chart-line"></i> Stats
                 </a>
-              <a href="/admin/activity" class="tab-btn ${activePage === 'activity' ? 'active' : ''}">
-    <i class="fas fa-history"></i> Activity
-</a>
-
+                <a href="/admin/activity" class="tab-btn ${activePage === 'activity' ? 'active' : ''}">
+                    <i class="fas fa-history"></i> Activity
+                </a>
                 <a href="/admin/bulk" class="tab-btn ${activePage === 'bulk' ? 'active' : ''}">
                     <i class="fas fa-tasks"></i> Bulk Ops
                 </a>
@@ -617,56 +639,47 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     <i class="fas fa-database"></i> Migrations
                     ${pendingMigrations > 0 ? '<span class="tab-badge">!</span>' : ''}
                 </a>
-                <!-- TRASH TAB ADDED HERE -->
+                <!-- TRASH TAB -->
                 <a href="/admin/trash" class="tab-btn ${activePage === 'trash' ? 'active' : ''}">
                     <i class="fas fa-trash-alt"></i> Trash
                 </a>
-  <a href="/admin/duplicate-detector" class="tab-btn ${activePage === 'duplicate-detector' ? 'active' : ''}">
-    <i class="fas fa-search"></i> Duplicate Detector
-</a>
-
-<!-- Announcement System -->
-<a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
-    <i class="fas fa-bullhorn"></i> Announcements
-</a>
-
-<!-- Content Moderation -->
-<a href="/admin/moderation" class="tab-btn ${activePage === 'moderation' ? 'active' : ''}">
-    <i class="fas fa-shield-alt"></i> Moderation
-</a>
-
-<!-- User Management -->
-<a href="/admin/user-management" class="tab-btn ${activePage === 'user-management' ? 'active' : ''}">
-    <i class="fas fa-users-cog"></i> User Management
-</a>
-
-<!-- Scheduled Tasks -->
-<a href="/admin/scheduled-tasks" class="tab-btn ${activePage === 'scheduled-tasks' ? 'active' : ''}">
-    <i class="fas fa-clock"></i> Scheduled Tasks
-</a>
-
-<!-- AI-Powered Tagging -->
-<a href="/admin/ai-tagging" class="tab-btn ${activePage === 'ai-tagging' ? 'active' : ''}">
-    <i class="fas fa-robot"></i> AI Tagging
-</a>
-
-<!-- Ad Management -->
-<a href="/admin/ad-management" class="tab-btn ${activePage === 'ad-management' ? 'active' : ''}">
-    <i class="fas fa-ad"></i> Ad Management
-</a>
-
-<!-- System Settings -->
-<a href="/admin/system-settings" class="tab-btn ${activePage === 'system-settings' ? 'active' : ''}">
-    <i class="fas fa-cogs"></i> System Settings
-</a>
-
-<!-- Theme Customizer -->
-<a href="/admin/theme-customizer" class="tab-btn ${activePage === 'theme-customizer' ? 'active' : ''}">
-    <i class="fas fa-palette"></i> Theme Customizer
-</a>
-
-
-
+                <!-- DUPLICATE DETECTOR TAB WITH BADGE -->
+                <a href="/admin/duplicate-detector" class="tab-btn ${activePage === 'duplicate-detector' ? 'active' : ''}">
+                    <i class="fas fa-copy"></i> Duplicate Detector
+                    ${totalDuplicates > 0 ? `<span class="tab-badge ${activePage !== 'duplicate-detector' ? 'pulse' : ''}">${totalDuplicates}</span>` : ''}
+                </a>
+                <!-- Announcement System -->
+                <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
+                    <i class="fas fa-bullhorn"></i> Announcements
+                </a>
+                <!-- Content Moderation -->
+                <a href="/admin/moderation" class="tab-btn ${activePage === 'moderation' ? 'active' : ''}">
+                    <i class="fas fa-shield-alt"></i> Moderation
+                </a>
+                <!-- User Management -->
+                <a href="/admin/user-management" class="tab-btn ${activePage === 'user-management' ? 'active' : ''}">
+                    <i class="fas fa-users-cog"></i> User Management
+                </a>
+                <!-- Scheduled Tasks -->
+                <a href="/admin/scheduled-tasks" class="tab-btn ${activePage === 'scheduled-tasks' ? 'active' : ''}">
+                    <i class="fas fa-clock"></i> Scheduled Tasks
+                </a>
+                <!-- AI-Powered Tagging -->
+                <a href="/admin/ai-tagging" class="tab-btn ${activePage === 'ai-tagging' ? 'active' : ''}">
+                    <i class="fas fa-robot"></i> AI Tagging
+                </a>
+                <!-- Ad Management -->
+                <a href="/admin/ad-management" class="tab-btn ${activePage === 'ad-management' ? 'active' : ''}">
+                    <i class="fas fa-ad"></i> Ad Management
+                </a>
+                <!-- System Settings -->
+                <a href="/admin/system-settings" class="tab-btn ${activePage === 'system-settings' ? 'active' : ''}">
+                    <i class="fas fa-cogs"></i> System Settings
+                </a>
+                <!-- Theme Customizer -->
+                <a href="/admin/theme-customizer" class="tab-btn ${activePage === 'theme-customizer' ? 'active' : ''}">
+                    <i class="fas fa-palette"></i> Theme Customizer
+                </a>
             </div>
         </div>
         
