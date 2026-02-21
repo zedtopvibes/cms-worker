@@ -1,10 +1,8 @@
 // src/routes/admin/layout.js
 
-export async function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = {}) {
+export function adminLayout(title, content, auth, activePage = 'dashboard', pendingMigrations = 0, duplicateCounts = { total: 0 }) {
   const username = auth?.session?.username || 'Admin';
-  
-  // Calculate total duplicates for the badge
-  const totalDuplicates = (duplicateCounts?.total || 0) > 0 ? duplicateCounts.total : 0;
+  const totalDuplicates = duplicateCounts.total || 0;
   
   return `
 <!DOCTYPE html>
