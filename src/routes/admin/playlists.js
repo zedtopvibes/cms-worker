@@ -1,10 +1,11 @@
-// ==================== ADMIN  PLAYLISTS MANAGEMENT ====================
+// ==================== ADMIN PLAYLISTS MANAGEMENT ====================
 import { getPlaylists, savePlaylists, getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-import { moveToTrash } from '../../helpers/trash.js';  // ADD THIS IMPORT
+import { moveToTrash } from '../../helpers/trash.js';
+import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL PLAYLISTS =====
 export async function handleAdminPlaylists(req, env, ctx, auth) {
@@ -47,7 +48,8 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
         views: pageViews,
         created: playlist.created,
         updated: playlist.updated || playlist.created,
-        hasImage: !!playlist.thumbnail
+        hasImage: !!playlist.thumbnail,
+        genres: playlist.genres || []  // ADD THIS
       };
     })
   );
@@ -272,37 +274,78 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
 
 // ===== CREATE NEW PLAYLIST PAGE =====
 export async function handleAdminPlaylistCreate(req, env, ctx, auth) {
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-plus-circle" style="color: #4a90e2;"></i> Create New Playlist</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/playlists" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-plus-circle" style="color: #4a90e2;"></i> Create New Playlist
+            </h2>
+        </div>
         
-        <form action="/admin/playlist/create" method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>Playlist Title</label>
-                <input type="text" name="title" class="form-control" placeholder="e.g. Zambian Hits 2025" required>
+        <form action="/admin/playlist/create" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Playlist Title <span style="color: #ff5500;">*</span></label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. Zambian Hits 2025" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="4" placeholder="Playlist description..."></textarea>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Playlist description..." style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"></textarea>
             </div>
             
-            <div class="form-group">
-                <label>Curator Name</label>
-                <input type="text" name="curator" class="form-control" placeholder="e.g. ZEDALBUMS" value="ZEDALBUMS">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Curator Name</label>
+                <input type="text" name="curator" class="form-control" placeholder="e.g. ZEDALBUMS" value="ZEDALBUMS" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Cover Image</label>
-                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #4a90e2;"></i> Genres
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Tap genres to select (multiple allowed):
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        ${genres.map(g => `
+                            <div class="genre-chip" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="toggleGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                                <i class="fas ${g.icon}" style="color: ${g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <!-- Hidden inputs to store selected genres -->
+                    <div id="selectedGenresContainer"></div>
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Cover Image</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" style="width: 100%; padding: 10px; border: 2px dashed #e0e0e0; border-radius: 8px;">
                 <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary" style="background: #4a90e2;">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 16px; background: #4a90e2;">
                     <i class="fas fa-save"></i> Create Playlist
                 </button>
-                <a href="/admin/playlists" class="btn btn-secondary">
+                <a href="/admin/playlists" class="btn btn-secondary" style="width: 100%; padding: 14px; font-size: 16px; text-align: center; text-decoration: none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
@@ -315,6 +358,61 @@ export async function handleAdminPlaylistCreate(req, env, ctx, auth) {
             </p>
         </div>
     </div>
+
+    <script>
+        const selectedGenres = new Set();
+        
+        function toggleGenre(genreId) {
+            const chip = document.querySelector(\`.genre-chip[data-id="\${genreId}"]\`);
+            const color = chip.dataset.color;
+            
+            if (selectedGenres.has(genreId)) {
+                selectedGenres.delete(genreId);
+                chip.style.background = '#f0f0f0';
+                chip.style.color = '#333';
+                chip.style.borderColor = '#e0e0e0';
+                chip.querySelector('i').style.color = color;
+            } else {
+                selectedGenres.add(genreId);
+                chip.style.background = color;
+                chip.style.color = 'white';
+                chip.style.borderColor = color;
+                chip.querySelector('i').style.color = 'white';
+            }
+            
+            // Update hidden inputs
+            updateHiddenInputs();
+        }
+        
+        function updateHiddenInputs() {
+            const container = document.getElementById('selectedGenresContainer');
+            container.innerHTML = '';
+            selectedGenres.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'genres';
+                input.value = id;
+                container.appendChild(input);
+            });
+        }
+    </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return content;
@@ -327,6 +425,7 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
   const description = formData.get('description') || '';
   const curator = formData.get('curator') || 'ZEDALBUMS';
   const thumbnailFile = formData.get('thumbnail');
+  const genres = formData.getAll('genres');  // Get selected genres
 
   if (!title) {
     return { success: false, error: 'Playlist title is required' };
@@ -350,7 +449,8 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
     thumbnail: thumbnailKey,
     created: Date.now(),
     updated: Date.now(),
-    songs: []
+    songs: [],
+    genres: genres  // Save genres
   };
 
   await savePlaylists(env, playlists);
@@ -380,58 +480,162 @@ export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
     return { redirect: '/admin/playlists' };
   }
   
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+  const playlistGenres = playlist?.genres || [];
+  
   const content = `
-    <div style="max-width: 600px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> Edit Playlist: ${playlist.title}</h2>
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/playlists" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Playlist: ${playlist.title}
+            </h2>
+        </div>
         
-        <form id="editForm" action="/admin/playlists/edit" method="POST" enctype="multipart/form-data">
+        <form id="editForm" action="/admin/playlists/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
             <input type="hidden" name="playlistId" value="${playlistId}">
             
-            <div class="form-group">
-                <label>Playlist Title</label>
-                <input type="text" name="title" class="form-control" value="${playlist.title}" required>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Playlist Title</label>
+                <input type="text" name="title" class="form-control" value="${playlist.title}" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="4">${playlist.description || ''}</textarea>
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">${playlist.description || ''}</textarea>
             </div>
             
-            <div class="form-group">
-                <label>Curator Name</label>
-                <input type="text" name="curator" class="form-control" value="${playlist.curator || 'ZEDALBUMS'}">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Curator Name</label>
+                <input type="text" name="curator" class="form-control" value="${playlist.curator || 'ZEDALBUMS'}" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
             </div>
             
-            <div class="form-group">
-                <label>Current Cover Image</label>
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #4a90e2;"></i> Genres
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Tap genres to select (multiple allowed):
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        ${genres.map(g => {
+                          const isSelected = playlistGenres.includes(g.id);
+                          return `
+                            <div class="genre-chip ${isSelected ? 'selected' : ''}" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="toggleGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${isSelected ? g.color : '#f0f0f0'}; color: ${isSelected ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${isSelected ? g.color : '#e0e0e0'};">
+                                <i class="fas ${g.icon}" style="color: ${isSelected ? 'white' : g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                          `;
+                        }).join('')}
+                    </div>
+                    
+                    <!-- Hidden inputs to store selected genres -->
+                    <div id="selectedGenresContainer">
+                        ${playlistGenres.map(id => `
+                            <input type="hidden" name="genres" value="${id}" class="genre-input">
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Cover Image</label>
                 ${playlist.thumbnail ? 
-                    `<div style="margin-bottom:10px;">
-                        <img src="/playlists/thumbnails/${playlistId}.jpg" style="width:100px; height:100px; border-radius:8px; object-fit:cover; border:3px solid #4a90e2;">
+                    `<div style="margin-bottom:15px;">
+                        <img src="/${playlist.thumbnail}" style="width:120px; height:120px; border-radius:12px; object-fit:cover; border:3px solid #4a90e2;">
                     </div>` : 
-                    '<p>No image</p>'
+                    '<p style="color:#999; margin-bottom:10px;">No image</p>'
                 }
-                <label>New Cover Image (optional)</label>
-                <input type="file" name="thumbnail" accept="image/*" class="form-control">
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" style="width:100%; padding:10px; border:2px dashed #e0e0e0; border-radius:8px;">
+                <small style="color:#999; display:block; margin-top:5px;">Leave empty to keep current image</small>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <button type="submit" class="btn btn-primary">
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width:100%; padding:14px; font-size:16px;">
                     <i class="fas fa-save"></i> Save Changes
                 </button>
-                <a href="/admin/playlists" class="btn btn-secondary">
+                <a href="/admin/playlists" class="btn btn-secondary" style="width:100%; padding:14px; font-size:16px; text-align:center; text-decoration:none;">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
         </form>
     </div>
-    
+
     <script>
-        document.getElementById('editForm').addEventListener('submit', function(e) {
+        const selectedGenres = new Set(${JSON.stringify(playlistGenres)});
+        
+        function toggleGenre(genreId) {
+            const chip = document.querySelector(\`.genre-chip[data-id="\${genreId}"]\`);
+            const color = chip.dataset.color;
+            
+            if (selectedGenres.has(genreId)) {
+                selectedGenres.delete(genreId);
+                chip.style.background = '#f0f0f0';
+                chip.style.color = '#333';
+                chip.style.borderColor = '#e0e0e0';
+                chip.querySelector('i').style.color = color;
+            } else {
+                selectedGenres.add(genreId);
+                chip.style.background = color;
+                chip.style.color = 'white';
+                chip.style.borderColor = color;
+                chip.querySelector('i').style.color = 'white';
+            }
+            
+            // Update hidden inputs
+            updateHiddenInputs();
+        }
+        
+        function updateHiddenInputs() {
+            const container = document.getElementById('selectedGenresContainer');
+            container.innerHTML = '';
+            selectedGenres.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'genres';
+                input.value = id;
+                input.className = 'genre-input';
+                container.appendChild(input);
+            });
+        }
+        
+        // Form submission confirmation
+        document.getElementById('editForm')?.addEventListener('submit', function(e) {
             if (!confirm('Save changes to this playlist?')) {
                 e.preventDefault();
             }
         });
     </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
   `;
   
   return { content };
@@ -444,6 +648,7 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   const title = formData.get('title');
   const description = formData.get('description');
   const curator = formData.get('curator');
+  const genres = formData.getAll('genres');  // Get selected genres
   const thumbnailFile = formData.get('thumbnail');
   
   if (!playlistId || !title) {
@@ -461,6 +666,7 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
     playlists[playlistId].title = title;
     playlists[playlistId].description = description;
     playlists[playlistId].curator = curator;
+    playlists[playlistId].genres = genres;  // Save genres
     playlists[playlistId].updated = Date.now();
     
     // Upload new thumbnail if provided
@@ -508,6 +714,7 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
       description: playlist?.description,
       curator: playlist?.curator,
       songs: playlist?.songs,
+      genres: playlist?.genres,  // Include genres
       created: playlist?.created,
       updated: playlist?.updated,
       thumbnail: playlist?.thumbnail
