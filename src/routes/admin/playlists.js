@@ -1,4 +1,4 @@
-// ==================== ADMIN PLAYLISTS MANAGEMENT ====================
+// ==================== ADMINPLAYLISTS MANAGEMENT ====================
 import { getPlaylists, savePlaylists, getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
