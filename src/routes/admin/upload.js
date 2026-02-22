@@ -618,414 +618,401 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             white-space: normal;
         }
     </style>
+    
     <script>
-    // Artists data
-    const artistsData = [
-        ${Object.entries(artists).map(([id, artist]) => {
-            return `{ id: "${id}", name: "${artist.name.replace(/"/g, '\\"')}", songCount: ${artist.songs?.length || 0} }`;
-        }).join(',')}
-    ];
-    artistsData.sort((a, b) => a.name.localeCompare(b.name));
-    
-    // Genres data
-    const genresData = ${JSON.stringify(genres)};
-    
-    // State
-    let featuredArtists = [];
-    let selectedGenre = null;
-    let audioContext = null;
-    
-    // ===== URL PREVIEW FUNCTIONS - MOVED TO TOP =====
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM loaded - initializing URL preview');
+        // Artists data
+        const artistsData = [
+            ${Object.entries(artists).map(([id, artist]) => {
+                return `{ id: "${id}", name: "${artist.name.replace(/"/g, '\\"')}", songCount: ${artist.songs?.length || 0} }`;
+            }).join(',')}
+        ];
+        artistsData.sort((a, b) => a.name.localeCompare(b.name));
         
-        const titleInput = document.getElementById('songTitle');
-        const urlPreview = document.getElementById('urlPreview');
+        // Genres data
+        const genresData = ${JSON.stringify(genres)};
         
-        if (!titleInput) {
-            console.error('Title input not found!');
-            return;
-        }
+        // State
+        let featuredArtists = [];
+        let selectedGenre = null;
+        let audioContext = null;
         
-        if (!urlPreview) {
-            console.error('URL preview element not found!');
-            return;
-        }
+        // DOM Elements
+        const audioFile = document.getElementById('audioFile');
+        const durationContainer = document.getElementById('durationContainer');
+        const durationText = document.getElementById('durationText');
+        const durationInput = document.getElementById('durationInput');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const exactBadge = document.getElementById('exactBadge');
+        const submitBtn = document.getElementById('submitBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
         
-        console.log('Title input found:', titleInput);
-        
-        function generateSlug(text) {
-            if (!text || text.trim() === '') return 'untitled';
+        // ===== URL PREVIEW FUNCTIONS =====
+        (function() {
+            const titleInput = document.getElementById('songTitle');
+            const urlPreview = document.getElementById('urlPreview');
             
-            let slug = text
-                .toLowerCase()
-                // Replace ft. and feat. with 'ft'
-                .replace(/ft\./g, 'ft')
-                .replace(/feat\./g, 'feat')
-                // Remove all punctuation except hyphens and spaces
-                .replace(/[^\w\s-]/g, ' ')
-                // Replace multiple spaces with single space FIRST
-                .replace(/\s+/g, ' ')
-                // THEN replace spaces with hyphens (single space = single hyphen)
-                .replace(/ /g, '-')
-                // Remove multiple hyphens (just in case)
-                .replace(/-+/g, '-')
-                // Remove leading/trailing hyphens
-                .replace(/^-|-$/g, '');
-            
-            // If slug is empty after processing
-            if (!slug) slug = 'untitled';
-            
-            return slug;
-        }
-        
-        function updateUrlPreview() {
-            const title = titleInput.value.trim();
-            const slug = generateSlug(title);
-            const baseUrl = window.location.origin;
-            urlPreview.textContent = baseUrl + '/song/' + slug;
-            console.log('URL Preview updated:', urlPreview.textContent);
-        }
-        
-        // Initial update
-        updateUrlPreview();
-        
-        // Update preview when user types
-        titleInput.addEventListener('input', function() {
-            console.log('Input event fired, value:', this.value);
-            updateUrlPreview();
-        });
-        
-        // Also update on blur (when user leaves the field)
-        titleInput.addEventListener('blur', function() {
-            console.log('Blur event fired');
-            updateUrlPreview();
-        });
-        
-        // Make copyUrl function globally available
-        window.copyUrl = function() {
-            const url = urlPreview.textContent;
-            navigator.clipboard.writeText(url).then(() => {
-                const btn = event.target.closest('button');
-                const originalHtml = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-                setTimeout(() => {
-                    btn.innerHTML = originalHtml;
-                }, 2000);
-            }).catch(() => {
-                // Fallback for mobile
-                alert('URL: ' + url);
-            });
-        };
-    });
-    
-    // DOM Elements (rest of your existing code)
-    const audioFile = document.getElementById('audioFile');
-    const durationContainer = document.getElementById('durationContainer');
-    const durationText = document.getElementById('durationText');
-    const durationInput = document.getElementById('durationInput');
-    const progressContainer = document.getElementById('progressContainer');
-    const progressFill = document.getElementById('progressFill');
-    const exactBadge = document.getElementById('exactBadge');
-    const submitBtn = document.getElementById('submitBtn');
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    
-    // Dropdown Functions
-    function toggleDropdown(type) {
-        document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
-        const dropdown = document.getElementById(type + 'Dropdown');
-        dropdown.style.display = 'block';
-        if (type === 'genre') {
-            renderGenreList();
-            setTimeout(() => document.getElementById('genreSearch').focus(), 100);
-        } else {
-            renderArtistList(type);
-            setTimeout(() => document.getElementById(type + 'Search').focus(), 100);
-        }
-    }
-    
-    function filterArtists(type) {
-        renderArtistList(type);
-    }
-    
-    function filterGenres() {
-        renderGenreList();
-    }
-    
-    function renderArtistList(type) {
-        const searchTerm = document.getElementById(type + 'Search').value.toLowerCase();
-        const listContainer = document.getElementById(type + 'ArtistList');
-        
-        const filtered = artistsData.filter(a => a.name.toLowerCase().includes(searchTerm));
-        
-        if (filtered.length === 0) {
-            listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No artists found</div>';
-            return;
-        }
-        
-        const selectedId = type === 'primary' ? document.getElementById('primaryArtistInput').value : null;
-        
-        listContainer.innerHTML = filtered.map(artist => {
-            const isSelected = type === 'primary' ? artist.id === selectedId : featuredArtists.includes(artist.id);
-            return `
-                <div class="artist-item ${isSelected ? 'selected' : ''}" 
-                     onclick="selectArtist('${type}', '${artist.id}', '${artist.name.replace(/'/g, "\\'")}')">
-                    <span class="artist-name">${artist.name}</span>
-                    <span class="artist-song-count">${artist.songCount} songs</span>
-                </div>
-            `;
-        }).join('');
-    }
-    
-    function renderGenreList() {
-        const searchTerm = document.getElementById('genreSearch').value.toLowerCase();
-        const listContainer = document.getElementById('genreList');
-        
-        const filtered = genresData.filter(g => g.name.toLowerCase().includes(searchTerm) || g.id.toLowerCase().includes(searchTerm));
-        
-        if (filtered.length === 0) {
-            listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No genres found</div>';
-            return;
-        }
-        
-        listContainer.innerHTML = filtered.map(genre => `
-            <div class="artist-item" onclick="selectGenre('${genre.id}', '${genre.name.replace(/'/g, "\\'")}', '${genre.color}')">
-                <span style="display: flex; align-items: center; gap: 8px;">
-                    <i class="fas ${genre.icon}" style="color: ${genre.color};"></i>
-                    <span class="artist-name">${genre.name}</span>
-                </span>
-                <span class="artist-song-count">${genre.id}</span>
-            </div>
-        `).join('');
-    }
-    
-    function selectArtist(type, id, name) {
-        if (type === 'primary') {
-            document.getElementById('primaryArtistInput').value = id;
-            document.getElementById('primarySelectedDisplay').textContent = name;
-        } else {
-            if (!featuredArtists.includes(id)) {
-                featuredArtists.push(id);
-                updateFeaturedTags();
-            }
-        }
-        document.getElementById(type + 'Dropdown').style.display = 'none';
-    }
-    
-    function selectGenre(id, name, color) {
-        selectedGenre = id;
-        updateGenreTag(name, color);
-        document.getElementById('genreDropdown').style.display = 'none';
-    }
-    
-    function showCreateArtist(type) {
-        document.getElementById(type + 'Dropdown').style.display = 'none';
-        document.getElementById(type + 'NewArtistContainer').style.display = 'block';
-        document.getElementById(type + 'NewArtistName').focus();
-    }
-    
-    function showCreateGenre() {
-        document.getElementById('genreDropdown').style.display = 'none';
-        document.getElementById('genreNewContainer').style.display = 'block';
-        document.getElementById('genreNewName').focus();
-    }
-    
-    function saveNewArtist(type) {
-        const name = document.getElementById(type + 'NewArtistName').value.trim();
-        if (!name) { alert('Please enter a name'); return; }
-        
-        const tempId = 'new_' + name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-        
-        if (type === 'primary') {
-            document.getElementById('primaryArtistInput').value = tempId;
-            document.getElementById('primarySelectedDisplay').textContent = name + ' (new)';
-        } else {
-            if (!featuredArtists.includes(tempId)) {
-                featuredArtists.push(tempId);
-                updateFeaturedTags();
-            }
-        }
-        
-        document.getElementById(type + 'NewArtistContainer').style.display = 'none';
-        document.getElementById(type + 'NewArtistName').value = '';
-    }
-    
-    function saveNewGenre() {
-        const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\s+/g, '-');
-        const name = document.getElementById('genreNewName').value.trim();
-        const color = document.querySelector('input[name="newGenreColor"]:checked')?.value;
-        const icon = document.querySelector('input[name="newGenreIcon"]:checked')?.value;
-        
-        if (!id || !name || !color || !icon) {
-            alert('Please fill in all fields');
-            return;
-        }
-        
-        // Add to UI immediately
-        const newGenre = { id, name, color, icon };
-        genresData.push(newGenre);
-        selectedGenre = id;
-        updateGenreTag(name, color);
-        
-        // Store in hidden input with special prefix
-        document.getElementById('genreInput').value = 'new_' + JSON.stringify(newGenre);
-        
-        document.getElementById('genreNewContainer').style.display = 'none';
-        document.getElementById('genreNewId').value = '';
-        document.getElementById('genreNewName').value = '';
-    }
-    
-    function cancelNewArtist(type) {
-        document.getElementById(type + 'NewArtistContainer').style.display = 'none';
-        document.getElementById(type + 'NewArtistName').value = '';
-    }
-    
-    function cancelNewGenre() {
-        document.getElementById('genreNewContainer').style.display = 'none';
-        document.getElementById('genreNewId').value = '';
-        document.getElementById('genreNewName').value = '';
-    }
-    
-    // Featured Tags
-    function updateFeaturedTags() {
-        const container = document.getElementById('selectedFeaturedContainer');
-        const input = document.getElementById('featuredInput');
-        
-        container.innerHTML = '';
-        
-        if (featuredArtists.length === 0) {
-            container.innerHTML = '<div style="color:#999; font-style:italic; padding:8px 0;">No featured artists added</div>';
-            input.value = '';
-            return;
-        }
-        
-        featuredArtists.forEach((id, index) => {
-            let name = id;
-            const artist = artistsData.find(a => a.id === id);
-            if (artist) name = artist.name;
-            else if (id.startsWith('new_')) name = id.replace('new_', '');
-            
-            const tag = document.createElement('div');
-            tag.className = 'featured-tag';
-            tag.innerHTML = `<span>${name}</span><i class="fas fa-times-circle" onclick="removeFeatured(${index})"></i>`;
-            container.appendChild(tag);
-        });
-        
-        input.value = JSON.stringify(featuredArtists);
-    }
-    
-    // Genre Tag
-    function updateGenreTag(name, color) {
-        const container = document.getElementById('selectedGenreContainer');
-        const input = document.getElementById('genreInput');
-        
-        container.innerHTML = '';
-        
-        if (selectedGenre) {
-            const tag = document.createElement('div');
-            tag.className = 'genre-tag';
-            tag.style.background = color;
-            tag.innerHTML = `<span>${name}</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>`;
-            container.appendChild(tag);
-            input.value = selectedGenre;
-        } else {
-            container.innerHTML = '<div style="color:#999; font-style:italic; padding:8px 0;">No genres added</div>';
-            input.value = '';
-        }
-    }
-    
-    window.removeFeatured = function(index) {
-        featuredArtists.splice(index, 1);
-        updateFeaturedTags();
-    };
-    
-    window.removeGenre = function() {
-        selectedGenre = null;
-        updateGenreTag();
-    };
-    
-    // Close dropdown on outside click
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('.searchable-select-container')) {
-            document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
-        }
-    });
-    
-    // Album/Playlist redirects
-    document.getElementById('albumSelect').addEventListener('change', function() {
-        if (this.value === '__create_new__') window.location.href = '/admin/album/create';
-    });
-    
-    document.getElementById('playlistSelect').addEventListener('change', function() {
-        if (this.value === '__create_new__') window.location.href = '/admin/playlist/create';
-    });
-    
-    // Audio duration detection
-    audioFile.addEventListener('change', async function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        durationContainer.style.display = 'block';
-        progressContainer.style.display = 'block';
-        progressFill.style.width = '30%';
-        submitBtn.disabled = true;
-        submitBtn.style.opacity = '0.5';
-        
-        try {
-            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const buffer = await file.arrayBuffer();
-            progressFill.style.width = '60%';
-            
-            audioContext.decodeAudioData(buffer,
-                function(b) {
-                    const sec = b.duration;
-                    const min = Math.floor(sec / 60);
-                    const secs = Math.floor(sec % 60);
-                    durationText.innerHTML = `${min}:${secs.toString().padStart(2,'0')} <small style="color:#666;">(${sec.toFixed(2)}s)</small>`;
-                    durationInput.value = sec.toFixed(3);
-                    
-                    // Store milliseconds for ID3 tagging
-                    window.id3Duration = Math.floor(sec * 1000);
-                    
-                    exactBadge.style.display = 'inline-block';
-                    progressFill.style.width = '100%';
-                    submitBtn.disabled = false;
-                    submitBtn.style.opacity = '1';
-                    setTimeout(() => progressContainer.style.display = 'none', 500);
-                },
-                function() {
-                    durationText.innerHTML = 'Could not detect exact duration';
-                    durationInput.value = '0';
-                    progressContainer.style.display = 'none';
-                    submitBtn.disabled = false;
-                    submitBtn.style.opacity = '1';
-                }
-            );
-        } catch (error) {
-            durationText.innerHTML = 'Error analyzing file';
-            durationInput.value = '0';
-            progressContainer.style.display = 'none';
-            submitBtn.disabled = false;
-            submitBtn.style.opacity = '1';
-        }
-    });
-    
-    // Form submission
-    document.getElementById('uploadForm').addEventListener('submit', function(e) {
-        if (!durationInput.value || durationInput.value === '0' || durationInput.value === '0.000') {
-            if (!confirm('⚠️ No exact duration. Continue with estimate?')) {
-                e.preventDefault();
+            if (!titleInput || !urlPreview) {
+                console.error('URL preview elements not found');
                 return;
             }
+            
+            function generateSlug(text) {
+                if (!text || text.trim() === '') return 'untitled';
+                
+                let slug = text
+                    .toLowerCase()
+                    // Replace ft. and feat. with 'ft'
+                    .replace(/ft\\./g, 'ft')
+                    .replace(/feat\\./g, 'feat')
+                    // Remove all punctuation except hyphens and spaces
+                    .replace(/[^\\w\\s-]/g, ' ')
+                    // Replace multiple spaces with single space FIRST
+                    .replace(/\\s+/g, ' ')
+                    // THEN replace spaces with hyphens (single space = single hyphen)
+                    .replace(/ /g, '-')
+                    // Remove multiple hyphens (just in case)
+                    .replace(/-+/g, '-')
+                    // Remove leading/trailing hyphens
+                    .replace(/^-|-$/g, '');
+                
+                // If slug is empty after processing
+                if (!slug) slug = 'untitled';
+                
+                return slug;
+            }
+            
+            function updateUrlPreview() {
+                const title = titleInput.value.trim();
+                const slug = generateSlug(title);
+                const baseUrl = window.location.origin;
+                urlPreview.textContent = baseUrl + '/song/' + slug;
+            }
+            
+            // Initial update
+            updateUrlPreview();
+            
+            // Update preview when user types
+            titleInput.addEventListener('input', function() {
+                updateUrlPreview();
+            });
+            
+            // Also update on blur
+            titleInput.addEventListener('blur', function() {
+                updateUrlPreview();
+            });
+            
+            // Make copyUrl function globally available
+            window.copyUrl = function() {
+                const url = urlPreview.textContent;
+                navigator.clipboard.writeText(url).then(() => {
+                    const btn = event.target.closest('button');
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                    setTimeout(() => {
+                        btn.innerHTML = originalHtml;
+                    }, 2000);
+                }).catch(() => {
+                    // Fallback for mobile
+                    alert('URL: ' + url);
+                });
+            };
+        })();
+        
+        // Dropdown Functions
+        function toggleDropdown(type) {
+            document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
+            const dropdown = document.getElementById(type + 'Dropdown');
+            dropdown.style.display = 'block';
+            if (type === 'genre') {
+                renderGenreList();
+                setTimeout(() => document.getElementById('genreSearch').focus(), 100);
+            } else {
+                renderArtistList(type);
+                setTimeout(() => document.getElementById(type + 'Search').focus(), 100);
+            }
         }
-        loadingOverlay.style.display = 'flex';
-    });
-    
-    // Initialize
-    updateFeaturedTags();
-    updateGenreTag();
-</script>
-    
+        
+        function filterArtists(type) {
+            renderArtistList(type);
+        }
+        
+        function filterGenres() {
+            renderGenreList();
+        }
+        
+        function renderArtistList(type) {
+            const searchTerm = document.getElementById(type + 'Search').value.toLowerCase();
+            const listContainer = document.getElementById(type + 'ArtistList');
+            
+            const filtered = artistsData.filter(a => a.name.toLowerCase().includes(searchTerm));
+            
+            if (filtered.length === 0) {
+                listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No artists found</div>';
+                return;
+            }
+            
+            const selectedId = type === 'primary' ? document.getElementById('primaryArtistInput').value : null;
+            
+            listContainer.innerHTML = filtered.map(artist => {
+                const isSelected = type === 'primary' ? artist.id === selectedId : featuredArtists.includes(artist.id);
+                return \`
+                    <div class="artist-item \${isSelected ? 'selected' : ''}" 
+                         onclick="selectArtist('\${type}', '\${artist.id}', '\${artist.name.replace(/'/g, "\\\\'")}')">
+                        <span class="artist-name">\${artist.name}</span>
+                        <span class="artist-song-count">\${artist.songCount} songs</span>
+                    </div>
+                \`;
+            }).join('');
+        }
+        
+        function renderGenreList() {
+            const searchTerm = document.getElementById('genreSearch').value.toLowerCase();
+            const listContainer = document.getElementById('genreList');
+            
+            const filtered = genresData.filter(g => g.name.toLowerCase().includes(searchTerm) || g.id.toLowerCase().includes(searchTerm));
+            
+            if (filtered.length === 0) {
+                listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No genres found</div>';
+                return;
+            }
+            
+            listContainer.innerHTML = filtered.map(genre => \`
+                <div class="artist-item" onclick="selectGenre('\${genre.id}', '\${genre.name.replace(/'/g, "\\\\'")}', '\${genre.color}')">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <i class="fas \${genre.icon}" style="color: \${genre.color};"></i>
+                        <span class="artist-name">\${genre.name}</span>
+                    </span>
+                    <span class="artist-song-count">\${genre.id}</span>
+                </div>
+            \`).join('');
+        }
+        
+        function selectArtist(type, id, name) {
+            if (type === 'primary') {
+                document.getElementById('primaryArtistInput').value = id;
+                document.getElementById('primarySelectedDisplay').textContent = name;
+            } else {
+                if (!featuredArtists.includes(id)) {
+                    featuredArtists.push(id);
+                    updateFeaturedTags();
+                }
+            }
+            document.getElementById(type + 'Dropdown').style.display = 'none';
+        }
+        
+        function selectGenre(id, name, color) {
+            selectedGenre = id;
+            updateGenreTag(name, color);
+            document.getElementById('genreDropdown').style.display = 'none';
+        }
+        
+        function showCreateArtist(type) {
+            document.getElementById(type + 'Dropdown').style.display = 'none';
+            document.getElementById(type + 'NewArtistContainer').style.display = 'block';
+            document.getElementById(type + 'NewArtistName').focus();
+        }
+        
+        function showCreateGenre() {
+            document.getElementById('genreDropdown').style.display = 'none';
+            document.getElementById('genreNewContainer').style.display = 'block';
+            document.getElementById('genreNewName').focus();
+        }
+        
+        function saveNewArtist(type) {
+            const name = document.getElementById(type + 'NewArtistName').value.trim();
+            if (!name) { alert('Please enter a name'); return; }
+            
+            const tempId = 'new_' + name.replace(/\\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+            
+            if (type === 'primary') {
+                document.getElementById('primaryArtistInput').value = tempId;
+                document.getElementById('primarySelectedDisplay').textContent = name + ' (new)';
+            } else {
+                if (!featuredArtists.includes(tempId)) {
+                    featuredArtists.push(tempId);
+                    updateFeaturedTags();
+                }
+            }
+            
+            document.getElementById(type + 'NewArtistContainer').style.display = 'none';
+            document.getElementById(type + 'NewArtistName').value = '';
+        }
+        
+        function saveNewGenre() {
+            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\\s+/g, '-');
+            const name = document.getElementById('genreNewName').value.trim();
+            const color = document.querySelector('input[name="newGenreColor"]:checked')?.value;
+            const icon = document.querySelector('input[name="newGenreIcon"]:checked')?.value;
+            
+            if (!id || !name || !color || !icon) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            // Add to UI immediately
+            const newGenre = { id, name, color, icon };
+            genresData.push(newGenre);
+            selectedGenre = id;
+            updateGenreTag(name, color);
+            
+            // Store in hidden input with special prefix
+            document.getElementById('genreInput').value = 'new_' + JSON.stringify(newGenre);
+            
+            document.getElementById('genreNewContainer').style.display = 'none';
+            document.getElementById('genreNewId').value = '';
+            document.getElementById('genreNewName').value = '';
+        }
+        
+        function cancelNewArtist(type) {
+            document.getElementById(type + 'NewArtistContainer').style.display = 'none';
+            document.getElementById(type + 'NewArtistName').value = '';
+        }
+        
+        function cancelNewGenre() {
+            document.getElementById('genreNewContainer').style.display = 'none';
+            document.getElementById('genreNewId').value = '';
+            document.getElementById('genreNewName').value = '';
+        }
+        
+        // Featured Tags
+        function updateFeaturedTags() {
+            const container = document.getElementById('selectedFeaturedContainer');
+            const input = document.getElementById('featuredInput');
+            
+            container.innerHTML = '';
+            
+            if (featuredArtists.length === 0) {
+                container.innerHTML = '<div style="color:#999; font-style:italic; padding:8px 0;">No featured artists added</div>';
+                input.value = '';
+                return;
+            }
+            
+            featuredArtists.forEach((id, index) => {
+                let name = id;
+                const artist = artistsData.find(a => a.id === id);
+                if (artist) name = artist.name;
+                else if (id.startsWith('new_')) name = id.replace('new_', '');
+                
+                const tag = document.createElement('div');
+                tag.className = 'featured-tag';
+                tag.innerHTML = \`<span>\${name}</span><i class="fas fa-times-circle" onclick="removeFeatured(\${index})"></i>\`;
+                container.appendChild(tag);
+            });
+            
+            input.value = JSON.stringify(featuredArtists);
+        }
+        
+        // Genre Tag
+        function updateGenreTag(name, color) {
+            const container = document.getElementById('selectedGenreContainer');
+            const input = document.getElementById('genreInput');
+            
+            container.innerHTML = '';
+            
+            if (selectedGenre) {
+                const tag = document.createElement('div');
+                tag.className = 'genre-tag';
+                tag.style.background = color;
+                tag.innerHTML = \`<span>\${name}</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>\`;
+                container.appendChild(tag);
+                input.value = selectedGenre;
+            } else {
+                container.innerHTML = '<div style="color:#999; font-style:italic; padding:8px 0;">No genres added</div>';
+                input.value = '';
+            }
+        }
+        
+        window.removeFeatured = function(index) {
+            featuredArtists.splice(index, 1);
+            updateFeaturedTags();
+        };
+        
+        window.removeGenre = function() {
+            selectedGenre = null;
+            updateGenreTag();
+        };
+        
+        // Close dropdown on outside click
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.searchable-select-container')) {
+                document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
+            }
+        });
+        
+        // Album/Playlist redirects
+        document.getElementById('albumSelect').addEventListener('change', function() {
+            if (this.value === '__create_new__') window.location.href = '/admin/album/create';
+        });
+        
+        document.getElementById('playlistSelect').addEventListener('change', function() {
+            if (this.value === '__create_new__') window.location.href = '/admin/playlist/create';
+        });
+        
+        // Audio duration detection
+        audioFile.addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            durationContainer.style.display = 'block';
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '30%';
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.5';
+            
+            try {
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const buffer = await file.arrayBuffer();
+                progressFill.style.width = '60%';
+                
+                audioContext.decodeAudioData(buffer,
+                    function(b) {
+                        const sec = b.duration;
+                        const min = Math.floor(sec / 60);
+                        const secs = Math.floor(sec % 60);
+                        durationText.innerHTML = \`\${min}:\${secs.toString().padStart(2,'0')} <small style="color:#666;">(\${sec.toFixed(2)}s)</small>\`;
+                        durationInput.value = sec.toFixed(3);
+                        
+                        // Store milliseconds for ID3 tagging
+                        window.id3Duration = Math.floor(sec * 1000);
+                        
+                        exactBadge.style.display = 'inline-block';
+                        progressFill.style.width = '100%';
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                        setTimeout(() => progressContainer.style.display = 'none', 500);
+                    },
+                    function() {
+                        durationText.innerHTML = 'Could not detect exact duration';
+                        durationInput.value = '0';
+                        progressContainer.style.display = 'none';
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                    }
+                );
+            } catch (error) {
+                durationText.innerHTML = 'Error analyzing file';
+                durationInput.value = '0';
+                progressContainer.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+            }
+        });
+        
+        // Form submission
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            if (!durationInput.value || durationInput.value === '0' || durationInput.value === '0.000') {
+                if (!confirm('⚠️ No exact duration. Continue with estimate?')) {
+                    e.preventDefault();
+                    return;
+                }
+            }
+            loadingOverlay.style.display = 'flex';
+        });
+        
+        // Initialize
+        updateFeaturedTags();
+        updateGenreTag();
     </script>
   `;
 
