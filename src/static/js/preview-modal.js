@@ -1,4 +1,4 @@
-// ==================== SIMPLE PREVIEW MODAL TEST ====================
+// ==================== SIMPLE  PREVIEW MODAL TEST ====================
 
 console.log('✅ Preview modal script loaded');
 
