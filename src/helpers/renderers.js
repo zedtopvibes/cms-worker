@@ -189,8 +189,8 @@ export function generateNewReleaseSongItem(song, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
-  // Use ID with .mp3 extension - slug removed
-  const songUrl = `/song/${encodeURIComponent(song.id + ".mp3")}`;
+  // FIXED: Removed .mp3 extension
+  const songUrl = `/song/${encodeURIComponent(song.id)}`;
   
   return `
     <div class="album-item" onclick="window.location='${songUrl}'">
