@@ -4,12 +4,12 @@ import { incrementPageView } from '../helpers/pageViews.js';
 import { getPlaylists, getAlbums, getArtists, getMetadata, savePlaylists } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
-import { SlugManager } from '../helpers/slug.js';
+// REMOVE: import { SlugManager } from '../helpers/slug.js';
 
 export async function handlePlaylists(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
-  const slugManager = new SlugManager(env);
+  // REMOVE: const slugManager = new SlugManager(env);
 
   // Playlists list page
   if (path === "/playlists") {
@@ -78,8 +78,8 @@ export async function handlePlaylists(req, env, ctx) {
         } catch (e) {}
       }
 
-      // Get playlist slug
-      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      // REMOVE slug lookup - use pl.id directly
+      // const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
 
       const songCount = pl.songs?.length || 0;
       const date = new Date(pl.created);
@@ -93,7 +93,7 @@ export async function handlePlaylists(req, env, ctx) {
         : '';
 
       return `
-        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
           <div class="album-thumbnail ${thumbnailClass}">
             ${thumbnailContent}
           </div>
@@ -160,12 +160,14 @@ export async function handlePlaylists(req, env, ctx) {
         } catch (e) {}
       }
       
-      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      // REMOVE slug lookup - use pl.id directly
+      // const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      
       const songCount = pl.songs?.length || 0;
       const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
       const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
       return `
-        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
           <div class="album-thumbnail ${thumbnailClass}">
             ${thumbnailContent}
           </div>
@@ -199,13 +201,15 @@ export async function handlePlaylists(req, env, ctx) {
         } catch (e) {}
       }
       
-      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      // REMOVE slug lookup - use artist.id directly
+      // const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      
       const bgStyle = hasImage
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
       const songCount = artist.songs?.length || 0;
       return `
-        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
+        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -237,7 +241,9 @@ export async function handlePlaylists(req, env, ctx) {
         } catch (e) {}
       }
       
-      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      // REMOVE slug lookup - use pl.id directly
+      // const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      
       const songCount = pl.songs?.length || 0;
       const date = new Date(pl.created);
       const now = new Date();
@@ -246,7 +252,7 @@ export async function handlePlaylists(req, env, ctx) {
       const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
       const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
       return `
-        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
           <div class="album-thumbnail ${thumbnailClass}">
             ${thumbnailContent}
           </div>
@@ -350,11 +356,11 @@ export async function handlePlaylists(req, env, ctx) {
 
   // Playlist detail page
   if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
-    // Get slug from URL
-    const slug = decodeURIComponent(path.replace("/playlist/", ""));
+    // Get ID from URL
+    const playlistId = decodeURIComponent(path.replace("/playlist/", ""));
     
-    // Get playlist ID from slug
-    const playlistId = await slugManager.getIdFromSlug('playlists', slug);
+    // REMOVE slug lookup - use playlistId directly
+    // const playlistId = await slugManager.getIdFromSlug('playlists', slug);
     
     if (!playlistId) {
       return new Response("Playlist not found", { status: 404 });
@@ -413,7 +419,8 @@ export async function handlePlaylists(req, env, ctx) {
 
     const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
       const meta = await getMetadata(env, songKey);
-      const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+      // REMOVE slug lookup - use songKey directly
+      // const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
       
       let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
       let artistDisplay = "";
@@ -448,7 +455,7 @@ export async function handlePlaylists(req, env, ctx) {
       const trackNumber = (index + 1).toString().padStart(2, '0');
 
       return `
-        <div class="album-item" onclick="window.location='/song/${songSlug}?playlist=${slug}'">
+        <div class="album-item" onclick="window.location='/song/${songKey}?playlist=${playlistId}'">
           <div class="album-thumbnail ${hasImage ? '' : 'song-thumbnail placeholder'}">
             ${hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : ''}
           </div>
@@ -514,12 +521,14 @@ export async function handlePlaylists(req, env, ctx) {
             }
           } catch (e) {}
         }
-        const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+        // REMOVE slug lookup - use album.id directly
+        // const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+        
         const date = new Date(album.created).toLocaleDateString('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric'
         });
         return `
-          <div class="album-item" onclick="window.location='/album/${albumSlug}'">
+          <div class="album-item" onclick="window.location='/album/${album.id}'">
             <div class="album-thumbnail ${hasImage ? '' : 'placeholder'}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
             </div>
@@ -560,7 +569,9 @@ export async function handlePlaylists(req, env, ctx) {
         } catch (e) {}
       }
       
-      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      // REMOVE slug lookup - use pl.id directly
+      // const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      
       const songCount = pl.songs?.length || 0;
       const date = new Date(pl.created).toLocaleDateString('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric'
@@ -568,7 +579,7 @@ export async function handlePlaylists(req, env, ctx) {
       const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
       const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
       return `
-        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+        <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
           <div class="album-thumbnail ${thumbnailClass}">
             ${thumbnailContent}
           </div>
@@ -602,13 +613,15 @@ export async function handlePlaylists(req, env, ctx) {
         } catch (e) {}
       }
       
-      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      // REMOVE slug lookup - use artist.id directly
+      // const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      
       const bgStyle = hasImage
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
       const songCount = artist.songs?.length || 0;
       return `
-        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
+        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -815,8 +828,8 @@ export async function handlePlaylists(req, env, ctx) {
         await env.media.put(thumbnailKey, thumbnailFile.stream());
       }
 
-      // Generate slug
-      const slug = slugManager.generatePlaylistSlug(title);
+      // REMOVE slug generation
+      // const slug = slugManager.generatePlaylistSlug(title);
 
       // Create playlist object
       playlists[playlistId] = {
@@ -832,12 +845,12 @@ export async function handlePlaylists(req, env, ctx) {
 
       await savePlaylists(env, playlists);
 
-      // Register slug
-      await slugManager.registerSlug('playlists', playlistId, slug, {
-        title: title,
-        curator: curator,
-        created: Date.now()
-      });
+      // REMOVE slug registration
+      // await slugManager.registerSlug('playlists', playlistId, slug, {
+      //   title: title,
+      //   curator: curator,
+      //   created: Date.now()
+      // });
 
       const html = `
       <!DOCTYPE html>
@@ -860,8 +873,8 @@ export async function handlePlaylists(req, env, ctx) {
         <div class="success">
           <h1>✅ Playlist Created!</h1>
           <p style="font-size: 1.2rem; margin: 20px 0;">"${title}"</p>
-          <div class="url">/playlist/${slug}</div>
-          <a href="/playlist/${slug}" class="btn">View Playlist</a>
+          <div class="url">/playlist/${playlistId}</div>
+          <a href="/playlist/${playlistId}" class="btn">View Playlist</a>
           <a href="/upload" class="btn btn-upload">Upload Songs</a>
           <p style="margin-top: 30px;">
             <a href="/playlist/create">Create Another Playlist</a> | 
@@ -884,16 +897,14 @@ export async function handlePlaylists(req, env, ctx) {
   // API endpoint for getting all playlists
   if (path === "/api/playlists/list" && req.method === "GET") {
     const playlists = await getPlaylists(env);
-    const playlistArray = await Promise.all(Object.values(playlists).map(async p => {
-      const playlistSlug = await slugManager.getSlugFromId('playlists', p.id) || p.id;
-      return {
-        id: p.id,
-        slug: playlistSlug,
-        title: p.title,
-        songs: p.songs || [],
-        created: p.created,
-        songCount: (p.songs || []).length
-      };
+    const playlistArray = Object.values(playlists).map(p => ({
+      id: p.id,
+      // REMOVE slug from API response
+      // slug: playlistSlug,
+      title: p.title,
+      songs: p.songs || [],
+      created: p.created,
+      songCount: (p.songs || []).length
     }));
     
     return new Response(JSON.stringify(playlistArray), {
