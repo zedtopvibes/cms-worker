@@ -1,7 +1,7 @@
 // ==================== HOMEPAGE  ROUTE ====================
 import { incrementPageView } from '../helpers/pageViews.js';
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../helpers/storage.js';
-import { SlugManager } from '../helpers/slug.js';
+// REMOVE: import { SlugManager } from '../helpers/slug.js';
 
 // Cache for homepage
 let homepageCache = null;
@@ -11,7 +11,7 @@ const CACHE_DURATION = 30000;
 export async function handleHomepage(req, env, ctx) {
   const url = new URL(req.url);
   const now = Date.now();
-  const slugManager = new SlugManager(env);
+  // REMOVE: const slugManager = new SlugManager(env);
 
   // Track homepage view
   ctx.waitUntil(incrementPageView(env, 'page', 'homepage'));
@@ -61,8 +61,8 @@ export async function handleHomepage(req, env, ctx) {
       } catch (e) {}
     }
     
-    // Get album slug
-    const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+    // REMOVE slug lookup - use album.id directly
+    // const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
     
     let primaryArtist = "Various";
     if (album.artists && album.artists.length > 0) {
@@ -82,7 +82,7 @@ export async function handleHomepage(req, env, ctx) {
     const thumbnailClass = hasImage ? '' : ' placeholder';
     
     return `
-      <div class="album-item" onclick="window.location='/album/${albumSlug}'">
+      <div class="album-item" onclick="window.location='/album/${album.id}'">
         <div class="album-thumbnail${thumbnailClass}">
           ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
         </div>
@@ -128,8 +128,8 @@ export async function handleHomepage(req, env, ctx) {
     const baseName = fileName.replace(".mp3", "");
     const meta = await getMetadata(env, baseName);
     
-    // Get song slug
-    const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
+    // REMOVE slug lookup - use baseName directly
+    // const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
     
     let title = meta ? meta.title : baseName.split("_").slice(1).join(" ");
     let artistDisplay = "";
@@ -166,7 +166,7 @@ export async function handleHomepage(req, env, ctx) {
     const hasImage = thumbUrl !== '/images/placeholder.jpg';
     
     return `
-      <div class="album-item" onclick="window.location='/song/${songSlug}'">
+      <div class="album-item" onclick="window.location='/song/${baseName}'">
         <div class="album-thumbnail song-thumbnail" ${hasImage ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"` : ''}>
           ${hasImage ? '' : ''}
         </div>
@@ -196,8 +196,8 @@ export async function handleHomepage(req, env, ctx) {
       } catch (e) {}
     }
     
-    // Get artist slug
-    const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+    // REMOVE slug lookup - use artist.id directly
+    // const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
     
     const albumCount = artist.albums?.length || 0;
     const songCount = artist.songs?.length || 0;
@@ -207,7 +207,7 @@ export async function handleHomepage(req, env, ctx) {
       : '';
     
     return `
-      <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
+      <div class="album-item" onclick="window.location='/artist/${artist.id}'">
         <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
         <div class="album-info">
           <span class="album-title">${artist.name}</span>
@@ -238,8 +238,8 @@ export async function handleHomepage(req, env, ctx) {
       } catch (e) {}
     }
     
-    // Get album slug
-    const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+    // REMOVE slug lookup - use album.id directly
+    // const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
     
     const primaryArtist = (album.artists?.length && artists[album.artists[0]]) 
       ? artists[album.artists[0]].name 
@@ -256,7 +256,7 @@ export async function handleHomepage(req, env, ctx) {
     const thumbnailClass = hasImage ? '' : ' placeholder';
     
     return `
-      <div class="album-item" onclick="window.location='/album/${albumSlug}'">
+      <div class="album-item" onclick="window.location='/album/${album.id}'">
         <div class="album-thumbnail${thumbnailClass}">
           ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
         </div>
@@ -291,8 +291,8 @@ export async function handleHomepage(req, env, ctx) {
       } catch (e) {}
     }
 
-    // Get playlist slug
-    const playlistSlug = await slugManager.getSlugFromId('playlists', playlist.id) || playlist.id;
+    // REMOVE slug lookup - use playlist.id directly
+    // const playlistSlug = await slugManager.getSlugFromId('playlists', playlist.id) || playlist.id;
 
     const songCount = playlist.songs?.length || 0;
     const date = new Date(playlist.created);
@@ -306,7 +306,7 @@ export async function handleHomepage(req, env, ctx) {
     const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${playlist.title}" loading="lazy">` : '';
     
     return `
-      <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+      <div class="album-item" onclick="window.location='/playlist/${playlist.id}'">
         <div class="album-thumbnail ${thumbnailClass}">
           ${thumbnailContent}
         </div>
@@ -339,8 +339,8 @@ export async function handleHomepage(req, env, ctx) {
       } catch (e) {}
     }
     
-    // Get album slug
-    const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+    // REMOVE slug lookup - use album.id directly
+    // const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
     
     const primaryArtist = (album.artists?.length && artists[album.artists[0]]) 
       ? artists[album.artists[0]].name 
@@ -357,7 +357,7 @@ export async function handleHomepage(req, env, ctx) {
     const thumbnailClass = hasImage ? '' : ' placeholder';
     
     return `
-      <div class="album-item" onclick="window.location='/album/${albumSlug}'">
+      <div class="album-item" onclick="window.location='/album/${album.id}'">
         <div class="album-thumbnail${thumbnailClass}">
           ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
         </div>
