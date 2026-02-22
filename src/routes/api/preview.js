@@ -1,4 +1,4 @@
-// ==================== API: PREVIEW ====================
+// ==================== API:  PREVIEW ====================
 import { getPreviewData } from '../../helpers/preview.js';
 
 export async function handlePreview(req, env, ctx) {
