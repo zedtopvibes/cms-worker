@@ -3,6 +3,7 @@ import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSong
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { GenreManager } from '../../helpers/genreManager.js';
+import { SlugManager } from '../../helpers/slug.js';
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
@@ -826,6 +827,22 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       genre // Add genre to metadata
     };
     await saveMetadata(env, baseName, metadata);
+
+
+// Generate and save slug from title
+const slugManager = new SlugManager(env);
+const slug = slugManager.generateSongSlug(title);
+await slugManager.registerSlug('songs', baseName, slug, {
+  title,
+  artist: artistId,
+  artistName,
+  duration,
+  genre
+});
+
+// Store slug in metadata for easy access
+metadata.slug = slug;
+await saveMetadata(env, baseName, metadata);
 
     if (albumId && albumId !== '' && albumId !== '__create_new__') {
       await addSongToAlbum(env, albumId, baseName);
