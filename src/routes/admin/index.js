@@ -1,4 +1,4 @@
-// ==================== ADMIN  MAIN ROUTER ====================
+// ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
@@ -97,7 +97,7 @@ import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js'
 import { handleGenres } from './genres.js';
 import { GenreManager } from '../../helpers/genreManager.js';
 
-import { handleSlugs } from './slugs.js';
+// REMOVE: import { handleSlugs } from './slugs.js';
 
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
@@ -546,7 +546,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       }
       
-      // SUCCESS PAGE - UPDATED WITH SLUGS
+      // SUCCESS PAGE - UPDATED WITH SLUGS (NEEDS FIX)
       const content = `
         <div style="text-align: center; padding: 20px 10px;">
             <div style="background: #d4edda; color: #155724; padding: 25px 20px; border-radius: 12px; margin-bottom: 30px;">
@@ -560,12 +560,12 @@ export async function handleAdmin(req, env, ctx) {
                 </div>
                 <div style="margin-top: 15px; background: #f8f9fa; padding: 10px; border-radius: 8px;">
                     <i class="fas fa-link" style="color: #ff5500;"></i>
-                    <span style="font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px;">/song/${result.slug}</span>
+                    <span style="font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px;">/song/${result.baseName}</span>
                 </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 12px; max-width: 320px; margin: 0 auto;">
-                <!-- View Song - Now using slug -->
-                <a href="/song/${result.slug}" class="btn btn-primary" target="_blank" style="padding: 16px;">
+                <!-- View Song - Now using baseName -->
+                <a href="/song/${result.baseName}" class="btn btn-primary" target="_blank" style="padding: 16px;">
                     <i class="fas fa-play"></i> View Song
                 </a>
                 
@@ -1113,10 +1113,10 @@ export async function handleAdmin(req, env, ctx) {
     return await handleGenres(req, env, ctx, auth);
   }
 
-// ===== SLUG MANAGER =====
-if (path === '/slugs') {
-  return await handleSlugs(req, env, ctx, auth);
-}
+  // REMOVE SLUG MANAGER ROUTE
+  // if (path === '/slugs') {
+  //   return await handleSlugs(req, env, ctx, auth);
+  // }
 
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
