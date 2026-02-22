@@ -639,35 +639,27 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         
         // ===== URL PREVIEW FUNCTIONS =====
         function generateSlug(text) {
-            if (!text || text.trim() === '') return '...';
+            // Simplified logic for real-time responsiveness
+            if (!text) return '...';
             
-            let slug = text
+            return text
                 .toLowerCase()
-                // Replace ft. and feat. with 'ft'
                 .replace(/ft\./g, 'ft')
                 .replace(/feat\./g, 'feat')
-                // Remove all punctuation except hyphens and spaces
-                .replace(/[^\w\s-]/g, ' ')
-                // Replace multiple spaces with single space FIRST
-                .replace(/\s+/g, ' ')
-                // THEN replace spaces with hyphens
-                .replace(/ /g, '-')
-                // Remove multiple hyphens
-                .replace(/-+/g, '-')
-                // Remove leading/trailing hyphens
-                .replace(/^-|-$/g, '');
-            
-            return slug || '...';
+                .replace(/[^\w\s-]/g, '') // Remove punctuation immediately
+                .trim()
+                .replace(/\s+/g, '-')     // Spaces to hyphens
+                .replace(/-+/g, '-');     // Multiple hyphens to one
         }
         
         function updateUrlPreview() {
-            const title = titleInput.value.trim();
+            const title = titleInput.value;
             const slug = generateSlug(title);
             const baseUrl = window.location.origin;
-            urlPreview.textContent = \`\${baseUrl}/song/\${slug}\`;
+            urlPreview.textContent = \`\${baseUrl}/song/\${slug || '...'}\`;
         }
         
-        // TRIGGER IMMEDIATELY ON INPUT
+        // REMOVED TIMEOUT FOR INSTANT UPDATE
         titleInput.addEventListener('input', updateUrlPreview);
         
         // Initial update
