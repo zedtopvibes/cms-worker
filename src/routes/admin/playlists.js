@@ -6,6 +6,7 @@ import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
+import { SlugManager } from '../../helpers/slug.js';
 
 // ===== LIST ALL PLAYLISTS =====
 export async function handleAdminPlaylists(req, env, ctx, auth) {
@@ -678,6 +679,10 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
     }
     
     await savePlaylists(env, playlists);
+// Generate and save slug for playlist
+const slugManager = new SlugManager(env);
+const slug = slugManager.generatePlaylistSlug(title);
+await slugManager.registerSlug('playlists', playlistId, slug, { title });
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'playlist', playlistId, title);
