@@ -37,7 +37,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         </h2>
         
         <form id="uploadForm" action="/admin/upload" method="POST" enctype="multipart/form-data">
-            <!-- Song Title -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-heading" style="color: #ff5500; width: 20px;"></i>
@@ -45,7 +44,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </label>
                 <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. Drake - God's Plan" required>
                 
-                <!-- URL Preview Section - Mobile Friendly -->
                 <div style="margin-top: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;">
                     <div style="display: flex; align-items: flex-start; gap: 8px; flex-direction: column;">
                         <div style="display: flex; align-items: center; gap: 5px; color: #666; width: 100%;">
@@ -68,7 +66,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </div>
             </div>
             
-            <!-- Primary Artist - Searchable Select -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-microphone" style="color: #ff5500; width: 20px;"></i>
@@ -110,7 +107,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </div>
             </div>
             
-            <!-- Featured Artists -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-users" style="color: #ff5500; width: 20px;"></i>
@@ -157,7 +153,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </p>
             </div>
             
-            <!-- GENRE SELECTION -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-tags" style="color: #ff5500; width: 20px;"></i>
@@ -239,7 +234,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </p>
             </div>
             
-            <!-- Description -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-align-left" style="color: #ff5500; width: 20px;"></i>
@@ -248,7 +242,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <textarea name="description" class="form-control" rows="3" placeholder="Song description..." required></textarea>
             </div>
             
-            <!-- Album Selection -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-compact-disc" style="color: #ff5500; width: 20px;"></i>
@@ -261,7 +254,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </select>
             </div>
             
-            <!-- Playlist Selection -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-list" style="color: #ff5500; width: 20px;"></i>
@@ -274,7 +266,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </select>
             </div>
             
-            <!-- Audio File -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-file-audio" style="color: #ff5500; width: 20px;"></i>
@@ -302,7 +293,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <input type="hidden" name="duration" id="durationInput" value="">
             </div>
             
-            <!-- Thumbnail Image -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-image" style="color: #ff5500; width: 20px;"></i>
@@ -314,14 +304,12 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </p>
             </div>
             
-            <!-- Submit Button -->
             <div style="margin-top: 30px;">
                 <button type="submit" id="submitBtn" class="btn btn-primary btn-block" style="padding: 16px; width: 100%;">
                     <i class="fas fa-cloud-upload-alt"></i> Upload Song
                 </button>
             </div>
             
-            <!-- Loading Overlay -->
             <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; flex-direction: column;">
                 <div style="background: white; padding: 30px; border-radius: 12px; text-align: center; max-width: 300px; margin: 20px;">
                     <i class="fas fa-spinner fa-spin" style="font-size: 3rem; color: #ff5500; margin-bottom: 20px;"></i>
@@ -651,7 +639,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         
         // ===== URL PREVIEW FUNCTIONS =====
         function generateSlug(text) {
-            if (!text || text.trim() === '') return 'untitled';
+            if (!text || text.trim() === '') return '...';
             
             let slug = text
                 .toLowerCase()
@@ -662,17 +650,14 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 .replace(/[^\w\s-]/g, ' ')
                 // Replace multiple spaces with single space FIRST
                 .replace(/\s+/g, ' ')
-                // THEN replace spaces with hyphens (single space = single hyphen)
+                // THEN replace spaces with hyphens
                 .replace(/ /g, '-')
-                // Remove multiple hyphens (just in case)
+                // Remove multiple hyphens
                 .replace(/-+/g, '-')
                 // Remove leading/trailing hyphens
                 .replace(/^-|-$/g, '');
             
-            // If slug is empty after processing
-            if (!slug) slug = 'untitled';
-            
-            return slug;
+            return slug || '...';
         }
         
         function updateUrlPreview() {
@@ -680,15 +665,10 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const slug = generateSlug(title);
             const baseUrl = window.location.origin;
             urlPreview.textContent = \`\${baseUrl}/song/\${slug}\`;
-            console.log('URL Preview:', urlPreview.textContent); // For debugging
         }
         
-        // Update preview when user types
-        let slugUpdateTimeout;
-        titleInput.addEventListener('input', function() {
-            clearTimeout(slugUpdateTimeout);
-            slugUpdateTimeout = setTimeout(updateUrlPreview, 300);
-        });
+        // TRIGGER IMMEDIATELY ON INPUT
+        titleInput.addEventListener('input', updateUrlPreview);
         
         // Initial update
         updateUrlPreview();
