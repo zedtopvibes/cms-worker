@@ -6,7 +6,7 @@ import { formatDuration, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-import { SlugManager } from '../../helpers/slug.js';  // ADD THIS IMPORT
+// REMOVE: import { SlugManager } from '../../helpers/slug.js';  // REMOVE THIS IMPORT
 
 export async function handleAdminSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -14,7 +14,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 20;
-  const slugManager = new SlugManager(env);  // ADD THIS
+  // REMOVE: const slugManager = new SlugManager(env);  // REMOVE THIS
 
   // Get all songs
   const songList = await env.media.list({ prefix: "songs/" });
@@ -31,8 +31,8 @@ export async function handleAdminSongs(req, env, ctx, auth) {
       const stats = await getSongStats(baseName, env);
       const pageViews = await getPageViews(env, 'song', baseName);
       
-      // Get slug for this song
-      const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
+      // REMOVE slug lookup - use baseName directly
+      // const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
       
       // Find album
       let albumInfo = null;
@@ -54,7 +54,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
       return {
         fileName,
         baseName,
-        slug: songSlug,  // ADD THIS
+        // slug: songSlug,  // REMOVE THIS
         title: meta?.title || baseName.split('_').slice(1).join(' '),
         primaryArtist: meta?.primaryArtist || baseName.split('_')[0],
         primaryArtistName,
@@ -336,10 +336,10 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   const meta = await getMetadata(env, baseName);
   const artists = await getArtists(env);
   const albums = await getAlbums(env);
-  const slugManager = new SlugManager(env);  // ADD THIS
+  // REMOVE: const slugManager = new SlugManager(env);  // REMOVE THIS
   
-  // Get song slug
-  const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
+  // REMOVE slug lookup - use baseName directly
+  // const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -376,7 +376,7 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
             <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #ff5500;">
                 <i class="fas fa-link" style="color: #ff5500;"></i>
                 <span style="margin-left: 5px;">Song URL:</span>
-                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/song/${songSlug}</code>
+                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/song/${baseName}</code>
             </div>
         </div>
         
@@ -633,7 +633,7 @@ function generateTableRow(song) {
             <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
                 <i class="fas fa-trash"></i>
             </button>
-            <a href="/song/${song.slug}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
+            <a href="/song/${song.baseName}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
                 <i class="fas fa-external-link-alt"></i>
             </a>
         </td>
@@ -669,4 +669,4 @@ function generatePagination(currentPage, totalPages, search, sort) {
   
   html += '</div>';
   return html;
-} 
+}
