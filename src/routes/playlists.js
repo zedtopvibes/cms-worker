@@ -1,101 +1,191 @@
-// ==================== ARTISTS ROUTES ====================
-// ALL IMPORTS AT THE TOP 
+// ==================== PLAYLISTS ROUTES ====================
+// ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
-import { 
-  getArtists, 
-  getAlbums, 
-  getPlaylists, 
-  getMetadata, 
-  saveArtists,
-  getArtistAlbumsAndSingles 
-} from '../helpers/storage.js';
+import { getPlaylists, getAlbums, getArtists, getMetadata, savePlaylists } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
 import { SlugManager } from '../helpers/slug.js';
 
-export async function handleArtists(req, env, ctx) {
+export async function handlePlaylists(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
   const slugManager = new SlugManager(env);
 
-  // Artists list page
-  if (path === "/artists") {
-    const templateObj = await env.media.get("artists.html");
+  // Playlists list page
+  if (path === "/playlists") {
+    const templateObj = await env.media.get("playlists.html");
     if (!templateObj) {
-      return new Response("artists.html template not found in R2", { status: 500 });
+      return new Response("playlists.html template not found in R2", { status: 500 });
     }
     let html = await templateObj.text();
 
-    const artists = await getArtists(env);
+    const playlists = await getPlaylists(env);
     const albums = await getAlbums(env);
-    
-    const artistList = Object.values(artists).sort((a, b) => b.created - a.created);
-    
-    const ARTISTS_PER_PAGE = 12;
-    const page = parseInt(url.searchParams.get("page")) || 1;
-    const totalArtists = artistList.length;
-    const totalPages = Math.ceil(totalArtists / ARTISTS_PER_PAGE);
-    const startIdx = (page - 1) * ARTISTS_PER_PAGE;
-    const pageArtists = artistList.slice(startIdx, startIdx + ARTISTS_PER_PAGE);
+    const artists = await getArtists(env);
 
-    const artistsHtml = await Promise.all(pageArtists.map(async artist => {
-      let thumbUrl = "/images/placeholder.jpg";
-      let hasImage = false;
-      if (artist.thumbnail) {
-        try {
-          const thumbObj = await env.media.get(artist.thumbnail);
-          if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-            hasImage = true;
+    let playlistList = Object.values(playlists).sort((a, b) => b.created - a.created);
+    
+    const artistId = url.searchParams.get("artist");
+    let filterArtistName = "";
+    let filteredPlaylists = playlistList;
+    
+    if (artistId) {
+      const artist = artists[artistId];
+      if (artist) {
+        filterArtistName = artist.name;
+        
+        filteredPlaylists = [];
+        
+        for (const playlist of playlistList) {
+          if (!playlist.songs) continue;
+          
+          for (const songKey of playlist.songs) {
+            const meta = await getMetadata(env, songKey);
+            if (meta) {
+              if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
+                filteredPlaylists.push(playlist);
+                break;
+              }
+            } else if (songKey.startsWith(artistId + "_")) {
+              filteredPlaylists.push(playlist);
+              break;
+            }
           }
-        } catch (e) {}
-      }
-
-      // Get artist slug
-      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
-
-      const songCount = artist.songs?.length || 0;
-      const sinceYear = new Date(artist.created).getFullYear();
-      const bgStyle = hasImage 
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
-
-      return `
-        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-          <div class="album-info">
-            <span class="album-title">${artist.name}</span>
-            <div class="album-meta">
-              <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Various'}</span>
-            </div>
-            <span class="album-date">Since ${sinceYear}</span>
-          </div>
-        </div>
-      `;
-    }));
-
-    let paginationHtml = '';
-    if (totalPages > 1) {
-      paginationHtml = `<div class="pagination-container"><div class="pagination">`;
-      paginationHtml += `<a href="/artists?page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
-      for (let i = 1; i <= totalPages; i++) {
-        if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
-          paginationHtml += `<a href="/artists?page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
-        } else if (i === page-3 || i === page+3) {
-          paginationHtml += `<span class="pagination-ellipsis">...</span>`;
         }
       }
-      paginationHtml += `<a href="/artists?page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
-      paginationHtml += `</div></div>`;
+    }
+    
+    const displayPlaylists = filteredPlaylists;
+
+    const ITEMS_PER_PAGE = 10;
+    const page = parseInt(url.searchParams.get("page")) || 1;
+    const totalPlaylists = displayPlaylists.length;
+    const totalPages = Math.ceil(totalPlaylists / ITEMS_PER_PAGE);
+    const startIdx = (page - 1) * ITEMS_PER_PAGE;
+    const pagePlaylists = displayPlaylists.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+    const playlistsHtml = await Promise.all(pagePlaylists.map(async pl => {
+      let thumbUrl = "/images/placeholder.jpg";
+      let hasImage = false;
+      if (pl.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(pl.thumbnail);
+          if (thumbObj) {
+            const ext = pl.thumbnail.split(".").pop();
+            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
+            hasImage = true;
+          }
+        } catch (e) {}
+      }
+
+      // Get playlist slug
+      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+
+      const songCount = pl.songs?.length || 0;
+      const date = new Date(pl.created);
+      const formattedDate = date.toLocaleDateString('en-GB', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
+
+      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
+      const thumbnailContent = hasImage
+        ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">`
+        : '';
+
+      return `
+        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+          <div class="album-thumbnail ${thumbnailClass}">
+            ${thumbnailContent}
+          </div>
+          <div class="album-info">
+            <span class="album-title">${pl.title}</span>
+            <div class="album-meta">
+              <span class="album-artist playlist-songs">${songCount} Songs</span>
+              <span class="album-genre">Playlist</span>
+            </div>
+            <span class="album-date">${formattedDate}</span>
+          </div>
+        </div>
+      `;
+    }));
+
+    let paginationHtmlPlaylists = '';
+    if (totalPages > 1) {
+      let baseUrl = '/playlists';
+      if (artistId) {
+        baseUrl += `?artist=${artistId}&`;
+      } else {
+        baseUrl += '?';
+      }
+      
+      paginationHtmlPlaylists = `<div class="pagination-container"><div class="pagination">`;
+      paginationHtmlPlaylists += `<a href="${baseUrl}page=${page-1}" class="pagination-item pagination-prev ${page === 1 ? 'disabled' : ''}"><i class="fas fa-chevron-left"></i> Prev</a>`;
+      for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= page-2 && i <= page+2)) {
+          paginationHtmlPlaylists += `<a href="${baseUrl}page=${i}" class="pagination-item ${i === page ? 'active' : ''}">${i}</a>`;
+        } else if (i === page-3 || i === page+3) {
+          paginationHtmlPlaylists += `<span class="pagination-ellipsis">...</span>`;
+        }
+      }
+      paginationHtmlPlaylists += `<a href="${baseUrl}page=${page+1}" class="pagination-item pagination-next ${page === totalPages ? 'disabled' : ''}">Next <i class="fas fa-chevron-right"></i></a>`;
+      paginationHtmlPlaylists += `</div></div>`;
     }
 
-    const topArtists = Object.values(artists)
+    let filterHeaderHtml = '';
+    if (artistId && filterArtistName) {
+      filterHeaderHtml = `
+        <div class="filter-header" style="padding: 15px; background: #f0f7ff; border-radius: 3px; margin-bottom: 15px; border-left: 4px solid #4a90e2;">
+          <i class="fas fa-filter" style="color: #4a90e2;"></i>
+          <strong>Showing playlists featuring ${filterArtistName}</strong>
+          <a href="/playlists" style="margin-left: 15px; color: #ff5500; text-decoration: none;">Clear filter ✕</a>
+        </div>
+      `;
+    }
+
+    const featured = playlistList
       .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
       .slice(0, 3);
-    
-    const topArtistsHtml = await Promise.all(topArtists.map(async artist => {
+
+    const featuredHtml = await Promise.all(featured.map(async pl => {
+      let thumbUrl = "/images/placeholder.jpg";
+      let hasImage = false;
+      if (pl.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(pl.thumbnail);
+          if (thumbObj) {
+            const ext = pl.thumbnail.split(".").pop();
+            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
+            hasImage = true;
+          }
+        } catch (e) {}
+      }
+      
+      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      const songCount = pl.songs?.length || 0;
+      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
+      const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
+      return `
+        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+          <div class="album-thumbnail ${thumbnailClass}">
+            ${thumbnailContent}
+          </div>
+          <div class="album-info">
+            <span class="album-title">${pl.title}</span>
+            <div class="album-meta">
+              <span class="album-artist playlist-songs">${songCount} Songs</span>
+              <span class="album-genre">Editor's Pick</span>
+            </div>
+            <span class="album-date">Featured</span>
+          </div>
+        </div>
+      `;
+    }));
+
+    const topArtistsPlaylist = Object.values(artists)
+      .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
+      .slice(0, 3);
+
+    const topArtistsHtmlPlaylist = await Promise.all(topArtistsPlaylist.map(async artist => {
       let thumbUrl = "/images/placeholder.jpg";
       let hasImage = false;
       if (artist.thumbnail) {
@@ -110,10 +200,10 @@ export async function handleArtists(req, env, ctx) {
       }
       
       const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
-      const songCount = artist.songs?.length || 0;
-      const bgStyle = hasImage 
+      const bgStyle = hasImage
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
+      const songCount = artist.songs?.length || 0;
       return `
         <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
@@ -121,633 +211,556 @@ export async function handleArtists(req, env, ctx) {
             <span class="album-title">${artist.name}</span>
             <div class="album-meta">
               <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Various'}</span>
+              <span class="album-genre">${artist.genre || 'Artist'}</span>
             </div>
-            <span class="album-date">${songCount >= 100 ? 'Most Songs' : 'Popular'}</span>
+            <span class="album-date">Top artist</span>
           </div>
         </div>
       `;
     }));
 
-    const newArtists = Object.values(artists)
+    const recent = playlistList
       .sort((a, b) => b.created - a.created)
       .slice(0, 3);
-    
-    const newArtistsHtml = await Promise.all(newArtists.map(async artist => {
+
+    const recentHtml = await Promise.all(recent.map(async pl => {
       let thumbUrl = "/images/placeholder.jpg";
       let hasImage = false;
-      if (artist.thumbnail) {
+      if (pl.thumbnail) {
         try {
-          const thumbObj = await env.media.get(artist.thumbnail);
+          const thumbObj = await env.media.get(pl.thumbnail);
           if (thumbObj) {
-            const ext = artist.thumbnail.split(".").pop();
-            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+            const ext = pl.thumbnail.split(".").pop();
+            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
             hasImage = true;
           }
         } catch (e) {}
       }
       
-      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
-      const songCount = artist.songs?.length || 0;
-      const sinceYear = new Date(artist.created).getFullYear();
-      const bgStyle = hasImage 
-        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
-        : '';
+      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      const songCount = pl.songs?.length || 0;
+      const date = new Date(pl.created);
+      const now = new Date();
+      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+      const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
+      const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
       return `
-        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
-          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
+        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+          <div class="album-thumbnail ${thumbnailClass}">
+            ${thumbnailContent}
+          </div>
           <div class="album-info">
-            <span class="album-title">${artist.name}</span>
+            <span class="album-title">${pl.title}</span>
             <div class="album-meta">
-              <span class="album-artist artist-songs">${songCount} Songs</span>
-              <span class="album-genre">${artist.genre || 'Various'}</span>
+              <span class="album-artist playlist-songs">${songCount} Songs</span>
+              <span class="album-genre">Playlist</span>
             </div>
-            <span class="album-date">Since ${sinceYear}</span>
+            <span class="album-date">${timeAgo}</span>
           </div>
         </div>
       `;
     }));
 
-    const totalSongs = (await env.media.list({ prefix: "songs/" })).objects?.length || 0;
-    const totalArtistsCount = Object.keys(artists).length;
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const newArtistsThisMonth = Object.values(artists).filter(a => a.created > thirtyDaysAgo).length;
-
-    const statsHtml = `
-      <div style="padding: 15px; font-size: 0.9rem; color: #555;">
-        <p><strong>Total Artists:</strong> ${totalArtistsCount}+</p>
-        <p><strong>Total Songs:</strong> ${totalSongs}+</p>
-        <p><strong>New This Month:</strong> ${newArtistsThisMonth} Artists</p>
-        <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 3px;">
-          <i class="fas fa-info-circle" style="color: #ff5500;"></i>
-          <span style="margin-left: 5px;">All Zambian artists included</span>
+    const genresHtmlPlaylist = `
+      <div class="album-item">
+        <div class="album-thumbnail placeholder"></div>
+        <div class="album-info">
+          <span class="album-title">Zam Hip Hop</span>
+          <div class="album-meta">
+            <span class="album-artist">24 Playlists</span>
+            <span class="album-genre">Popular</span>
+          </div>
+          <span class="album-date">Most active</span>
+        </div>
+      </div>
+      <div class="album-item">
+        <div class="album-thumbnail placeholder"></div>
+        <div class="album-info">
+          <span class="album-title">Zam Pop</span>
+          <div class="album-meta">
+            <span class="album-artist">18 Playlists</span>
+            <span class="album-genre">Trending</span>
+          </div>
+          <span class="album-date">+5 this week</span>
+        </div>
+      </div>
+      <div class="album-item">
+        <div class="album-thumbnail placeholder"></div>
+        <div class="album-info">
+          <span class="album-title">Gospel</span>
+          <div class="album-meta">
+            <span class="album-artist">12 Playlists</span>
+            <span class="album-genre">Spiritual</span>
+          </div>
+          <span class="album-date">Rising</span>
         </div>
       </div>
     `;
 
     html = html.replace(
-      /<!-- ARTISTS_START -->[\s\S]*?<!-- ARTISTS_END -->/g,
-      `<!-- ARTISTS_START -->${artistsHtml.join('')}<!-- ARTISTS_END -->`
+      /<!-- FILTER_HEADER_START -->[\s\S]*?<!-- FILTER_HEADER_END -->/g,
+      `<!-- FILTER_HEADER_START -->${filterHeaderHtml}<!-- FILTER_HEADER_END -->`
+    );
+    
+    html = html.replace(
+      /<!-- PLAYLISTS_START -->[\s\S]*?<!-- PLAYLISTS_END -->/g,
+      `<!-- PLAYLISTS_START -->${playlistsHtml.join('')}<!-- PLAYLISTS_END -->`
     );
     
     html = html.replace(
       /<!-- PAGINATION_START -->[\s\S]*?<!-- PAGINATION_END -->/g,
-      `<!-- PAGINATION_START -->${paginationHtml}<!-- PAGINATION_END -->`
+      `<!-- PAGINATION_START -->${paginationHtmlPlaylists}<!-- PAGINATION_END -->`
+    );
+    
+    html = html.replace(
+      /<!-- FEATURED_PLAYLISTS_START -->[\s\S]*?<!-- FEATURED_PLAYLISTS_END -->/g,
+      `<!-- FEATURED_PLAYLISTS_START -->${featuredHtml.join('')}<!-- FEATURED_PLAYLISTS_END -->`
     );
     
     html = html.replace(
       /<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/g,
-      `<!-- TOP_ARTISTS_START -->${topArtistsHtml.join('')}<!-- TOP_ARTISTS_END -->`
+      `<!-- TOP_ARTISTS_START -->${topArtistsHtmlPlaylist.join('')}<!-- TOP_ARTISTS_END -->`
     );
     
     html = html.replace(
-      /<!-- NEW_ARTISTS_START -->[\s\S]*?<!-- NEW_ARTISTS_END -->/g,
-      `<!-- NEW_ARTISTS_START -->${newArtistsHtml.join('')}<!-- NEW_ARTISTS_END -->`
+      /<!-- GENRES_START -->[\s\S]*?<!-- GENRES_END -->/g,
+      `<!-- GENRES_START -->${genresHtmlPlaylist}<!-- GENRES_END -->`
     );
     
     html = html.replace(
-      /<!-- ARTIST_STATS_START -->[\s\S]*?<!-- ARTIST_STATS_END -->/g,
-      `<!-- ARTIST_STATS_START -->${statsHtml}<!-- ARTIST_STATS_END -->`
+      /<!-- RECENT_PLAYLISTS_START -->[\s\S]*?<!-- RECENT_PLAYLISTS_END -->/g,
+      `<!-- RECENT_PLAYLISTS_START -->${recentHtml.join('')}<!-- RECENT_PLAYLISTS_END -->`
     );
+    
+    if (artistId && filterArtistName) {
+      html = html.replace(
+        /<title>.*?<\/title>/,
+        `<title>Playlists featuring ${filterArtistName} - ZEDALBUMS</title>`
+      );
+    }
 
-    return new Response(html, { 
-      headers: { 
+    return new Response(html, {
+      headers: {
         "Content-Type": "text/html",
         "Cache-Control": "public, max-age=300"
-      } 
+      }
     });
   }
 
-  // Artist detail page
-  if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-    // Get slug from URL (e.g., "drake", "21-savage")
-    const slug = decodeURIComponent(path.replace("/artist/", ""));
+  // Playlist detail page
+  if (path.startsWith("/playlist/") && !path.startsWith("/playlist/create")) {
+    // Get slug from URL
+    const slug = decodeURIComponent(path.replace("/playlist/", ""));
     
-    // Get artist ID from slug
-    const artistId = await slugManager.getIdFromSlug('artists', slug);
+    // Get playlist ID from slug
+    const playlistId = await slugManager.getIdFromSlug('playlists', slug);
     
-    if (!artistId) {
-      return new Response("Artist not found", { status: 404 });
+    if (!playlistId) {
+      return new Response("Playlist not found", { status: 404 });
     }
-    
-    const artists = await getArtists(env);
-    const artist = artists[artistId];
-    if (!artist) return new Response("Artist not found", { status: 404 });
+
+    const playlists = await getPlaylists(env);
+    const playlist = playlists[playlistId];
+    if (!playlist) return new Response("Playlist not found", { status: 404 });
 
     // TRACK PAGE VIEW
-    ctx.waitUntil(incrementPageView(env, 'artist', artistId));
+    ctx.waitUntil(incrementPageView(env, 'playlist', playlistId));
 
-    const albums = await getAlbums(env);
-    const playlists = await getPlaylists(env);
-    
-    // Get artist's albums and singles
-    const artistData = await getArtistAlbumsAndSingles(env, artistId);
-    const { albums: artistAlbums, singles } = artistData;
+    const playlistStats = await getAggregatedStats(playlist.songs || [], env);
 
-    const allSongKeys = artist.songs || [];
-    const artistStats = await getAggregatedStats(allSongKeys, env);
-
-    // Find playlists featuring this artist
-    const artistPlaylists = [];
-    const playlistsList = Object.values(playlists);
-    
-    for (const playlist of playlistsList) {
-      if (!playlist.songs) continue;
-      
-      for (const songKey of playlist.songs) {
-        const meta = await getMetadata(env, songKey);
-        if (meta) {
-          if (meta.primaryArtist === artistId || meta.featuredArtists.includes(artistId)) {
-            const artistSongCount = playlist.songs.filter(s => {
-              return s.startsWith(artistId + "_");
-            }).length;
-            
-            artistPlaylists.push({
-              id: playlist.id,
-              title: playlist.title,
-              thumbnail: playlist.thumbnail,
-              songCount: playlist.songs.length,
-              artistSongCount: artistSongCount,
-              curator: playlist.curator || 'ZEDALBUMS',
-              created: playlist.created
-            });
-            break;
-          }
-        } else {
-          if (songKey.startsWith(artistId + "_")) {
-            const artistSongCount = playlist.songs.filter(s => {
-              return s.startsWith(artistId + "_");
-            }).length;
-            
-            artistPlaylists.push({
-              id: playlist.id,
-              title: playlist.title,
-              thumbnail: playlist.thumbnail,
-              songCount: playlist.songs.length,
-              artistSongCount: artistSongCount,
-              curator: playlist.curator || 'ZEDALBUMS',
-              created: playlist.created
-            });
-            break;
-          }
-        }
-      }
-    }
-
-    artistPlaylists.sort((a, b) => b.created - a.created);
-
-    const templateObj = await env.media.get("artist.html");
+    const templateObj = await env.media.get("playlist.html");
     if (!templateObj) {
-      return new Response("artist.html template not found in R2", { status: 500 });
+      return new Response("playlist.html template not found in R2", { status: 500 });
     }
     let html = await templateObj.text();
 
-    const formatDate = (ts) =>
-      new Date(ts).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
+    const albums = await getAlbums(env);
+    const artists = await getArtists(env);
 
-    const artistName = artist.name || artistId;
-    const sinceYear = artist.created ? new Date(artist.created).getFullYear() : "N/A";
-    const description = artist.description || `All songs by ${artistName}.`;
-    const genre = artist.genre || "Zam Pop / R&B";
-    const songCount = artistData.totalSongs || artist.songs?.length || 0;
-    const plays = artistStats.plays.toLocaleString();
-    const downloads = artistStats.downloads.toLocaleString();
+    const songCount = playlist.songs?.length || 0;
+    const createdDate = new Date(playlist.created);
+    const formattedDate = createdDate.toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric'
+    });
 
-    const breadcrumbHtml = `<span class="breadcrumb-current"><i class="fas fa-microphone"></i>${artistName}</span>`;
+    // Calculate total duration
+    let totalSeconds = 0;
+    if (playlist.songs) {
+      const durations = await Promise.all(playlist.songs.map(async songKey => {
+        const meta = await getMetadata(env, songKey);
+        return meta?.duration || 0;
+      }));
+      totalSeconds = durations.reduce((acc, dur) => acc + dur, 0);
+    }
+    const totalHours = Math.floor(totalSeconds / 3600);
+    const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
+    const totalDuration = totalHours > 0 ? `${totalHours} hr ${totalMinutes} min` : `${totalMinutes} min`;
 
-    let artistCoverHtml = `<i class="fas fa-microphone"></i>`;
-    if (artist.thumbnail) {
+    let hasCover = false;
+    let coverHtml = `<i class="fas fa-music"></i>`;
+    if (playlist.thumbnail) {
       try {
-        const thumbObj = await env.media.get(artist.thumbnail);
+        const thumbObj = await env.media.get(playlist.thumbnail);
         if (thumbObj) {
-          const ext = artist.thumbnail.split(".").pop();
-          const thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
-          artistCoverHtml = `<img src="${thumbUrl}" alt="${artistName}">`;
+          const ext = playlist.thumbnail.split(".").pop();
+          const thumbUrl = `/playlists/thumbnails/${encodeURIComponent(playlist.id)}.${ext}`;
+          hasCover = true;
+          coverHtml = `<img src="${thumbUrl}" alt="${playlist.title}">`;
         }
       } catch (e) {}
     }
 
-    // Collect all songs
-    const allSongs = [];
-
-    for (const alb of artistAlbums) {
-      for (const songKey of alb.songs) {
-        const [sid] = songKey.split("_");
-        if (sid !== artistId) continue;
-        const meta = await getMetadata(env, songKey);
-        const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-        const uploaded = alb.created;
-        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
-        allSongs.push({
-          key: songKey,
-          slug: songSlug,
-          title,
-          artistName,
-          artists: [artistName],
-          albumId: alb.id,
-          albumTitle: alb.title,
-          uploaded,
-          role: 'primary'
-        });
-      }
-    }
-
-    for (const songKey of singles) {
-      const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-      const uploaded = audioObj?.uploaded || Date.now();
+    const songsHtml = await Promise.all((playlist.songs || []).map(async (songKey, index) => {
       const meta = await getMetadata(env, songKey);
-      const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
       const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
-      allSongs.push({
-        key: songKey,
-        slug: songSlug,
-        title,
-        artistName,
-        artists: [artistName],
-        albumId: null,
-        albumTitle: null,
-        uploaded,
-        role: 'primary'
-      });
+      
+      let title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+      let artistDisplay = "";
+      if (meta) {
+        const primary = artists[meta.primaryArtist]?.name || meta.primaryArtist;
+        const featured = meta.featuredArtists.map(fid => artists[fid]?.name || fid).join(', ');
+        artistDisplay = featured ? `${primary} feat. ${featured}` : primary;
+      } else {
+        const [artistId] = songKey.split("_");
+        const artist = artists[artistId];
+        artistDisplay = artist ? artist.name : artistId;
+      }
+
+      let thumbUrl = "/images/placeholder.jpg";
+      let hasImage = false;
+      try {
+        const jpgObj = await env.media.get(`images/${songKey}.jpg`);
+        if (jpgObj) {
+          thumbUrl = `/images/${encodeURIComponent(songKey)}.jpg`;
+          hasImage = true;
+        } else {
+          const pngObj = await env.media.get(`images/${songKey}.png`);
+          if (pngObj) {
+            thumbUrl = `/images/${encodeURIComponent(songKey)}.png`;
+            hasImage = true;
+          }
+        }
+      } catch (e) {}
+
+      const durationSeconds = meta?.duration || 0;
+      const durationFormatted = formatDuration(durationSeconds);
+      const trackNumber = (index + 1).toString().padStart(2, '0');
+
+      return `
+        <div class="album-item" onclick="window.location='/song/${songSlug}?playlist=${slug}'">
+          <div class="album-thumbnail ${hasImage ? '' : 'song-thumbnail placeholder'}">
+            ${hasImage ? `<img src="${thumbUrl}" alt="${title}" loading="lazy">` : ''}
+          </div>
+          <div class="album-info">
+            <span class="album-title">${artistDisplay} - ${title}</span>
+            <div class="album-meta">
+              <span class="album-artist">${artistDisplay}</span>
+              <span class="song-duration">${durationFormatted}</span>
+              <span class="album-genre">Track ${trackNumber}</span>
+            </div>
+            <span class="album-date">Track ${trackNumber}</span>
+          </div>
+        </div>
+      `;
+    })).then(results => results.join(''));
+
+    let paginationHtmlPlaylist = '';
+    if (songCount > 12) {
+      const totalPages = Math.ceil(songCount / 12);
+      paginationHtmlPlaylist = `<div class="pagination-container"><div class="pagination">
+        <a href="#" class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</a>
+        <a href="#" class="pagination-item active">1</a>
+        <a href="#" class="pagination-item">2</a>
+        <span class="pagination-ellipsis">...</span>
+        <a href="#" class="pagination-item">${totalPages}</a>
+        <a href="#" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>
+      </div></div>`;
     }
 
-    const processedKeys = new Set(allSongs.map(s => s.key));
-    for (const songKey of artist.songs) {
-      if (processedKeys.has(songKey)) continue;
-      const meta = await getMetadata(env, songKey);
-      if (meta && meta.featuredArtists.includes(artistId)) {
-        const audioObj = await env.media.get(`songs/${songKey}.mp3`);
-        const uploaded = audioObj?.uploaded || Date.now();
-        const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
-        const title = meta.title;
-        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
-        allSongs.push({
-          key: songKey,
-          slug: songSlug,
-          title,
-          artistName: primaryArtistName,
-          artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
-          albumId: null,
-          albumTitle: null,
-          uploaded,
-          role: 'featured'
-        });
+    let mainArtistId = null;
+    let mainArtistName = null;
+    if (playlist.songs && playlist.songs.length > 0) {
+      const firstSongKey = playlist.songs[0];
+      const meta = await getMetadata(env, firstSongKey);
+      if (meta) {
+        mainArtistId = meta.primaryArtist;
+      } else {
+        const [aid] = firstSongKey.split("_");
+        mainArtistId = aid;
+      }
+      const artist = artists[mainArtistId];
+      if (artist) {
+        mainArtistName = artist.name;
       }
     }
 
-    allSongs.sort((a, b) => b.uploaded - a.uploaded);
-
-    const songsHtml = await Promise.all(
-      allSongs.slice(0, 10).map(async (song) => {
+    let moreByArtistHtml = '';
+    if (mainArtistId) {
+      const artistAlbums = Object.values(albums)
+        .filter(a => a.artists?.includes(mainArtistId))
+        .sort((a, b) => b.created - a.created)
+        .slice(0, 3);
+      moreByArtistHtml = await Promise.all(artistAlbums.map(async album => {
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
-        try {
-          const jpg = await env.media.get(`images/${song.key}.jpg`);
-          if (jpg) {
-            thumbUrl = `/images/${encodeURIComponent(song.key)}.jpg`;
-            hasImage = true;
-          } else {
-            const png = await env.media.get(`images/${song.key}.png`);
-            if (png) {
-              thumbUrl = `/images/${encodeURIComponent(song.key)}.png`;
+        if (album.thumbnail) {
+          try {
+            const thumbObj = await env.media.get(album.thumbnail);
+            if (thumbObj) {
+              const ext = album.thumbnail.split(".").pop();
+              thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
               hasImage = true;
             }
-          }
-        } catch (e) {}
-
-        const date = formatDate(song.uploaded);
-        const meta = await getMetadata(env, song.key);
-        const durationSeconds = meta?.duration || 0;
-        const durationFormatted = formatDuration(durationSeconds);
-        const artistDisplay = song.artists.join(', ');
-        const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
-
-        return `
-          <div class="album-item" onclick="window.location='/song/${song.slug}'">
-            <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${song.title}" loading="lazy">` : ""}
-            </div>
-            <div class="album-info">
-              <span class="album-title">${song.title}</span>
-              <div class="album-meta">
-                <span class="album-artist">${artistDisplay}</span>
-                <span class="song-duration">${durationFormatted}</span>
-                <span class="album-genre">${song.role === 'featured' ? 'Featured' : 'Song'}</span>
-              </div>
-              <span class="album-date">${date} ${roleBadge}</span>
-            </div>
-          </div>
-        `;
-      })
-    );
-
-    const albumsHtml = await Promise.all(
-      artistAlbums.slice(0, 3).map(async (alb) => {
-        let thumbUrl = "/images/placeholder.jpg";
-        let hasImage = false;
-        if (alb.thumbnail && alb.thumbnail !== "/images/placeholder.jpg") {
-          try {
-            const ext = alb.thumbnail.split(".").pop();
-            thumbUrl = `/albums/thumbnails/${encodeURIComponent(alb.id)}.${ext}`;
-            hasImage = true;
           } catch (e) {}
         }
-        const albumSlug = await slugManager.getSlugFromId('albums', alb.id) || alb.id;
-        const date = formatDate(alb.created);
+        const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+        const date = new Date(album.created).toLocaleDateString('en-GB', {
+          day: '2-digit', month: 'short', year: 'numeric'
+        });
         return `
           <div class="album-item" onclick="window.location='/album/${albumSlug}'">
-            <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
-              ${hasImage ? `<img src="${thumbUrl}" alt="${alb.title}" loading="lazy">` : ""}
+            <div class="album-thumbnail ${hasImage ? '' : 'placeholder'}">
+              ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
             </div>
             <div class="album-info">
-              <span class="album-title">${artistName} - ${alb.title}</span>
+              <span class="album-title">${mainArtistName} - ${album.title}</span>
               <div class="album-meta">
-                <span class="album-artist">${artistName}</span>
+                <span class="album-artist">${mainArtistName}</span>
                 <span class="album-genre">Album</span>
               </div>
               <span class="album-date">${date}</span>
             </div>
           </div>
         `;
-      })
-    );
+      })).then(results => results.join(''));
+      if (artistAlbums.length === 0) {
+        moreByArtistHtml = `<div style="padding: 20px; text-align: center; color: #666;">No albums by this artist</div>`;
+      }
+    } else {
+      moreByArtistHtml = `<div style="padding: 20px; text-align: center; color: #666;">No artist found</div>`;
+    }
 
-    // Collaborations
-    const collabMap = new Map();
-    for (const alb of artistAlbums) {
-      if (alb.artists) {
-        for (const aid of alb.artists) {
-          if (aid !== artistId && artists[aid]) {
-            const count = collabMap.get(aid) || 0;
-            collabMap.set(aid, count + 1);
-          }
-        }
-      }
-    }
-    for (const songKey of artist.songs) {
-      const meta = await getMetadata(env, songKey);
-      if (meta && meta.primaryArtist !== artistId && meta.featuredArtists.includes(artistId)) {
-        const primaryId = meta.primaryArtist;
-        if (primaryId && artists[primaryId]) {
-          const count = collabMap.get(primaryId) || 0;
-          collabMap.set(primaryId, count + 1);
-        }
-      }
-    }
-    const collabArtists = Array.from(collabMap.entries())
-      .sort((a, b) => b[1] - a[1])
+    const similarPlaylists = Object.values(playlists)
+      .filter(p => p.id !== playlistId && p.songs && p.songs.length > 0)
+      .sort(() => 0.5 - Math.random())
       .slice(0, 3);
 
-    const collabHtml =
-      collabArtists.length > 0
-        ? await Promise.all(
-            collabArtists.map(async ([aid, count]) => {
-              const a = artists[aid];
-              let thumbUrl = "/images/placeholder.jpg";
-              let hasImage = false;
-              if (a.thumbnail) {
-                try {
-                  const ext = a.thumbnail.split(".").pop();
-                  thumbUrl = `/artists/thumbnails/${encodeURIComponent(a.id)}.${ext}`;
-                  hasImage = true;
-                } catch (e) {}
-              }
-              const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
-              const bgStyle = hasImage
-                ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
-                : "";
-              return `
-                <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
-                  <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-                  <div class="album-info">
-                    <span class="album-title">${a.name}</span>
-                    <div class="album-meta">
-                      <span class="album-artist">${count} Songs</span>
-                      <span class="album-genre">${a.genre || "Artist"}</span>
-                    </div>
-                    <span class="album-date">${count} collaboration${count > 1 ? "s" : ""}</span>
-                  </div>
-                </div>
-              `;
-            })
-          ).then((r) => r.join(""))
-        : `<div style="padding: 20px; text-align: center; color: #666;">No collaborations yet</div>`;
-
-    // Artist playlists HTML
-    const artistPlaylistsHtml = artistPlaylists.length > 0 
-      ? await Promise.all(artistPlaylists.slice(0, 3).map(async pl => {
-          let thumbUrl = "/images/placeholder.jpg";
-          let hasImage = false;
-          
-          if (pl.thumbnail) {
-            try {
-              const thumbObj = await env.media.get(pl.thumbnail);
-              if (thumbObj) {
-                const ext = pl.thumbnail.split(".").pop();
-                thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
-                hasImage = true;
-              }
-            } catch (e) {}
+    const similarHtml = await Promise.all(similarPlaylists.map(async pl => {
+      let thumbUrl = "/images/placeholder.jpg";
+      let hasImage = false;
+      if (pl.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(pl.thumbnail);
+          if (thumbObj) {
+            const ext = pl.thumbnail.split(".").pop();
+            thumbUrl = `/playlists/thumbnails/${encodeURIComponent(pl.id)}.${ext}`;
+            hasImage = true;
           }
-          
-          const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
-          const thumbnailContent = hasImage 
-            ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` 
-            : '';
-          
-          return `
-            <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
-              <div class="album-thumbnail ${thumbnailClass}">
-                ${thumbnailContent}
-              </div>
-              <div class="album-info">
-                <span class="album-title">${pl.title}</span>
-                <div class="album-meta">
-                  <span class="album-artist playlist-songs">${pl.songCount} Songs</span>
-                  <span class="album-genre">${pl.artistSongCount} by ${artistName}</span>
-                </div>
-                <span class="album-date">Curated by ${pl.curator}</span>
-              </div>
+        } catch (e) {}
+      }
+      
+      const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
+      const songCount = pl.songs?.length || 0;
+      const date = new Date(pl.created).toLocaleDateString('en-GB', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
+      const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
+      const thumbnailContent = hasImage ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` : '';
+      return `
+        <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
+          <div class="album-thumbnail ${thumbnailClass}">
+            ${thumbnailContent}
+          </div>
+          <div class="album-info">
+            <span class="album-title">${pl.title}</span>
+            <div class="album-meta">
+              <span class="album-artist playlist-songs">${songCount} Songs</span>
+              <span class="album-genre">Playlist</span>
             </div>
-          `;
-        })).then(results => results.join(''))
-      : `<div style="padding: 20px; text-align: center; color: #666;">No playlists featuring ${artistName} yet</div>`;
+            <span class="album-date">${date}</span>
+          </div>
+        </div>
+      `;
+    })).then(results => results.join(''));
 
-    // Similar artists
-    const otherArtists = Object.values(artists).filter((a) => a.id !== artistId);
-    let similar = [];
-    if (artist.genre) {
-      similar = otherArtists
-        .filter((a) => a.genre === artist.genre)
-        .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
-        .slice(0, 3);
-    }
-    if (similar.length < 3) {
-      const needed = 3 - similar.length;
-      const randomOthers = otherArtists
-        .filter((a) => !similar.includes(a))
-        .sort(() => 0.5 - Math.random())
-        .slice(0, needed);
-      similar = [...similar, ...randomOthers];
-    }
+    const featuredArtistsPlaylist = Object.values(artists)
+      .sort((a, b) => (b.songs?.length || 0) - (a.songs?.length || 0))
+      .slice(0, 3);
+    
+    const featuredArtistsHtmlPlaylist = await Promise.all(featuredArtistsPlaylist.map(async artist => {
+      let thumbUrl = "/images/placeholder.jpg";
+      let hasImage = false;
+      if (artist.thumbnail) {
+        try {
+          const thumbObj = await env.media.get(artist.thumbnail);
+          if (thumbObj) {
+            const ext = artist.thumbnail.split(".").pop();
+            thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
+            hasImage = true;
+          }
+        } catch (e) {}
+      }
+      
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      const bgStyle = hasImage
+        ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
+        : '';
+      const songCount = artist.songs?.length || 0;
+      return `
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
+          <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
+          <div class="album-info">
+            <span class="album-title">${artist.name}</span>
+            <div class="album-meta">
+              <span class="album-artist">${songCount} Songs</span>
+              <span class="album-genre">${artist.genre || 'Artist'}</span>
+            </div>
+            <span class="album-date">Featured</span>
+          </div>
+        </div>
+      `;
+    }));
 
-    const similarHtml =
-      similar.length > 0
-        ? await Promise.all(
-            similar.slice(0, 3).map(async (a) => {
-              let thumbUrl = "/images/placeholder.jpg";
-              let hasImage = false;
-              if (a.thumbnail) {
-                try {
-                  const ext = a.thumbnail.split(".").pop();
-                  thumbUrl = `/artists/thumbnails/${encodeURIComponent(a.id)}.${ext}`;
-                  hasImage = true;
-                } catch (e) {}
-              }
-              const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
-              const bgStyle = hasImage
-                ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
-                : "";
-              const songCount = a.songs?.length || 0;
-              const since = a.created ? new Date(a.created).getFullYear() : "N/A";
-              return `
-                <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
-                  <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
-                  <div class="album-info">
-                    <span class="album-title">${a.name}</span>
-                    <div class="album-meta">
-                      <span class="album-artist">${songCount} Songs</span>
-                      <span class="album-genre">${a.genre || "Artist"}</span>
-                    </div>
-                    <span class="album-date">Since ${since}</span>
-                  </div>
-                </div>
-              `;
-            })
-          ).then((r) => r.join(""))
-        : `<div style="padding: 20px; text-align: center; color: #666;">No similar artists</div>`;
-
-    const infoHtml = `
-      <p><strong>Genre:</strong> ${genre}</p>
-      <p><strong>Active Since:</strong> ${sinceYear}</p>
-      <p><strong>Label:</strong> ${artist.label || "Independent"}</p>
-      <p><strong>Origin:</strong> ${artist.origin || "Zambia"}</p>
-      <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 3px;">
-        <i class="fas fa-info-circle" style="color: #ff6b6b;"></i>
-        <span style="margin-left: 5px;">All songs available for download</span>
+    const playlistInfoHtml = `
+      <div style="padding: 15px; font-size: 0.9rem; color: #555;">
+        <p><strong>Created:</strong> ${formattedDate}</p>
+        <p><strong>Songs:</strong> ${songCount}</p>
+        <p><strong>Total duration:</strong> ${totalDuration}</p>
+        <p><strong>Total Plays:</strong> ${playlistStats.plays.toLocaleString()}</p>
+        <p><strong>Total Downloads:</strong> ${playlistStats.downloads.toLocaleString()}</p>
+        <p><strong>Curator:</strong> ${playlist.curator || 'ZEDALBUMS'}</p>
+        ${playlist.description ? `<p><strong>Description:</strong> ${playlist.description}</p>` : ''}
+        <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 3px;">
+          <i class="fas fa-info-circle" style="color: #00b894;"></i>
+          <span style="margin-left: 5px;">Updated regularly</span>
+        </div>
       </div>
     `;
 
-    html = html
-      .replace(/<title>.*?<\/title>/, `<title>${artistName} - ZEDALBUMS</title>`)
-      .replace(/<!-- ARTIST_BREADCRUMB -->/, breadcrumbHtml)
-      .replace(/<h1 class="artist-title">.*?<\/h1>/, `<h1 class="artist-title">${artistName}</h1>`)
-      .replace(/<div class="artist-genre">.*?<\/div>/, `<div class="artist-genre">${genre}</div>`)
-      .replace(/<!-- ARTIST_DESCRIPTION -->/, description)
-      .replace(/<!-- ARTIST_COVER -->/, artistCoverHtml)
-      .replace(/<!-- ARTIST_SONGS_COUNT -->/, songCount.toString())
-      .replace(/<!-- ARTIST_SINCE -->/, sinceYear.toString())
-      .replace(/<!-- ARTIST_PLAYS -->/, plays)
-      .replace(/<!-- ARTIST_DOWNLOADS -->/, downloads)
-      .replace(/<!-- SONGS_LIST -->/, songsHtml.join(""))
-      .replace(/<!-- ALBUMS_BY_ARTIST -->/, albumsHtml.join(""))
-      .replace(/<!-- COLLABORATIONS_LIST -->/, collabHtml)
-      .replace(/<!-- ARTIST_PLAYLISTS_START -->[\s\S]*?<!-- ARTIST_PLAYLISTS_END -->/g,
-        `<!-- ARTIST_PLAYLISTS_START -->
-        <section class="section-block">
-          <div class="section-header">
-            <h2 class="section-title">Playlists featuring ${artistName}</h2>
-            <a href="/playlists?artist=${artistId}" class="view-all">View All ➔</a>
-          </div>
-          <div class="playlists-list">
-            ${artistPlaylistsHtml}
-          </div>
-        </section>
-        <!-- ARTIST_PLAYLISTS_END -->`
-      )
-      .replace(/<!-- SIMILAR_ARTISTS_LIST -->/, similarHtml)
-      .replace(/<!-- ARTIST_INFO_CONTENT -->/, infoHtml)
-      .replace(
-        /<a href="#" class="view-all">View All ➔<\/a>/g,
-        `<a href="/artist/${slug}?view=albums" class="view-all">View All ➔</a>`
-      )
-      .replace(
-        /<a href="#" class="breadcrumb-link"><i class="fas fa-user"><\/i>Artists<\/a>/,
-        '<a href="/artists" class="breadcrumb-link"><i class="fas fa-user"></i>Artists</a>'
-      )
-      .replace(
-        /<a href="\/" class="breadcrumb-link"><i class="fas fa-home"><\/i>Home<\/a>/,
-        '<a href="/" class="breadcrumb-link"><i class="fas fa-home"></i>Home</a>'
-      );
+    html = html.replace(/<title>.*?<\/title>/, `<title>${playlist.title} - Playlist - ZEDALBUMS</title>`);
+    html = html.replace(
+      /<span class="breadcrumb-current">.*?<\/span>/,
+      `<span class="breadcrumb-current"><i class="fas fa-music"></i>${playlist.title}</span>`
+    );
+    html = html.replace(
+      /<!-- PLAYLIST_COVER_HTML -->[\s\S]*?<!-- \/PLAYLIST_COVER_HTML -->/,
+      `<!-- PLAYLIST_COVER_HTML -->${coverHtml}<!-- /PLAYLIST_COVER_HTML -->`
+    );
+    html = html.replace(
+      /<!-- PLAYLIST_META -->[\s\S]*?<!-- \/PLAYLIST_META -->/,
+      `<!-- PLAYLIST_META -->
+      <div class="playlist-stats"><i class="fas fa-music"></i> ${songCount} Songs</div>
+      <div class="playlist-stats"><i class="fas fa-clock"></i> ${totalDuration}</div>
+      <div class="playlist-stats"><i class="fas fa-calendar"></i> Created: ${formattedDate}</div>
+      <div class="playlist-stats"><i class="fas fa-headphones"></i> ${playlistStats.plays.toLocaleString()} Plays</div>
+      <div class="playlist-stats"><i class="fas fa-download"></i> ${playlistStats.downloads.toLocaleString()} Downloads</div>
+      <!-- /PLAYLIST_META -->`
+    );
+    html = html.replace(
+      /<h1 class="playlist-title">Playlist Title<\/h1>/,
+      `<h1 class="playlist-title">${playlist.title}</h1>`
+    );
+    html = html.replace(
+      /<p class="playlist-description">Playlist description<\/p>/,
+      `<p class="playlist-description">${playlist.description || 'No description available.'}</p>`
+    );
+    html = html.replace(
+      /(<div class="latest-albums-list">)([\s\S]*?)(<\/div>)/,
+      `$1${songsHtml}$3`
+    );
+    html = html.replace(
+      /<!-- PAGINATION_HTML -->[\s\S]*?<!-- \/PAGINATION_HTML -->/,
+      `<!-- PAGINATION_HTML -->${paginationHtmlPlaylist}<!-- /PAGINATION_HTML -->`
+    );
+    html = html.replace(
+      /<!-- MORE_BY_ARTIST_START -->[\s\S]*?<!-- MORE_BY_ARTIST_END -->/g,
+      `<!-- MORE_BY_ARTIST_START -->${moreByArtistHtml}<!-- MORE_BY_ARTIST_END -->`
+    );
+    html = html.replace(
+      /<!-- SIMILAR_PLAYLISTS_START -->[\s\S]*?<!-- SIMILAR_PLAYLISTS_END -->/g,
+      `<!-- SIMILAR_PLAYLISTS_START -->${similarHtml}<!-- SIMILAR_PLAYLISTS_END -->`
+    );
+    html = html.replace(
+      /<!-- FEATURED_ARTISTS_START -->[\s\S]*?<!-- FEATURED_ARTISTS_END -->/g,
+      `<!-- FEATURED_ARTISTS_START -->${featuredArtistsHtmlPlaylist.join('')}<!-- FEATURED_ARTISTS_END -->`
+    );
+    html = html.replace(
+      /<!-- PLAYLIST_INFO_START -->[\s\S]*?<!-- PLAYLIST_INFO_END -->/g,
+      `<!-- PLAYLIST_INFO_START -->${playlistInfoHtml}<!-- PLAYLIST_INFO_END -->`
+    );
 
     return new Response(html, {
       headers: {
         "Content-Type": "text/html",
-        "Cache-Control": "public, max-age=300",
-      },
+        "Cache-Control": "public, max-age=300"
+      }
     });
   }
 
-  // Artist create page
-  if (path === "/artist/create" && req.method === "GET") {
+  // Playlist create page
+  if (path === "/playlist/create" && req.method === "GET") {
     const html = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>Create Artist - ZEDALBUMS</title>
+      <title>Create Playlist - ZEDALBUMS</title>
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <style>
         body { font-family: system-ui; padding: 20px; background: #f4f4f9; margin: 0; }
         .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-left: 4px solid #ff5500; padding-left: 15px; margin-top: 0; }
-        label { display: block; margin-top: 15px; font-weight: bold; }
-        input, textarea { width: 100%; padding: 12px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        input:focus { outline: none; border-color: #ff5500; }
-        button { margin-top: 25px; padding: 14px; background: #ff5500; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; }
-        button:hover { background: #e64c00; }
+        h1 { color: #333; border-left: 4px solid #4a90e2; padding-left: 15px; margin-top: 0; }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #555; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        input:focus, textarea:focus { outline: none; border-color: #4a90e2; }
+        button { margin-top: 25px; padding: 14px; background: #4a90e2; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; }
+        button:hover { background: #3a7bc8; }
         .back-link { margin-top: 20px; text-align: center; }
         .back-link a { color: #666; text-decoration: none; }
-        .back-link a:hover { color: #ff5500; }
+        .back-link a:hover { color: #4a90e2; }
         .url-preview { margin-top: 10px; background: #f0f0f0; padding: 12px; border-radius: 8px; }
         .url-preview small { display: block; margin-bottom: 5px; color: #666; }
         .url-preview code { background: white; padding: 8px; border-radius: 4px; display: block; word-break: break-all; font-size: 0.9rem; border: 1px solid #e0e0e0; }
+        .note { background: #f8f9fa; padding: 12px; border-radius: 8px; margin-top: 20px; font-size: 0.9rem; color: #666; border-left: 3px solid #4a90e2; }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>Create New Artist</h1>
-        <form action="/artist/create" method="POST" enctype="multipart/form-data">
-          <label>Artist Name</label>
-          <input type="text" name="name" id="artistName" required>
+        <h1>Create New Playlist</h1>
+        <form action="/playlist/create" method="POST" enctype="multipart/form-data">
+          <label>Playlist Title</label>
+          <input type="text" name="title" id="playlistTitle" placeholder="e.g. Zambian Hits 2024" required>
           
           <div class="url-preview">
-            <small>Artist page will be:</small>
-            <code id="urlPreview">/artist/...</code>
+            <small>Playlist page will be:</small>
+            <code id="urlPreview">/playlist/...</code>
           </div>
           
-          <label>Artist Bio (Optional)</label>
-          <textarea name="description" rows="3"></textarea>
+          <label>Description (Optional)</label>
+          <textarea name="description" rows="3" placeholder="Describe your playlist..."></textarea>
           
-          <label>Genre (Optional)</label>
-          <input type="text" name="genre" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+          <label>Curator Name (Optional)</label>
+          <input type="text" name="curator" placeholder="e.g. ZEDALBUMS" value="ZEDALBUMS">
           
-          <label>Artist Image (Optional)</label>
+          <label>Cover Image (Optional)</label>
           <input type="file" name="thumbnail" accept="image/*">
           
-          <button type="submit">Create Artist</button>
+          <button type="submit">Create Playlist</button>
         </form>
+        
+        <div class="note">
+          <strong>💡 Tip:</strong> After creating your playlist, you can add songs to it from the upload form.
+        </div>
+        
         <div class="back-link">
-          <a href="/admin">← Back to Admin</a>
+          <a href="/upload">← Back to Upload</a> | 
+          <a href="/playlists">View All Playlists</a>
         </div>
       </div>
       
       <script>
-        const nameInput = document.getElementById('artistName');
+        const titleInput = document.getElementById('playlistTitle');
         const urlPreview = document.getElementById('urlPreview');
         
         function generateSlug(text) {
@@ -762,11 +775,11 @@ export async function handleArtists(req, env, ctx) {
         }
         
         function updatePreview() {
-          const slug = generateSlug(nameInput.value);
-          urlPreview.textContent = '/artist/' + slug;
+          const slug = generateSlug(titleInput.value);
+          urlPreview.textContent = '/playlist/' + slug;
         }
         
-        nameInput.addEventListener('input', updatePreview);
+        titleInput.addEventListener('input', updatePreview);
         updatePreview();
       </script>
     </body>
@@ -775,53 +788,54 @@ export async function handleArtists(req, env, ctx) {
     return new Response(html, { headers: { "Content-Type": "text/html" } });
   }
 
-  if (path === "/artist/create" && req.method === "POST") {
+  if (path === "/playlist/create" && req.method === "POST") {
     try {
       const formData = await req.formData();
-      const name = formData.get("name");
+      const title = formData.get("title");
       const description = formData.get("description") || "";
-      const genre = formData.get("genre") || "";
+      const curator = formData.get("curator") || "ZEDALBUMS";
       const thumbnailFile = formData.get("thumbnail");
 
-      if (!name) {
-        return new Response("Missing artist name", { status: 400 });
+      if (!title) {
+        return new Response("Missing playlist title", { status: 400 });
       }
 
-      const artistId = sanitize(name);
-      const artists = await getArtists(env);
+      const playlistId = sanitize(title) + "_" + Date.now();
+      const playlists = await getPlaylists(env);
 
-      // Check if artist already exists
-      if (artists[artistId]) {
-        return new Response("Artist with this name already exists", { status: 400 });
+      // Check if playlist already exists (optional)
+      if (playlists[playlistId]) {
+        return new Response("A playlist with this title already exists", { status: 400 });
       }
 
       let thumbnailKey = null;
       if (thumbnailFile && thumbnailFile.size > 0) {
         const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
-        thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+        thumbnailKey = `playlists/thumbnails/${playlistId}.${imgType}`;
         await env.media.put(thumbnailKey, thumbnailFile.stream());
       }
 
       // Generate slug
-      const slug = slugManager.generateArtistSlug(name);
+      const slug = slugManager.generatePlaylistSlug(title);
 
-      // Create artist object
-      artists[artistId] = {
-        id: artistId,
-        name: name,
+      // Create playlist object
+      playlists[playlistId] = {
+        id: playlistId,
+        title: title,
         description: description,
-        genre: genre,
+        curator: curator,
         thumbnail: thumbnailKey,
         created: Date.now(),
-        songs: [],
-        albums: []
+        updated: Date.now(),
+        songs: []
       };
-      await saveArtists(env, artists);
+
+      await savePlaylists(env, playlists);
 
       // Register slug
-      await slugManager.registerSlug('artists', artistId, slug, {
-        name: name,
-        genre: genre,
+      await slugManager.registerSlug('playlists', playlistId, slug, {
+        title: title,
+        curator: curator,
         created: Date.now()
       });
 
@@ -829,35 +843,62 @@ export async function handleArtists(req, env, ctx) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Artist Created - ZEDALBUMS</title>
+        <title>Playlist Created - ZEDALBUMS</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           body { font-family: system-ui; padding: 20px; background: #f4f4f9; margin: 0; }
           .success { background: white; padding: 30px; border-radius: 12px; max-width: 500px; margin: 0 auto; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-          h1 { color: #28a745; }
+          h1 { color: #4a90e2; }
           .url { background: #f0f0f0; padding: 12px; border-radius: 8px; word-break: break-all; font-family: monospace; margin: 20px 0; border: 1px solid #e0e0e0; }
-          .btn { display: inline-block; margin: 10px; padding: 12px 24px; background: #ff5500; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
-          .btn:hover { background: #e64c00; }
-          .btn-secondary { background: #6c757d; }
-          .btn-secondary:hover { background: #5a6268; }
+          .btn { display: inline-block; margin: 10px; padding: 12px 24px; background: #4a90e2; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+          .btn:hover { background: #3a7bc8; }
+          .btn-upload { background: #ff5500; }
+          .btn-upload:hover { background: #e64c00; }
         </style>
       </head>
       <body>
         <div class="success">
-          <h1>✅ Artist Created!</h1>
-          <p style="font-size: 1.2rem;">${name}</p>
-          <div class="url">/artist/${slug}</div>
-          <a href="/artist/${slug}" class="btn">View Artist</a>
-          <a href="/artist/create" class="btn btn-secondary">Create Another</a>
-          <p style="margin-top: 20px;"><a href="/admin">← Back to Admin</a></p>
+          <h1>✅ Playlist Created!</h1>
+          <p style="font-size: 1.2rem; margin: 20px 0;">"${title}"</p>
+          <div class="url">/playlist/${slug}</div>
+          <a href="/playlist/${slug}" class="btn">View Playlist</a>
+          <a href="/upload" class="btn btn-upload">Upload Songs</a>
+          <p style="margin-top: 30px;">
+            <a href="/playlist/create">Create Another Playlist</a> | 
+            <a href="/playlists">All Playlists</a> | 
+            <a href="/">Home</a>
+          </p>
         </div>
       </body>
       </html>
     `;
-      return new Response(html, { headers: { "Content-Type": "text/html" } });
+      
+      return new Response(html, { 
+        headers: { "Content-Type": "text/html" } 
+      });
     } catch (error) {
-      return new Response(`Error creating artist: ${error.message}`, { status: 500 });
+      return new Response(`Error creating playlist: ${error.message}`, { status: 500 });
     }
+  }
+
+  // API endpoint for getting all playlists
+  if (path === "/api/playlists/list" && req.method === "GET") {
+    const playlists = await getPlaylists(env);
+    const playlistArray = await Promise.all(Object.values(playlists).map(async p => {
+      const playlistSlug = await slugManager.getSlugFromId('playlists', p.id) || p.id;
+      return {
+        id: p.id,
+        slug: playlistSlug,
+        title: p.title,
+        songs: p.songs || [],
+        created: p.created,
+        songCount: (p.songs || []).length
+      };
+    }));
+    
+    return new Response(JSON.stringify(playlistArray), {
+      headers: { "Content-Type": "application/json" }
+    });
   }
 
   return new Response("Not found", { status: 404 });
