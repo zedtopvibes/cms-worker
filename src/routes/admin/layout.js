@@ -668,6 +668,10 @@ export function adminLayout(title, content, auth, activePage = 'dashboard', pend
                     ${totalGenres > 0 ? `<span class="tab-badge">${totalGenres}</span>` : ''}
                 </a>
 
+<a href="/admin/slugs" class="tab-btn ${activePage === 'slugs' ? 'active' : ''}">
+    <i class="fas fa-link"></i> Slugs
+</a>
+
                 <!-- Announcement System -->
                 <a href="/admin/announcements" class="tab-btn ${activePage === 'announcements' ? 'active' : ''}">
                     <i class="fas fa-bullhorn"></i> Announcements
