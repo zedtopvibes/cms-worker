@@ -30,8 +30,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
   }).join("");
 
   const content = `
-    <div style="max-width: 800px; margin: 0 auto;">
-        <h2 style="margin-bottom: 20px; font-size: 1.3rem; display: flex; align-items: center; gap: 10px;">
+    <div style="max-width: 800px; margin: 0 auto; padding: 0 10px;">
+        <h2 style="margin-bottom: 20px; font-size: 1.3rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <i class="fas fa-cloud-upload-alt" style="color: #ff5500;"></i> 
             Upload New Song
         </h2>
@@ -45,19 +45,21 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </label>
                 <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. Drake - God's Plan" required>
                 
-                <!-- URL Preview Section -->
-                <div style="margin-top: 10px; background: #f8f9fa; padding: 12px 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <div style="display: flex; align-items: center; gap: 5px; color: #666;">
-                            <i class="fas fa-link" style="color: #ff5500;"></i>
+                <!-- URL Preview Section - Mobile Friendly -->
+                <div style="margin-top: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                    <div style="display: flex; align-items: flex-start; gap: 8px; flex-direction: column;">
+                        <div style="display: flex; align-items: center; gap: 5px; color: #666; width: 100%;">
+                            <i class="fas fa-link" style="color: #ff5500; flex-shrink: 0;"></i>
                             <span style="font-size: 0.9rem; font-weight: 500;">Final URL:</span>
                         </div>
-                        <code id="urlPreview" style="flex: 1; padding: 6px 10px; background: white; border-radius: 4px; font-size: 0.9rem; border: 1px solid #e0e0e0;">
-                            /song/...
-                        </code>
-                        <button type="button" onclick="copyUrl()" class="btn btn-secondary" style="padding: 6px 15px; font-size: 0.9rem;">
-                            <i class="fas fa-copy"></i> Copy
-                        </button>
+                        <div style="display: flex; width: 100%; gap: 8px; flex-wrap: wrap;">
+                            <code id="urlPreview" style="flex: 1; min-width: 200px; padding: 8px 10px; background: white; border-radius: 4px; font-size: 0.85rem; border: 1px solid #e0e0e0; word-break: break-all; white-space: normal;">
+                                /song/...
+                            </code>
+                            <button type="button" onclick="copyUrl()" class="btn btn-secondary" style="padding: 8px 15px; font-size: 0.9rem; white-space: nowrap;">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
                     </div>
                     <p style="font-size: 0.8rem; color: #666; margin-top: 8px; margin-bottom: 0;">
                         <i class="fas fa-info-circle"></i> 
@@ -97,7 +99,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 
                 <div id="primaryNewArtistContainer" style="margin-top: 10px; display: none;">
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <input type="text" id="primaryNewArtistName" class="form-control" placeholder="Enter new artist name" style="flex: 1;">
+                        <input type="text" id="primaryNewArtistName" class="form-control" placeholder="Enter new artist name" style="flex: 1; min-width: 200px;">
                         <button type="button" onclick="saveNewArtist('primary')" class="btn btn-primary">
                             <i class="fas fa-save"></i> Save
                         </button>
@@ -139,7 +141,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 
                 <div id="featuredNewArtistContainer" style="margin-top: 10px; display: none;">
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <input type="text" id="featuredNewArtistName" class="form-control" placeholder="Enter new artist name" style="flex: 1;">
+                        <input type="text" id="featuredNewArtistName" class="form-control" placeholder="Enter new artist name" style="flex: 1; min-width: 200px;">
                         <button type="button" onclick="saveNewArtist('featured')" class="btn btn-primary">
                             <i class="fas fa-save"></i> Save
                         </button>
@@ -155,7 +157,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </p>
             </div>
             
-            <!-- GENRE SELECTION - New section like featured artists -->
+            <!-- GENRE SELECTION -->
             <div class="form-group">
                 <label>
                     <i class="fas fa-tags" style="color: #ff5500; width: 20px;"></i>
@@ -187,13 +189,13 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <div id="genreNewContainer" style="margin-top: 10px; display: none;">
                     <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
                         <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
-                            <input type="text" id="genreNewId" class="form-control" placeholder="Genre ID (e.g., dancehall)" style="flex: 1;">
-                            <input type="text" id="genreNewName" class="form-control" placeholder="Display Name (e.g., Dancehall)" style="flex: 1;">
+                            <input type="text" id="genreNewId" class="form-control" placeholder="Genre ID (e.g., dancehall)" style="flex: 1; min-width: 200px;">
+                            <input type="text" id="genreNewName" class="form-control" placeholder="Display Name (e.g., Dancehall)" style="flex: 1; min-width: 200px;">
                         </div>
                         
-                        <div style="margin-bottom: 15px;">
+                        <div style="margin-bottom: 15px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px;">
                             <label style="display: block; margin-bottom: 5px; font-weight: 600;">Color</label>
-                            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
+                            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; min-width: 300px;">
                                 ${genreManager.getColorPalette().map(color => `
                                     <label style="display: block; cursor: pointer;">
                                         <input type="radio" name="newGenreColor" value="${color}" style="display: none;">
@@ -205,9 +207,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                             </div>
                         </div>
                         
-                        <div style="margin-bottom: 15px;">
+                        <div style="margin-bottom: 15px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px;">
                             <label style="display: block; margin-bottom: 5px; font-weight: 600;">Icon</label>
-                            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;">
+                            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; min-width: 400px;">
                                 ${genreManager.getIconOptions().map(icon => `
                                     <label style="display: block; cursor: pointer; text-align: center;">
                                         <input type="radio" name="newGenreIcon" value="${icon}" style="display: none;">
@@ -220,11 +222,11 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                             </div>
                         </div>
                         
-                        <div style="display: flex; gap: 8px;">
-                            <button type="button" onclick="saveNewGenre()" class="btn btn-primary" style="flex: 1;">
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" onclick="saveNewGenre()" class="btn btn-primary" style="flex: 1; min-width: 120px;">
                                 <i class="fas fa-save"></i> Create Genre
                             </button>
-                            <button type="button" onclick="cancelNewGenre()" class="btn btn-secondary">
+                            <button type="button" onclick="cancelNewGenre()" class="btn btn-secondary" style="flex: 1; min-width: 120px;">
                                 <i class="fas fa-times"></i> Cancel
                             </button>
                         </div>
@@ -283,7 +285,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 <div id="durationContainer" style="margin-top: 15px; display: none;">
                     <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #ff5500;">
                         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                            <i class="fas fa-clock" style="color: #ff5500;"></i>
+                            <i class="fas fa-clock" style="color: #ff5500; flex-shrink: 0;"></i>
                             <span style="font-weight: 600;">Duration:</span>
                             <span id="durationText">Analyzing...</span>
                             <span id="exactBadge" style="display: none; background: #28a745; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem;">EXACT</span>
@@ -314,7 +316,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             
             <!-- Submit Button -->
             <div style="margin-top: 30px;">
-                <button type="submit" id="submitBtn" class="btn btn-primary btn-block" style="padding: 16px;">
+                <button type="submit" id="submitBtn" class="btn btn-primary btn-block" style="padding: 16px; width: 100%;">
                     <i class="fas fa-cloud-upload-alt"></i> Upload Song
                 </button>
             </div>
@@ -331,76 +333,289 @@ export async function handleAdminUpload(req, env, ctx, auth) {
     </div>
     
     <style>
-        .searchable-select-container { position: relative; width: 100%; }
-        .searchable-select {
-            width: 100%; padding: 12px 15px; background: white;
-            border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer;
-            display: flex; justify-content: space-between; align-items: center;
-            min-height: 44px;
+        /* Base styles */
+        * {
+            box-sizing: border-box;
         }
-        .searchable-select:hover { border-color: #ff5500; }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            width: 100%;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+            max-width: 100%;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #ff5500;
+        }
+        
+        .searchable-select-container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 100%;
+        }
+        
+        .searchable-select {
+            width: 100%; 
+            padding: 12px 15px; 
+            background: white;
+            border: 2px solid #e0e0e0; 
+            border-radius: 8px; 
+            cursor: pointer;
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            min-height: 44px;
+            word-break: break-word;
+        }
+        
+        .searchable-select:hover { 
+            border-color: #ff5500; 
+        }
+        
         .searchable-dropdown {
-            position: absolute; top: 100%; left: 0; right: 0; background: white;
-            border: 2px solid #e0e0e0; border-radius: 8px; margin-top: 5px;
-            max-height: 400px; overflow: hidden; z-index: 1000;
+            position: absolute; 
+            top: 100%; 
+            left: 0; 
+            right: 0; 
+            background: white;
+            border: 2px solid #e0e0e0; 
+            border-radius: 8px; 
+            margin-top: 5px;
+            max-height: 400px; 
+            overflow: hidden; 
+            z-index: 1000;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
+        
         .search-box {
-            padding: 10px; border-bottom: 1px solid #e0e0e0;
-            display: flex; align-items: center; gap: 8px;
+            padding: 10px; 
+            border-bottom: 1px solid #e0e0e0;
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
         }
-        .search-box i { color: #999; }
+        
+        .search-box i { 
+            color: #999; 
+            flex-shrink: 0;
+        }
+        
         .search-box input {
-            flex: 1; border: none; outline: none; font-size: 14px; padding: 8px 0;
+            flex: 1; 
+            border: none; 
+            outline: none; 
+            font-size: 14px; 
+            padding: 8px 0;
+            min-width: 0;
+            width: 100%;
         }
-        .artist-list { max-height: 250px; overflow-y: auto; padding: 5px 0; }
+        
+        .artist-list { 
+            max-height: 250px; 
+            overflow-y: auto; 
+            padding: 5px 0; 
+        }
+        
         .artist-item {
-            padding: 10px 15px; cursor: pointer;
-            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 15px; 
+            cursor: pointer;
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
             transition: background 0.2s;
+            word-break: break-word;
+            gap: 10px;
         }
-        .artist-item:hover { background: #f0f0f0; }
+        
+        .artist-item:hover { 
+            background: #f0f0f0; 
+        }
+        
         .artist-item.selected {
-            background: #fff0e6; border-left: 3px solid #ff5500;
+            background: #fff0e6; 
+            border-left: 3px solid #ff5500;
         }
-        .artist-name { font-weight: 500; }
+        
+        .artist-name { 
+            font-weight: 500; 
+            word-break: break-word;
+        }
+        
         .artist-song-count {
-            font-size: 0.7rem; color: #999; background: #f0f0f0;
-            padding: 2px 6px; border-radius: 12px;
+            font-size: 0.7rem; 
+            color: #999; 
+            background: #f0f0f0;
+            padding: 2px 6px; 
+            border-radius: 12px;
+            white-space: nowrap;
         }
+        
         .dropdown-footer {
-            padding: 10px; border-top: 1px solid #e0e0e0; background: #f9f9f9;
+            padding: 10px; 
+            border-top: 1px solid #e0e0e0; 
+            background: #f9f9f9;
         }
+        
         .featured-tag {
-            display: inline-flex; align-items: center; gap: 6px;
-            background: #f0f0f0; border-radius: 30px; padding: 6px 12px;
-            font-size: 0.9rem; border: 1px solid #e0e0e0;
+            display: inline-flex; 
+            align-items: center; 
+            gap: 6px;
+            background: #f0f0f0; 
+            border-radius: 30px; 
+            padding: 6px 12px;
+            font-size: 0.9rem; 
+            border: 1px solid #e0e0e0;
             animation: slideIn 0.3s ease;
+            word-break: break-word;
+            max-width: 100%;
         }
+        
         .genre-tag {
-            display: inline-flex; align-items: center; gap: 6px;
-            background: #ff5500; color: white; border-radius: 30px; padding: 6px 15px;
-            font-size: 0.9rem; border: none;
+            display: inline-flex; 
+            align-items: center; 
+            gap: 6px;
+            background: #ff5500; 
+            color: white; 
+            border-radius: 30px; 
+            padding: 6px 15px;
+            font-size: 0.9rem; 
+            border: none;
             animation: slideIn 0.3s ease;
+            word-break: break-word;
+            max-width: 100%;
         }
+        
         .genre-tag i {
-            cursor: pointer; font-size: 1rem;
+            cursor: pointer; 
+            font-size: 1rem;
             transition: transform 0.2s;
+            flex-shrink: 0;
         }
-        .genre-tag i:hover { transform: scale(1.2); }
+        
+        .genre-tag i:hover { 
+            transform: scale(1.2); 
+        }
+        
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
+        
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #ff5500;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #e64c00;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn-block {
+            width: 100%;
+        }
+        
+        /* Mobile styles */
         @media (max-width: 768px) {
             .searchable-dropdown {
-                position: fixed; top: 50%; left: 50%;
+                position: fixed; 
+                top: 50%; 
+                left: 50%;
                 transform: translate(-50%, -50%);
-                width: 90%; max-width: 400px; max-height: 80vh;
+                width: 90%; 
+                max-width: 400px; 
+                max-height: 80vh;
+            }
+            
+            .btn {
+                width: 100%;
+                margin: 5px 0;
+            }
+            
+            .featured-tag, .genre-tag { 
+                font-size: 0.8rem; 
+                padding: 4px 10px; 
+            }
+            
+            h2 {
+                font-size: 1.2rem;
             }
         }
+        
         @media (max-width: 480px) {
-            .featured-tag, .genre-tag { font-size: 0.8rem; padding: 4px 10px; }
+            .form-control {
+                font-size: 14px;
+                padding: 10px 12px;
+            }
+            
+            .searchable-select {
+                padding: 10px 12px;
+                font-size: 14px;
+            }
+            
+            .btn {
+                padding: 10px 16px;
+                font-size: 0.9rem;
+            }
+            
+            .featured-tag, .genre-tag { 
+                font-size: 0.75rem; 
+                padding: 4px 8px; 
+            }
+        }
+        
+        /* Prevent horizontal scroll */
+        html, body {
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        
+        .container, .form-group, div {
+            max-width: 100%;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        code {
+            word-break: break-all;
+            white-space: normal;
         }
     </style>
     
@@ -480,6 +695,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 setTimeout(() => {
                     btn.innerHTML = originalHtml;
                 }, 2000);
+            }).catch(() => {
+                // Fallback for mobile browsers that don't support clipboard
+                alert('URL: ' + url);
             });
         };
         
