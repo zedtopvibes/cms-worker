@@ -81,7 +81,7 @@ export async function handleSearch(req, env, ctx) {
             plays: stats.plays,
             downloads: stats.downloads,
             uploaded: file.uploaded,
-            url: `/song/${encodeURIComponent(fileName)}`,
+            url: `/song/${encodeURIComponent(baseName)}`,
             score: calculateRelevance(title, artistName, lowercaseQuery)
           };
         })
