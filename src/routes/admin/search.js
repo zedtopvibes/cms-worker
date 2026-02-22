@@ -1,4 +1,4 @@
-// ==================== ADMIN SEARCH ====================
+// ==================== ADMIN  SEARCH ====================
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../../helpers/storage.js';
 import { getSongStats } from '../../helpers/db.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
