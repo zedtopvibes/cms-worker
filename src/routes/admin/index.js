@@ -1177,7 +1177,7 @@ if (path === '/slugs') {
       headers: { 'Content-Type': 'text/html' }
     });
   }
-
+ 
   // ===== USER MANAGEMENT (Placeholder) =====
   if (path === '/user-management') {
     const content = `
