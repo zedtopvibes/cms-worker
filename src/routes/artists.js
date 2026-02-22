@@ -1,4 +1,4 @@
-// ==================== ARTISTS ROUTES ====================
+// ==================== ARTISTS  ROUTES ====================
 // ALL IMPORTS AT THE TOP 
 import { incrementPageView } from '../helpers/pageViews.js';
 import { 
