@@ -12,8 +12,11 @@ export function generateAlbumChartItem(album, thumbUrl, artists, isPreview = fal
   const trendIcon = album.rankChange > 0 ? 'arrow-up' : (album.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = album.rankChange > 0 ? '#27ae60' : (album.rankChange < 0 ? '#e74c3c' : '#999');
   
+  // Use slug if available, fall back to ID
+  const albumUrl = album.slug ? `/album/${album.slug}` : `/album/${album.id}`;
+  
   return `
-    <div class="album-item" onclick="window.location='/album/${album.id}'">
+    <div class="album-item" onclick="window.location='${albumUrl}'">
       <div class="album-thumbnail">
         <div class="rank-overlay ${rankClass}">${album.rank}</div>
         <img src="${thumbUrl}" alt="${album.title}" loading="lazy">
@@ -43,8 +46,11 @@ export function generateSongChartItem(song, thumbUrl, artists, isPreview = false
   const trendIcon = song.rankChange > 0 ? 'arrow-up' : (song.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = song.rankChange > 0 ? '#27ae60' : (song.rankChange < 0 ? '#e74c3c' : '#999');
   
+  // Use slug if available, fall back to fileName
+  const songUrl = song.slug ? `/song/${song.slug}` : `/song/${encodeURIComponent(song.fileName)}`;
+  
   return `
-    <div class="album-item" onclick="window.location='/song/${encodeURIComponent(song.fileName)}'">
+    <div class="album-item" onclick="window.location='${songUrl}'">
       <div class="album-thumbnail">
         <div class="rank-overlay ${rankClass}">${song.rank}</div>
         <img src="${thumbUrl}" alt="${song.title}" loading="lazy">
@@ -76,8 +82,11 @@ export function generateArtistChartItem(artist, thumbUrl, isPreview = false) {
   const trendIcon = artist.rankChange > 0 ? 'arrow-up' : (artist.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = artist.rankChange > 0 ? '#27ae60' : (artist.rankChange < 0 ? '#e74c3c' : '#999');
   
+  // Use slug if available, fall back to ID
+  const artistUrl = artist.slug ? `/artist/${artist.slug}` : `/artist/${artist.id}`;
+  
   return `
-    <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+    <div class="album-item" onclick="window.location='${artistUrl}'">
       <div class="album-thumbnail artist-thumbnail">
         <div class="rank-overlay ${rankClass}">${artist.rank}</div>
         ${thumbUrl !== "/images/placeholder.jpg" ? `<img src="${thumbUrl}" alt="${artist.name}" loading="lazy">` : ''}
@@ -109,8 +118,11 @@ export function generatePlaylistChartItem(playlist, thumbUrl, isPreview = false)
   const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
   const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
   
+  // Use slug if available, fall back to ID
+  const playlistUrl = playlist.slug ? `/playlist/${playlist.slug}` : `/playlist/${playlist.id}`;
+  
   return `
-    <div class="album-item" onclick="window.location='/playlist/${playlist.id}'">
+    <div class="album-item" onclick="window.location='${playlistUrl}'">
       <div class="album-thumbnail playlist-thumbnail">
         <div class="rank-overlay ${rankClass}">${playlist.rank}</div>
         ${thumbUrl !== "/images/placeholder.jpg" ? `<img src="${thumbUrl}" alt="${playlist.title}" loading="lazy">` : ''}
@@ -147,8 +159,11 @@ export function generateNewReleaseAlbumItem(album, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
+  // Use slug if available, fall back to ID
+  const albumUrl = album.slug ? `/album/${album.slug}` : `/album/${album.id}`;
+  
   return `
-    <div class="album-item" onclick="window.location='/album/${album.id}'">
+    <div class="album-item" onclick="window.location='${albumUrl}'">
       <div class="album-thumbnail">
         <img src="${thumbUrl}" alt="${album.title}" loading="lazy">
       </div>
@@ -174,8 +189,11 @@ export function generateNewReleaseSongItem(song, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
+  // Use slug if available, fall back to ID
+  const songUrl = song.slug ? `/song/${song.slug}` : `/song/${encodeURIComponent(song.id + ".mp3")}`;
+  
   return `
-    <div class="album-item" onclick="window.location='/song/${encodeURIComponent(song.id + ".mp3")}'">
+    <div class="album-item" onclick="window.location='${songUrl}'">
       <div class="album-thumbnail">
         <img src="${thumbUrl}" alt="${song.title}" loading="lazy">
         <div class="play-btn-mini"><i class="fas fa-play"></i></div>
