@@ -12,7 +12,7 @@ import { handleAdmin } from './routes/admin/index.js';
 import { handleCron } from './helpers/cron.js';
 
 // ===== ADMIN PAGE IMPORTS =====
-import { handleAdminActivity, handleAdminActivityExport } from './routes/admin/activity.js';
+import { handleAdminActivity } from './routes/admin/activity.js';
 
 // ===== API IMPORTS =====
 import { handleTrackPlay, handleTrackPlayOptions } from './routes/api/play.js';
@@ -31,12 +31,10 @@ export default {
     try {
       // ===== ADMIN ROUTES =====
       if (path.startsWith("/admin")) {
-        // Handle specific admin routes before passing to general handler
-        if (path === '/activity') {
-          const result = await handleAdminActivity(req, env, ctx, auth);
-          return new Response(adminLayout(result.title, result.content, auth, 'activity'), {
-            headers: { 'Content-Type': 'text/html' }
-          });
+        // Handle specific admin routes
+        if (path === '/admin/activity') {
+          const { handleAdminActivity } = await import('./routes/admin/activity.js');
+          return await handleAdminActivity(req, env, ctx);
         }
         
         // Pass through to main admin handler
@@ -61,23 +59,6 @@ export default {
       // Preview API route
       if (path.startsWith("/api/preview")) {
         return await handlePreview(req, env, ctx);
-      }
-      
-      // ===== USER ROUTES (Reserved for future user system) =====
-      if (path === "/login") {
-        return new Response("User login coming soon", { status: 501 });
-      }
-      
-      if (path === "/logout") {
-        return new Response("User logout coming soon", { status: 501 });
-      }
-      
-      if (path === "/signup") {
-        return new Response("User registration coming soon", { status: 501 });
-      }
-      
-      if (path === "/profile") {
-        return new Response("User profile coming soon", { status: 501 });
       }
       
       // ===== PUBLIC ROUTES =====
