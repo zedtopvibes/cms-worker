@@ -12,8 +12,8 @@ export function generateAlbumChartItem(album, thumbUrl, artists, isPreview = fal
   const trendIcon = album.rankChange > 0 ? 'arrow-up' : (album.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = album.rankChange > 0 ? '#27ae60' : (album.rankChange < 0 ? '#e74c3c' : '#999');
   
-  // Use slug if available, fall back to ID
-  const albumUrl = album.slug ? `/album/${album.slug}` : `/album/${album.id}`;
+  // Use ID only - slug removed
+  const albumUrl = `/album/${album.id}`;
   
   return `
     <div class="album-item" onclick="window.location='${albumUrl}'">
@@ -46,8 +46,8 @@ export function generateSongChartItem(song, thumbUrl, artists, isPreview = false
   const trendIcon = song.rankChange > 0 ? 'arrow-up' : (song.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = song.rankChange > 0 ? '#27ae60' : (song.rankChange < 0 ? '#e74c3c' : '#999');
   
-  // Use slug if available, fall back to fileName
-  const songUrl = song.slug ? `/song/${song.slug}` : `/song/${encodeURIComponent(song.fileName)}`;
+  // Use fileName only - slug removed
+  const songUrl = `/song/${encodeURIComponent(song.fileName)}`;
   
   return `
     <div class="album-item" onclick="window.location='${songUrl}'">
@@ -82,8 +82,8 @@ export function generateArtistChartItem(artist, thumbUrl, isPreview = false) {
   const trendIcon = artist.rankChange > 0 ? 'arrow-up' : (artist.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = artist.rankChange > 0 ? '#27ae60' : (artist.rankChange < 0 ? '#e74c3c' : '#999');
   
-  // Use slug if available, fall back to ID
-  const artistUrl = artist.slug ? `/artist/${artist.slug}` : `/artist/${artist.id}`;
+  // Use ID only - slug removed
+  const artistUrl = `/artist/${artist.id}`;
   
   return `
     <div class="album-item" onclick="window.location='${artistUrl}'">
@@ -118,8 +118,8 @@ export function generatePlaylistChartItem(playlist, thumbUrl, isPreview = false)
   const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
   const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
   
-  // Use slug if available, fall back to ID
-  const playlistUrl = playlist.slug ? `/playlist/${playlist.slug}` : `/playlist/${playlist.id}`;
+  // Use ID only - slug removed
+  const playlistUrl = `/playlist/${playlist.id}`;
   
   return `
     <div class="album-item" onclick="window.location='${playlistUrl}'">
@@ -159,8 +159,8 @@ export function generateNewReleaseAlbumItem(album, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
-  // Use slug if available, fall back to ID
-  const albumUrl = album.slug ? `/album/${album.slug}` : `/album/${album.id}`;
+  // Use ID only - slug removed
+  const albumUrl = `/album/${album.id}`;
   
   return `
     <div class="album-item" onclick="window.location='${albumUrl}'">
@@ -189,8 +189,8 @@ export function generateNewReleaseSongItem(song, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
-  // Use slug if available, fall back to ID
-  const songUrl = song.slug ? `/song/${song.slug}` : `/song/${encodeURIComponent(song.id + ".mp3")}`;
+  // Use ID with .mp3 extension - slug removed
+  const songUrl = `/song/${encodeURIComponent(song.id + ".mp3")}`;
   
   return `
     <div class="album-item" onclick="window.location='${songUrl}'">
