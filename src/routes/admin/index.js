@@ -545,6 +545,8 @@ export async function handleAdmin(req, env, ctx) {
           headers: { 'Content-Type': 'text/html' }
         });
       }
+      
+      // SUCCESS PAGE - UPDATED WITH SLUGS
       const content = `
         <div style="text-align: center; padding: 20px 10px;">
             <div style="background: #d4edda; color: #155724; padding: 25px 20px; border-radius: 12px; margin-bottom: 30px;">
@@ -556,30 +558,44 @@ export async function handleAdmin(req, env, ctx) {
                     <i class="fas fa-clock" style="color: #ff5500;"></i>
                     <strong>Duration:</strong> ${formatDuration(result.duration)}
                 </div>
+                <div style="margin-top: 15px; background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                    <i class="fas fa-link" style="color: #ff5500;"></i>
+                    <span style="font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px;">/song/${result.slug}</span>
+                </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 12px; max-width: 320px; margin: 0 auto;">
-                <a href="/song/${encodeURIComponent(result.baseName + '.mp3')}" class="btn btn-primary" target="_blank" style="padding: 16px;">
+                <!-- View Song - Now using slug -->
+                <a href="/song/${result.slug}" class="btn btn-primary" target="_blank" style="padding: 16px;">
                     <i class="fas fa-play"></i> View Song
                 </a>
+                
+                <!-- Upload Another -->
                 <a href="/admin/upload" class="btn btn-secondary" style="padding: 16px;">
                     <i class="fas fa-cloud-upload-alt"></i> Upload Another Song
                 </a>
+                
+                <!-- Album Link - If album exists -->
                 ${result.albumId ? `
                     <a href="/album/${result.albumId}" class="btn btn-secondary" target="_blank" style="padding: 16px;">
                         <i class="fas fa-compact-disc"></i> View Album
                     </a>
                 ` : ''}
+                
+                <!-- Playlist Link - If playlist exists -->
                 ${result.playlistId ? `
                     <a href="/playlist/${result.playlistId}" class="btn btn-secondary" target="_blank" style="padding: 16px;">
                         <i class="fas fa-list"></i> View Playlist
                     </a>
                 ` : ''}
+                
+                <!-- Back to Dashboard -->
                 <a href="/admin/dashboard" class="btn btn-secondary" style="padding: 16px; background: #f0f0f0;">
                     <i class="fas fa-tachometer-alt"></i> Back to Dashboard
                 </a>
             </div>
         </div>
       `;
+      
       return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, 
         { total: totalDuplicates }, 
         { total: totalMissingIssues }, 
