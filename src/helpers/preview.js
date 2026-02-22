@@ -67,7 +67,7 @@ async function getSongPreview(env, id) {
     downloads: formatNumber(stats.downloads),
     views: formatNumber(views),
     description: meta?.description || 'No description available',
-    url: `/song/${encodeURIComponent(id + '.mp3')}`
+    url: `/song/${encodeURIComponent(id)}`
   };
 }
 
