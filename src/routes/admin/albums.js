@@ -1,12 +1,12 @@
 // ==================== ADMIN ALBUMS MANAGEMENT ====================
-import { getAlbums, getArtists, saveAlbums } from '../../helpers/storage.js';
+import { getAlbums, getArtists, saveAlbums, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
-import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
-import { SlugManager } from '../../helpers/slug.js';
+import { GenreManager } from '../../helpers/genreManager.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL ALBUMS =====
 export async function handleAdminAlbums(req, env, ctx, auth) {
@@ -15,6 +15,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 15;
+  const slugManager = new SlugManager(env);  // ADD THIS
 
   // Get all albums
   const albums = await getAlbums(env);
@@ -25,6 +26,9 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
     Object.entries(albums).map(async ([id, album]) => {
       const stats = await getAggregatedStats(album.songs || [], env);
       const pageViews = await getPageViews(env, 'album', id);
+      
+      // Get slug for this album
+      const albumSlug = await slugManager.getSlugFromId('albums', id) || id;
       
       // Get primary artist name
       let primaryArtist = 'Various';
@@ -38,6 +42,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
       
       return {
         id,
+        slug: albumSlug,  // ADD THIS
         title: album.title,
         description: album.description || '',
         thumbnail: album.thumbnail,
@@ -51,7 +56,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
         views: pageViews,
         created: album.created,
         hasThumbnail: !!album.thumbnail,
-        genre: album.genre || null  // ADD THIS
+        genre: album.genre || null
       };
     })
   );
@@ -205,6 +210,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
             justify-content: center;
             color: #999;
             font-size: 3rem;
+            cursor: pointer;
         }
         
         .album-thumbnail img {
@@ -221,12 +227,18 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
             font-weight: 700;
             font-size: 1.1rem;
             margin-bottom: 5px;
+            cursor: pointer;
+        }
+        
+        .album-title:hover {
+            color: #ff5500;
         }
         
         .album-artist {
             color: #ff5500;
             font-size: 0.9rem;
             margin-bottom: 8px;
+            cursor: pointer;
         }
         
         .album-stats {
@@ -236,6 +248,16 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
             color: #666;
             margin-top: 8px;
             flex-wrap: wrap;
+        }
+        
+        .album-slug-info {
+            font-size: 0.75rem;
+            color: #4a90e2;
+            margin-top: 5px;
+            padding: 4px 8px;
+            background: #f0f7ff;
+            border-radius: 4px;
+            display: inline-block;
         }
         
         @media (min-width: 768px) {
@@ -258,11 +280,26 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
             if (e.key === 'Enter') applyFilters();
         });
         
-        window.viewAlbum = function(id) { window.open('/album/' + id, '_blank'); };
-        window.editAlbum = function(id) { window.location.href = '/admin/albums/edit?id=' + id; };
-        window.manageSongs = function(id) { window.location.href = '/admin/albums/songs?id=' + id; };
+        window.viewAlbum = function(id) { 
+            window.open('/album/' + id, '_blank'); 
+        };
+        
+        window.viewAlbumBySlug = function(slug) { 
+            window.open('/album/' + slug, '_blank'); 
+        };
+        
+        window.editAlbum = function(id) { 
+            window.location.href = '/admin/albums/edit?id=' + id; 
+        };
+        
+        window.manageSongs = function(id) { 
+            window.location.href = '/admin/albums/songs?id=' + id; 
+        };
+        
         window.deleteAlbum = function(id) {
-            if (confirm('Delete this album? It will be moved to trash.')) window.location.href = '/admin/albums/delete?id=' + id;
+            if (confirm('Delete this album? It will be moved to trash.')) {
+                window.location.href = '/admin/albums/delete?id=' + id;
+            }
         };
     </script>
   `;
@@ -413,7 +450,7 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
   const title = formData.get('title');
   const description = formData.get('description');
   const thumbnailFile = formData.get('thumbnail');
-  const genre = formData.get('genre');  // Get selected genre
+  const genre = formData.get('genre');
 
   if (!title || !thumbnailFile) {
     return { success: false, error: 'Missing required fields' };
@@ -427,6 +464,11 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
   const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
   await env.media.put(thumbnailKey, thumbnailFile.stream());
 
+  // Generate and save slug for album
+  const slugManager = new SlugManager(env);
+  const slug = slugManager.generateAlbumSlug(title);
+  await slugManager.registerSlug('albums', albumId, slug, { title });
+
   albums[albumId] = {
     id: albumId,
     title: title,
@@ -435,7 +477,8 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
     created: Date.now(),
     songs: [],
     artists: [],
-    genre: genre || undefined  // Save genre
+    genre: genre || undefined,
+    slug: slug  // ADD THIS
   };
 
   await saveAlbums(env, albums);
@@ -461,10 +504,14 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
   const albums = await getAlbums(env);
   const album = albums[albumId];
   const artists = await getArtists(env);
+  const slugManager = new SlugManager(env);  // ADD THIS
   
   if (!album) {
     return { redirect: '/admin/albums' };
   }
+  
+  // Get album slug
+  const albumSlug = await slugManager.getSlugFromId('albums', albumId) || albumId;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -487,6 +534,11 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
             <h2 style="font-size: 1.3rem; margin:0;">
                 <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Album: ${album.title}
             </h2>
+            <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #ff5500;">
+                <i class="fas fa-link" style="color: #ff5500;"></i>
+                <span style="margin-left: 5px;">Album URL:</span>
+                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/album/${albumSlug}</code>
+            </div>
         </div>
         
         <form id="editForm" action="/admin/albums/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
@@ -640,7 +692,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   const title = formData.get('title');
   const description = formData.get('description');
   const artists = formData.getAll('artists');
-  const genre = formData.get('genre');  // Get selected genre
+  const genre = formData.get('genre');
   const thumbnailFile = formData.get('thumbnail');
   
   if (!albumId || !title) {
@@ -649,16 +701,25 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   
   try {
     const albums = await getAlbums(env);
+    const slugManager = new SlugManager(env);  // ADD THIS
     
     if (!albums[albumId]) {
       return { success: false, error: 'Album not found' };
+    }
+    
+    // Check if title changed and update slug if needed
+    const oldTitle = albums[albumId].title;
+    if (oldTitle !== title) {
+      const newSlug = slugManager.generateAlbumSlug(title);
+      await slugManager.registerSlug('albums', albumId, newSlug, { title });
+      albums[albumId].slug = newSlug;
     }
     
     // Update album details
     albums[albumId].title = title;
     albums[albumId].description = description;
     albums[albumId].artists = artists.filter(a => a);
-    albums[albumId].genre = genre || undefined;  // Save genre
+    albums[albumId].genre = genre || undefined;
     
     // Upload new thumbnail if provided
     if (thumbnailFile && thumbnailFile.size > 0) {
@@ -669,11 +730,6 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     }
     
     await saveAlbums(env, albums);
-
-// Generate and save slug for album
-const slugManager = new SlugManager(env);
-const slug = slugManager.generateAlbumSlug(title);
-await slugManager.registerSlug('albums', albumId, slug, { title });
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'album', albumId, title);
@@ -723,7 +779,8 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
       songs: album?.songs,
       genre: album?.genre,
       created: album?.created,
-      thumbnail: album?.thumbnail
+      thumbnail: album?.thumbnail,
+      slug: album?.slug
     };
     
     // Move to trash
@@ -936,6 +993,9 @@ function generateMobileCard(album) {
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">${date}</div>
+        <div style="font-size:0.7rem; color:#4a90e2; margin-bottom:8px;">
+            <i class="fas fa-link"></i> /album/${album.slug}
+        </div>
         <div style="display:flex; gap:8px;">
             <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
             <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
@@ -949,13 +1009,16 @@ function generateMobileCard(album) {
 function generateGridCard(album) {
   return `
     <div class="album-grid-card">
-        <div class="album-thumbnail" onclick="viewAlbum('${album.id}')">
+        <div class="album-thumbnail" onclick="viewAlbumBySlug('${album.slug}')">
             ${album.thumbnail ? `<img src="/albums/thumbnails/${album.id}.jpg">` : '💿'}
         </div>
         <div class="album-info">
-            <div class="album-title" onclick="viewAlbum('${album.id}')">${album.title}</div>
-            <div class="album-artist" onclick="viewAlbum('${album.id}')">${album.primaryArtist}</div>
+            <div class="album-title" onclick="viewAlbumBySlug('${album.slug}')">${album.title}</div>
+            <div class="album-artist" onclick="viewAlbumBySlug('${album.slug}')">${album.primaryArtist}</div>
             ${album.genre ? `<div style="color: #ff5500; font-size: 0.8rem; margin-bottom: 5px;">${album.genre}</div>` : ''}
+            <div class="album-slug-info">
+                <i class="fas fa-link"></i> /album/${album.slug}
+            </div>
             <div class="album-stats">
                 <span><i class="fas fa-music"></i> ${album.songCount}</span>
                 <span><i class="fas fa-play"></i> ${formatNumber(album.plays)}</span>
@@ -995,6 +1058,3 @@ function generatePagination(currentPage, totalPages, search, sort) {
   html += '</div>';
   return html;
 }
-
-// Import getMetadata for songs page
-import { getMetadata } from '../../helpers/storage.js';
