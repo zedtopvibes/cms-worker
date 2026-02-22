@@ -31,7 +31,9 @@ export async function handleSlug(req, env, ctx) {
 
   // Redirect to the actual content page
   if (type === 'song') {
-    return Response.redirect(`/song/${id}.mp3`, 302);
+    // FIX: Properly encode the filename for URL
+    const encodedId = encodeURIComponent(id);
+    return Response.redirect(`/song/${encodedId}`, 302);
   }
 
   return Response.redirect(`/${type}?id=${id}`, 301);
