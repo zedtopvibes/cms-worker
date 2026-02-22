@@ -678,7 +678,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 const title = titleInput.value.trim();
                 const filename = generateFilename(title);
                 const baseUrl = window.location.origin;
-                urlPreview.textContent = baseUrl + '/song/' + filename + '.mp3';
+                urlPreview.textContent = baseUrl + '/song/' + filename;
             }
             
             // Initial update
