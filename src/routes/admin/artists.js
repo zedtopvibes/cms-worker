@@ -6,6 +6,7 @@ import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
+import { SlugManager } from '../../helpers/slug.js';
 
 // ===== LIST ALL ARTISTS =====
 export async function handleAdminArtists(req, env, ctx, auth) {
@@ -669,6 +670,11 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
     }
     
     await saveArtists(env, artists);
+
+// Generate and save slug for artist
+const slugManager = new SlugManager(env);
+const slug = slugManager.generateArtistSlug(name);
+await slugManager.registerSlug('artists', artistId, slug, { name });
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
