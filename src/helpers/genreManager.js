@@ -1,5 +1,6 @@
 // src/helpers/genreManager.js
 import { getArtists, getAlbums, getPlaylists, getMetadata } from './storage.js';
+import { SlugManager } from './slug.js';
 
 export class GenreManager {
   constructor(env) {
@@ -62,6 +63,16 @@ export class GenreManager {
     }
     
     data.genres.push(genre);
+
+// Generate and save slug for genre
+const slugManager = new SlugManager(this.env);
+const slug = slugManager.generateGenreSlug(genre.name);
+await slugManager.registerSlug('genres', genre.id, slug, { 
+  name: genre.name,
+  color: genre.color,
+  icon: genre.icon 
+});
+
     return this.saveGenres(data);
   }
 
