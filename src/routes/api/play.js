@@ -1,5 +1,6 @@
 // ==================== API: Track Plays ====================
 import { incrementPlays } from '../../helpers/playsDownloadsEnhanced.js';
+import { SlugManager } from '../../helpers/slug.js';
 
 export async function handleTrackPlay(req, env, ctx) {
   // Only allow POST requests
@@ -10,16 +11,28 @@ export async function handleTrackPlay(req, env, ctx) {
   try {
     const url = new URL(req.url);
     const pathParts = url.pathname.split('/');
-    const songKey = pathParts[pathParts.length - 1]; // Get song ID from URL
+    const slugOrKey = pathParts[pathParts.length - 1]; // Get slug or song key from URL
     
-    if (!songKey) {
-      return new Response('Missing song ID', { status: 400 });
+    if (!slugOrKey) {
+      return new Response('Missing song identifier', { status: 400 });
     }
 
-    console.log(`🎵 Tracking play for song: ${songKey}`);
+    console.log(`🎵 Tracking play for: ${slugOrKey}`);
 
-    // Track the play using our new enhanced function
-    await incrementPlays(env, 'song', decodeURIComponent(songKey));
+    // Initialize SlugManager
+    const slugManager = new SlugManager(env);
+    
+    // Try to get baseName from slug first
+    let songKey = await slugManager.getIdFromSlug('songs', decodeURIComponent(slugOrKey));
+    
+    // If not found by slug, assume it's the old format (baseName)
+    if (!songKey) {
+      songKey = decodeURIComponent(slugOrKey);
+      console.log(`Not a slug, using as baseName: ${songKey}`);
+    }
+
+    // Track the play using our enhanced function
+    await incrementPlays(env, 'song', songKey);
     
     return new Response('OK', { 
       status: 200,
