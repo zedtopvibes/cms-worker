@@ -5,8 +5,8 @@ import { getPageViews } from '../../helpers/pageViews.js';
 import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
-import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
-import { SlugManager } from '../../helpers/slug.js';
+import { GenreManager } from '../../helpers/genreManager.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADD THIS IMPORT
 
 // ===== LIST ALL PLAYLISTS =====
 export async function handleAdminPlaylists(req, env, ctx, auth) {
@@ -15,6 +15,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 20;
+  const slugManager = new SlugManager(env);  // ADD THIS
 
   // Get all playlists
   const playlists = await getPlaylists(env);
@@ -25,6 +26,9 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
     Object.entries(playlists).map(async ([id, playlist]) => {
       const stats = await getAggregatedStats(playlist.songs || [], env);
       const pageViews = await getPageViews(env, 'playlist', id);
+      
+      // Get slug for this playlist
+      const playlistSlug = await slugManager.getSlugFromId('playlists', id) || id;
       
       // Get featured artists count
       const uniqueArtists = new Set();
@@ -37,6 +41,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
       
       return {
         id,
+        slug: playlistSlug,  // ADD THIS
         title: playlist.title,
         description: playlist.description || '',
         curator: playlist.curator || 'ZEDALBUMS',
@@ -50,7 +55,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
         created: playlist.created,
         updated: playlist.updated || playlist.created,
         hasImage: !!playlist.thumbnail,
-        genres: playlist.genres || []  // ADD THIS
+        genres: playlist.genres || []
       };
     })
   );
@@ -208,6 +213,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
             justify-content: center;
             color: white;
             font-size: 3rem;
+            cursor: pointer;
         }
         
         .playlist-thumbnail img {
@@ -224,12 +230,18 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
             font-weight: 700;
             font-size: 1.1rem;
             margin-bottom: 5px;
+            cursor: pointer;
+        }
+        
+        .playlist-title:hover {
+            color: #4a90e2;
         }
         
         .playlist-curator {
             color: #4a90e2;
             font-size: 0.85rem;
             margin-bottom: 8px;
+            cursor: pointer;
         }
         
         .playlist-stats {
@@ -239,6 +251,16 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
             color: #666;
             margin-top: 8px;
             flex-wrap: wrap;
+        }
+        
+        .playlist-slug-info {
+            font-size: 0.75rem;
+            color: #4a90e2;
+            margin-top: 5px;
+            padding: 4px 8px;
+            background: #f0f7ff;
+            border-radius: 4px;
+            display: inline-block;
         }
         
         @media (min-width: 768px) {
@@ -261,11 +283,26 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
             if (e.key === 'Enter') applyFilters();
         });
         
-        window.viewPlaylist = function(id) { window.open('/playlist/' + id, '_blank'); };
-        window.editPlaylist = function(id) { window.location.href = '/admin/playlists/edit?id=' + id; };
-        window.manageSongs = function(id) { window.location.href = '/admin/playlists/songs?id=' + id; };
+        window.viewPlaylist = function(id) { 
+            window.open('/playlist/' + id, '_blank'); 
+        };
+        
+        window.viewPlaylistBySlug = function(slug) { 
+            window.open('/playlist/' + slug, '_blank'); 
+        };
+        
+        window.editPlaylist = function(id) { 
+            window.location.href = '/admin/playlists/edit?id=' + id; 
+        };
+        
+        window.manageSongs = function(id) { 
+            window.location.href = '/admin/playlists/songs?id=' + id; 
+        };
+        
         window.deletePlaylist = function(id) {
-            if (confirm('Delete this playlist? It will be moved to trash.')) window.location.href = '/admin/playlists/delete?id=' + id;
+            if (confirm('Delete this playlist? It will be moved to trash.')) {
+                window.location.href = '/admin/playlists/delete?id=' + id;
+            }
         };
     </script>
   `;
@@ -426,7 +463,7 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
   const description = formData.get('description') || '';
   const curator = formData.get('curator') || 'ZEDALBUMS';
   const thumbnailFile = formData.get('thumbnail');
-  const genres = formData.getAll('genres');  // Get selected genres
+  const genres = formData.getAll('genres');
 
   if (!title) {
     return { success: false, error: 'Playlist title is required' };
@@ -434,6 +471,11 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
 
   const playlistId = sanitize(title) + "_" + Date.now();
   const playlists = await getPlaylists(env);
+
+  // Generate and save slug for playlist
+  const slugManager = new SlugManager(env);
+  const slug = slugManager.generatePlaylistSlug(title);
+  await slugManager.registerSlug('playlists', playlistId, slug, { title });
 
   let thumbnailKey = null;
   if (thumbnailFile && thumbnailFile.size > 0) {
@@ -451,7 +493,8 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
     created: Date.now(),
     updated: Date.now(),
     songs: [],
-    genres: genres  // Save genres
+    genres: genres,
+    slug: slug  // ADD THIS
   };
 
   await savePlaylists(env, playlists);
@@ -476,10 +519,14 @@ export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
   
   const playlists = await getPlaylists(env);
   const playlist = playlists[playlistId];
+  const slugManager = new SlugManager(env);  // ADD THIS
   
   if (!playlist) {
     return { redirect: '/admin/playlists' };
   }
+  
+  // Get playlist slug
+  const playlistSlug = await slugManager.getSlugFromId('playlists', playlistId) || playlistId;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -496,6 +543,11 @@ export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
             <h2 style="font-size: 1.3rem; margin:0;">
                 <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Playlist: ${playlist.title}
             </h2>
+            <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #4a90e2;">
+                <i class="fas fa-link" style="color: #4a90e2;"></i>
+                <span style="margin-left: 5px;">Playlist URL:</span>
+                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/playlist/${playlistSlug}</code>
+            </div>
         </div>
         
         <form id="editForm" action="/admin/playlists/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
@@ -649,7 +701,7 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   const title = formData.get('title');
   const description = formData.get('description');
   const curator = formData.get('curator');
-  const genres = formData.getAll('genres');  // Get selected genres
+  const genres = formData.getAll('genres');
   const thumbnailFile = formData.get('thumbnail');
   
   if (!playlistId || !title) {
@@ -658,16 +710,25 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   
   try {
     const playlists = await getPlaylists(env);
+    const slugManager = new SlugManager(env);  // ADD THIS
     
     if (!playlists[playlistId]) {
       return { success: false, error: 'Playlist not found' };
+    }
+    
+    // Check if title changed and update slug if needed
+    const oldTitle = playlists[playlistId].title;
+    if (oldTitle !== title) {
+      const newSlug = slugManager.generatePlaylistSlug(title);
+      await slugManager.registerSlug('playlists', playlistId, newSlug, { title });
+      playlists[playlistId].slug = newSlug;
     }
     
     // Update playlist details
     playlists[playlistId].title = title;
     playlists[playlistId].description = description;
     playlists[playlistId].curator = curator;
-    playlists[playlistId].genres = genres;  // Save genres
+    playlists[playlistId].genres = genres;
     playlists[playlistId].updated = Date.now();
     
     // Upload new thumbnail if provided
@@ -679,10 +740,6 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
     }
     
     await savePlaylists(env, playlists);
-// Generate and save slug for playlist
-const slugManager = new SlugManager(env);
-const slug = slugManager.generatePlaylistSlug(title);
-await slugManager.registerSlug('playlists', playlistId, slug, { title });
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'playlist', playlistId, title);
@@ -719,10 +776,11 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
       description: playlist?.description,
       curator: playlist?.curator,
       songs: playlist?.songs,
-      genres: playlist?.genres,  // Include genres
+      genres: playlist?.genres,
       created: playlist?.created,
       updated: playlist?.updated,
-      thumbnail: playlist?.thumbnail
+      thumbnail: playlist?.thumbnail,
+      slug: playlist?.slug
     };
     
     // Move to trash
@@ -912,7 +970,7 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views (UPDATED with Preview button)
+// Mobile card with views (UPDATED with slug and Preview button)
 function generateMobileCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short'
@@ -922,6 +980,9 @@ function generateMobileCard(playlist) {
     <div class="mobile-card">
         <div style="font-weight:700; margin-bottom:5px;">${playlist.title}</div>
         <div style="color:#4a90e2; margin-bottom:8px;">by ${playlist.curator}</div>
+        <div style="font-size:0.7rem; color:#4a90e2; margin-bottom:8px;">
+            <i class="fas fa-link"></i> /playlist/${playlist.slug}
+        </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
             <span><i class="fas fa-music"></i> ${playlist.songCount} songs</span>
             <span><i class="fas fa-users"></i> ${playlist.artistCount} artists</span>
@@ -947,7 +1008,7 @@ function generateMobileCard(playlist) {
   `;
 }
 
-// Grid card with views (UPDATED with Preview button)
+// Grid card with views (UPDATED with slug and Preview button)
 function generateGridCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short'
@@ -955,12 +1016,15 @@ function generateGridCard(playlist) {
   
   return `
     <div class="playlist-grid-card">
-        <div class="playlist-thumbnail" onclick="viewPlaylist('${playlist.id}')">
+        <div class="playlist-thumbnail" onclick="viewPlaylistBySlug('${playlist.slug}')">
             ${playlist.thumbnail ? `<img src="/playlists/thumbnails/${playlist.id}.jpg">` : '📋'}
         </div>
         <div class="playlist-info">
-            <div class="playlist-title" onclick="viewPlaylist('${playlist.id}')">${playlist.title}</div>
-            <div class="playlist-curator" onclick="viewPlaylist('${playlist.id}')">by ${playlist.curator}</div>
+            <div class="playlist-title" onclick="viewPlaylistBySlug('${playlist.slug}')">${playlist.title}</div>
+            <div class="playlist-curator" onclick="viewPlaylistBySlug('${playlist.slug}')">by ${playlist.curator}</div>
+            <div class="playlist-slug-info">
+                <i class="fas fa-link"></i> /playlist/${playlist.slug}
+            </div>
             <div class="playlist-stats">
                 <span><i class="fas fa-music"></i> ${playlist.songCount}</span>
                 <span><i class="fas fa-users"></i> ${playlist.artistCount}</span>
