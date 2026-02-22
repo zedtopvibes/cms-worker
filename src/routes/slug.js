@@ -23,18 +23,25 @@ export async function handleSlug(req, env, ctx) {
   }
 
   const slugManager = new SlugManager(env);
-  const id = await slugManager.getIdFromSlug(indexType, slug);
-
-  if (!id) {
+  
+  // Check if this is already a slug (contains hyphens, lowercase, etc.)
+  // If it looks like a slug, let the main handler process it
+  if (slug.includes('-') || /^[a-z0-9-]+$/.test(slug)) {
+    // This looks like a slug - pass through to the main handler
+    // by returning a 404 here so the main router can try other routes
     return new Response('Not found', { status: 404 });
   }
-
-  // Redirect to the actual content page
-  if (type === 'song') {
-    // FIX: Properly encode the filename for URL
-    const encodedId = encodeURIComponent(id);
-    return Response.redirect(`/song/${encodedId}`, 302);
+  
+  // If it doesn't look like a slug, assume it's an old ID and try to redirect
+  const id = await slugManager.getIdFromSlug(indexType, slug);
+  
+  if (id) {
+    // Get the slug for this ID to redirect to the proper URL
+    const properSlug = await slugManager.getSlugFromId(indexType, id);
+    if (properSlug) {
+      return Response.redirect(`/${type}/${properSlug}`, 301);
+    }
   }
 
-  return Response.redirect(`/${type}?id=${id}`, 301);
+  return new Response('Not found', { status: 404 });
 }
