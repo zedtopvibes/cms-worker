@@ -1,4 +1,4 @@
-// ==================== FORMATTING HELPERS ====================
+// ==================== FORMATTING  HELPERS ====================
 // Helper functions for formatting strings, numbers, durations, etc.
 
 export const sanitize = str => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
