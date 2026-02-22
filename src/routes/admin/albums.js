@@ -6,6 +6,7 @@ import { formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
+import { SlugManager } from '../../helpers/slug.js';
 
 // ===== LIST ALL ALBUMS =====
 export async function handleAdminAlbums(req, env, ctx, auth) {
@@ -668,6 +669,11 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     }
     
     await saveAlbums(env, albums);
+
+// Generate and save slug for album
+const slugManager = new SlugManager(env);
+const slug = slugManager.generateAlbumSlug(title);
+await slugManager.registerSlug('albums', albumId, slug, { title });
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'album', albumId, title);
