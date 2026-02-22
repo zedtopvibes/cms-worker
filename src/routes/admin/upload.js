@@ -649,9 +649,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const submitBtn = document.getElementById('submitBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
         
-        // ===== URL PREVIEW FUNCTION =====
+        // ===== URL PREVIEW FUNCTIONS =====
         function generateSlug(text) {
-            if (!text) return 'untitled';
+            if (!text || text.trim() === '') return 'untitled';
             
             let slug = text
                 .toLowerCase()
@@ -660,9 +660,11 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 .replace(/feat\./g, 'feat')
                 // Remove all punctuation except hyphens and spaces
                 .replace(/[^\w\s-]/g, ' ')
-                // Replace spaces with hyphens
-                .replace(/\s+/g, '-')
-                // Remove multiple hyphens
+                // Replace multiple spaces with single space FIRST
+                .replace(/\s+/g, ' ')
+                // THEN replace spaces with hyphens (single space = single hyphen)
+                .replace(/ /g, '-')
+                // Remove multiple hyphens (just in case)
                 .replace(/-+/g, '-')
                 // Remove leading/trailing hyphens
                 .replace(/^-|-$/g, '');
@@ -678,13 +680,18 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const slug = generateSlug(title);
             const baseUrl = window.location.origin;
             urlPreview.textContent = \`\${baseUrl}/song/\${slug}\`;
+            console.log('URL Preview:', urlPreview.textContent); // For debugging
         }
         
+        // Update preview when user types
         let slugUpdateTimeout;
         titleInput.addEventListener('input', function() {
             clearTimeout(slugUpdateTimeout);
             slugUpdateTimeout = setTimeout(updateUrlPreview, 300);
         });
+        
+        // Initial update
+        updateUrlPreview();
         
         window.copyUrl = function() {
             const url = urlPreview.textContent;
@@ -696,13 +703,10 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     btn.innerHTML = originalHtml;
                 }, 2000);
             }).catch(() => {
-                // Fallback for mobile browsers that don't support clipboard
+                // Fallback for mobile
                 alert('URL: ' + url);
             });
         };
-        
-        // Initial preview
-        updateUrlPreview();
         
         // Dropdown Functions
         function toggleDropdown(type) {
