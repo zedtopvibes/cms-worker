@@ -1,7 +1,7 @@
 // ==================== STREAM ENDPOINT ====================
-// Handles /stream/[slug] - Serves audio files for streaming
+// Handles /stream/[filename] - Serves audio files for streaming
 import { incrementPlays } from '../helpers/playsDownloadsEnhanced.js';
-import { SlugManager } from '../helpers/slug.js';
+// REMOVE: import { SlugManager } from '../helpers/slug.js';
 import { getMetadata } from '../helpers/storage.js';
 
 export async function handleStream(req, env, ctx) {
@@ -19,19 +19,23 @@ export async function handleStream(req, env, ctx) {
   try {
     const url = new URL(req.url);
     const pathParts = url.pathname.split('/');
-    const slug = pathParts[pathParts.length - 1]; // Get slug from URL
+    const filename = pathParts[pathParts.length - 1]; // Get filename from URL
     
-    if (!slug) {
+    if (!filename) {
       return new Response('Missing song identifier', { status: 400 });
     }
 
-    console.log(`🎵 Streaming request for: ${slug}`);
+    console.log(`🎵 Streaming request for: ${filename}`);
 
-    // Initialize SlugManager
-    const slugManager = new SlugManager(env);
+    // REMOVE SlugManager initialization and lookup
+    // const slugManager = new SlugManager(env);
+    // const baseName = await slugManager.getIdFromSlug('songs', decodeURIComponent(slug));
     
-    // Get baseName from slug
-    const baseName = await slugManager.getIdFromSlug('songs', decodeURIComponent(slug));
+    // Get baseName directly from filename (remove .mp3 if present)
+    let baseName = decodeURIComponent(filename);
+    if (baseName.endsWith('.mp3')) {
+      baseName = baseName.slice(0, -4);
+    }
     
     if (!baseName) {
       return new Response('Song not found', { status: 404 });
@@ -154,14 +158,20 @@ export async function handleStreamHead(req, env, ctx) {
   try {
     const url = new URL(req.url);
     const pathParts = url.pathname.split('/');
-    const slug = pathParts[pathParts.length - 1];
+    const filename = pathParts[pathParts.length - 1];
     
-    if (!slug) {
+    if (!filename) {
       return new Response('Missing song identifier', { status: 400 });
     }
 
-    const slugManager = new SlugManager(env);
-    const baseName = await slugManager.getIdFromSlug('songs', decodeURIComponent(slug));
+    // REMOVE SlugManager
+    // const slugManager = new SlugManager(env);
+    // const baseName = await slugManager.getIdFromSlug('songs', decodeURIComponent(slug));
+    
+    let baseName = decodeURIComponent(filename);
+    if (baseName.endsWith('.mp3')) {
+      baseName = baseName.slice(0, -4);
+    }
     
     if (!baseName) {
       return new Response('Song not found', { status: 404 });
