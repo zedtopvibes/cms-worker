@@ -1,4 +1,4 @@
-// ==================== CHART FUNCTIONS ====================
+// ==================== CHART  FUNCTIONS ====================
 // Functions for generating charts and statistics
 
 import { getAlbums, getArtists, getPlaylists, getMetadata } from './storage.js';
