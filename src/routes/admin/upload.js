@@ -3,7 +3,7 @@ import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSong
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-import { SlugManager } from '../../helpers/slug.js';
+// REMOVE: import { SlugManager } from '../../helpers/slug.js';
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
@@ -43,7 +43,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     <i class="fas fa-heading" style="color: #ff5500; width: 20px;"></i>
                     Song Title
                 </label>
-                <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. Drake - God's Plan" required>
+                <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. My Song" required>
                 
                 <!-- URL Preview Section - Mobile Friendly -->
                 <div style="margin-top: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;">
@@ -63,7 +63,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     </div>
                     <p style="font-size: 0.8rem; color: #666; margin-top: 8px; margin-bottom: 0;">
                         <i class="fas fa-info-circle"></i> 
-                        URL is generated from the title. Use only letters, numbers, and hyphens.
+                        URL is generated from the title and artist name.
                     </p>
                 </div>
             </div>
@@ -657,36 +657,28 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 return;
             }
             
-            function generateSlug(text) {
-                if (!text || text.trim() === '') return 'untitled';
+            function generateFilename(title) {
+                if (!title || title.trim() === '') return 'untitled';
                 
-                let slug = text
+                // Simple sanitization - remove special chars, replace spaces with underscores
+                let filename = title
                     .toLowerCase()
-                    // Replace ft. and feat. with 'ft'
-                    .replace(/ft\\./g, 'ft')
-                    .replace(/feat\\./g, 'feat')
-                    // Remove all punctuation except hyphens and spaces
-                    .replace(/[^\\w\\s-]/g, ' ')
-                    // Replace multiple spaces with single space FIRST
-                    .replace(/\\s+/g, ' ')
-                    // THEN replace spaces with hyphens (single space = single hyphen)
-                    .replace(/ /g, '-')
-                    // Remove multiple hyphens (just in case)
-                    .replace(/-+/g, '-')
-                    // Remove leading/trailing hyphens
-                    .replace(/^-|-$/g, '');
+                    .replace(/[^a-z0-9\s]/g, '') // Remove special chars
+                    .replace(/\s+/g, '_') // Replace spaces with underscore
+                    .replace(/_+/g, '_') // Remove multiple underscores
+                    .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
                 
-                // If slug is empty after processing
-                if (!slug) slug = 'untitled';
+                // If filename is empty after processing
+                if (!filename) filename = 'untitled';
                 
-                return slug;
+                return filename;
             }
             
             function updateUrlPreview() {
                 const title = titleInput.value.trim();
-                const slug = generateSlug(title);
+                const filename = generateFilename(title);
                 const baseUrl = window.location.origin;
-                urlPreview.textContent = baseUrl + '/song/' + slug;
+                urlPreview.textContent = baseUrl + '/song/' + filename + '.mp3';
             }
             
             // Initial update
@@ -1167,20 +1159,18 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     await env.media.put(imageKey, imageFile.stream());
     await env.media.put(descKey, description);
 
-    // Generate slug from title
-    const slugManager = new SlugManager(env);
-    const slug = slugManager.generateSongSlug(title);
-    
-    // Register slug with metadata
-    await slugManager.registerSlug('songs', baseName, slug, {
-      title,
-      artist: artistId,
-      artistName,
-      duration,
-      genre
-    });
+    // REMOVE slug generation and registration
+    // const slugManager = new SlugManager(env);
+    // const slug = slugManager.generateSongSlug(title);
+    // await slugManager.registerSlug('songs', baseName, slug, {
+    //   title,
+    //   artist: artistId,
+    //   artistName,
+    //   duration,
+    //   genre
+    // });
 
-    // Store metadata
+    // Store metadata (without slug)
     const metadata = {
       title,
       primaryArtist: artistId,
@@ -1188,7 +1178,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       description,
       duration,
       genre,
-      slug,
+      // slug, // REMOVED
       filename: finalFilename // Store the branded filename
     };
     await saveMetadata(env, baseName, metadata);
@@ -1222,7 +1212,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration,
       albumId,
       playlistId,
-      slug,
+      // slug, // REMOVED
       filename: finalFilename
     };
     
