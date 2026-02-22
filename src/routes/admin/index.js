@@ -97,6 +97,8 @@ import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js'
 import { handleGenres } from './genres.js';
 import { GenreManager } from '../../helpers/genreManager.js';
 
+import { handleSlugs } from './slugs.js';
+
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname.replace('/admin', '') || '/';
@@ -1094,6 +1096,11 @@ export async function handleAdmin(req, env, ctx) {
   if (path === '/genres' || path.startsWith('/genres/')) {
     return await handleGenres(req, env, ctx, auth);
   }
+
+// ===== SLUG MANAGER =====
+if (path === '/slugs') {
+  return await handleSlugs(req, env, ctx, auth);
+}
 
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
