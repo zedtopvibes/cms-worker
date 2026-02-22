@@ -1,4 +1,4 @@
-// ==================== HTML RENDERER FUNCTIONS ====================
+// ==================== HTML  RENDERER FUNCTIONS ====================
 // Functions for generating HTML for charts and lists
 
 import { formatNumber } from './formatting.js';
