@@ -1,4 +1,4 @@
-// ==================== MAIN  ENTRY POINT ====================
+// ==================== MAIN ENTRY POINT ====================
 import { CORS_HEADERS } from './middleware/cors.js';
 import { handleHomepage } from './routes/home.js';
 import { handleAlbums } from './routes/albums.js';
@@ -29,24 +29,15 @@ export default {
     }
 
     try {
-
-// ===== SLUG ROUTES (Highest priority) =====
-if (path.match(/^\/(song|artist|album|playlist|genre)\/[\w-]+$/)) {
-  const { handleSlug } = await import('./routes/slug.js');
-  return await handleSlug(req, env, ctx);
-}
-
-      // ===== ADMIN ROUTES (Highest priority) =====
+      // ===== ADMIN ROUTES =====
       if (path.startsWith("/admin")) {
         // Handle specific admin routes before passing to general handler
-        // ===== ACTIVITY LOG =====
-if (path === '/activity') {
-  const result = await handleAdminActivity(req, env, ctx, auth);
-  // result should be { title, content }
-  return new Response(adminLayout(result.title, result.content, auth, 'activity'), {
-    headers: { 'Content-Type': 'text/html' }
-  });
-}
+        if (path === '/activity') {
+          const result = await handleAdminActivity(req, env, ctx, auth);
+          return new Response(adminLayout(result.title, result.content, auth, 'activity'), {
+            headers: { 'Content-Type': 'text/html' }
+          });
+        }
         
         // Pass through to main admin handler
         return await handleAdmin(req, env, ctx);
