@@ -1294,9 +1294,3 @@ function encodeSynchsafe(size) {
     size & 0x7F
   ];
 }
-
-// ===== EXPORTS =====
-export {
-  handleAdminUpload,
-  handleAdminUploadPost
-};
