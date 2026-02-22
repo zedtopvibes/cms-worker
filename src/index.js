@@ -29,6 +29,13 @@ export default {
     }
 
     try {
+
+// ===== SLUG ROUTES (Highest priority) =====
+if (path.match(/^\/(song|artist|album|playlist|genre)\/[\w-]+$/)) {
+  const { handleSlug } = await import('./routes/slug.js');
+  return await handleSlug(req, env, ctx);
+}
+
       // ===== ADMIN ROUTES (Highest priority) =====
       if (path.startsWith("/admin")) {
         // Handle specific admin routes before passing to general handler
