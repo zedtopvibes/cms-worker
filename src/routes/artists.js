@@ -1,4 +1,4 @@
-// ==================== ARTISTS  ROUTES ====================
+// ==================== ARTISTS ROUTES ====================
 // ALL IMPORTS AT THE TOP 
 import { incrementPageView } from '../helpers/pageViews.js';
 import { 
@@ -11,10 +11,12 @@ import {
 } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
+import { SlugManager } from '../helpers/slug.js';
 
 export async function handleArtists(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
+  const slugManager = new SlugManager(env);
 
   // Artists list page
   if (path === "/artists") {
@@ -50,6 +52,9 @@ export async function handleArtists(req, env, ctx) {
         } catch (e) {}
       }
 
+      // Get artist slug
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+
       const songCount = artist.songs?.length || 0;
       const sinceYear = new Date(artist.created).getFullYear();
       const bgStyle = hasImage 
@@ -57,7 +62,7 @@ export async function handleArtists(req, env, ctx) {
         : '';
 
       return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -103,12 +108,14 @@ export async function handleArtists(req, env, ctx) {
           }
         } catch (e) {}
       }
+      
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
       const songCount = artist.songs?.length || 0;
       const bgStyle = hasImage 
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
       return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -139,13 +146,15 @@ export async function handleArtists(req, env, ctx) {
           }
         } catch (e) {}
       }
+      
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
       const songCount = artist.songs?.length || 0;
       const sinceYear = new Date(artist.created).getFullYear();
       const bgStyle = hasImage 
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
       return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -211,12 +220,21 @@ export async function handleArtists(req, env, ctx) {
 
   // Artist detail page
   if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-    const artistId = decodeURIComponent(path.replace("/artist/", ""));
+    // Get slug from URL (e.g., "drake", "21-savage")
+    const slug = decodeURIComponent(path.replace("/artist/", ""));
+    
+    // Get artist ID from slug
+    const artistId = await slugManager.getIdFromSlug('artists', slug);
+    
+    if (!artistId) {
+      return new Response("Artist not found", { status: 404 });
+    }
+    
     const artists = await getArtists(env);
     const artist = artists[artistId];
     if (!artist) return new Response("Artist not found", { status: 404 });
 
-    // ✅ TRACK PAGE VIEW
+    // TRACK PAGE VIEW
     ctx.waitUntil(incrementPageView(env, 'artist', artistId));
 
     const albums = await getAlbums(env);
@@ -323,8 +341,10 @@ export async function handleArtists(req, env, ctx) {
         const meta = await getMetadata(env, songKey);
         const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
         const uploaded = alb.created;
+        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
         allSongs.push({
           key: songKey,
+          slug: songSlug,
           title,
           artistName,
           artists: [artistName],
@@ -341,8 +361,10 @@ export async function handleArtists(req, env, ctx) {
       const uploaded = audioObj?.uploaded || Date.now();
       const meta = await getMetadata(env, songKey);
       const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
+      const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
       allSongs.push({
         key: songKey,
+        slug: songSlug,
         title,
         artistName,
         artists: [artistName],
@@ -362,8 +384,10 @@ export async function handleArtists(req, env, ctx) {
         const uploaded = audioObj?.uploaded || Date.now();
         const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
         const title = meta.title;
+        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
         allSongs.push({
           key: songKey,
+          slug: songSlug,
           title,
           artistName: primaryArtistName,
           artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
@@ -378,7 +402,7 @@ export async function handleArtists(req, env, ctx) {
     allSongs.sort((a, b) => b.uploaded - a.uploaded);
 
     const songsHtml = await Promise.all(
-      allSongs.slice(0, 10).map(async (song, idx) => {
+      allSongs.slice(0, 10).map(async (song) => {
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
         try {
@@ -403,9 +427,7 @@ export async function handleArtists(req, env, ctx) {
         const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
 
         return `
-          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(
-            song.key + ".mp3"
-          )}'">
+          <div class="album-item" onclick="window.location='/song/${song.slug}'">
             <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${song.title}" loading="lazy">` : ""}
             </div>
@@ -434,9 +456,10 @@ export async function handleArtists(req, env, ctx) {
             hasImage = true;
           } catch (e) {}
         }
+        const albumSlug = await slugManager.getSlugFromId('albums', alb.id) || alb.id;
         const date = formatDate(alb.created);
         return `
-          <div class="album-item" onclick="window.location='/album/${alb.id}'">
+          <div class="album-item" onclick="window.location='/album/${albumSlug}'">
             <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${alb.title}" loading="lazy">` : ""}
             </div>
@@ -493,11 +516,12 @@ export async function handleArtists(req, env, ctx) {
                   hasImage = true;
                 } catch (e) {}
               }
+              const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
               const bgStyle = hasImage
                 ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
                 : "";
               return `
-                <div class="album-item" onclick="window.location='/artist/${a.id}'">
+                <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
                   <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
                   <div class="album-info">
                     <span class="album-title">${a.name}</span>
@@ -584,13 +608,14 @@ export async function handleArtists(req, env, ctx) {
                   hasImage = true;
                 } catch (e) {}
               }
+              const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
               const bgStyle = hasImage
                 ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
                 : "";
               const songCount = a.songs?.length || 0;
               const since = a.created ? new Date(a.created).getFullYear() : "N/A";
               return `
-                <div class="album-item" onclick="window.location='/artist/${a.id}'">
+                <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
                   <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
                   <div class="album-info">
                     <span class="album-title">${a.name}</span>
@@ -648,7 +673,7 @@ export async function handleArtists(req, env, ctx) {
       .replace(/<!-- ARTIST_INFO_CONTENT -->/, infoHtml)
       .replace(
         /<a href="#" class="view-all">View All ➔<\/a>/g,
-        `<a href="/artist/${artistId}?view=albums" class="view-all">View All ➔</a>`
+        `<a href="/artist/${slug}?view=albums" class="view-all">View All ➔</a>`
       )
       .replace(
         /<a href="#" class="breadcrumb-link"><i class="fas fa-user"><\/i>Artists<\/a>/,
@@ -675,55 +700,75 @@ export async function handleArtists(req, env, ctx) {
     <head>
       <meta charset="UTF-8">
       <title>Create Artist - ZEDALBUMS</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
       <style>
-        body { font-family: Arial,sans-serif; padding:50px; background:#f0f0f0; }
-        .container { max-width:500px; margin:0 auto; background:white; padding:30px; border-radius:8px; }
-        h1 { color:#333; border-left:4px solid #9b59b6; padding-left:15px; }
-        label { display:block; margin-top:15px; font-weight:bold; }
-        input, textarea { width:100%; padding:12px; margin-top:5px; border:1px solid #ddd; border-radius:4px; }
-        button { margin-top:25px; padding:14px; background:#9b59b6; color:#fff; border:none; border-radius:4px; cursor:pointer; width:100%; font-size:16px; }
-        button:hover { background:#8e44ad; }
-        .back-link { margin-top:20px; text-align:center; }
-        .back-link a { color:#666; text-decoration:none; }
-        .back-link a:hover { color:#9b59b6; }
+        body { font-family: system-ui; padding: 20px; background: #f4f4f9; margin: 0; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-left: 4px solid #ff5500; padding-left: 15px; margin-top: 0; }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input, textarea { width: 100%; padding: 12px; margin-top: 5px; border: 2px solid #e0e0e0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        input:focus { outline: none; border-color: #ff5500; }
+        button { margin-top: 25px; padding: 14px; background: #ff5500; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; }
+        button:hover { background: #e64c00; }
+        .back-link { margin-top: 20px; text-align: center; }
+        .back-link a { color: #666; text-decoration: none; }
+        .back-link a:hover { color: #ff5500; }
+        .url-preview { margin-top: 10px; background: #f0f0f0; padding: 12px; border-radius: 8px; }
+        .url-preview small { display: block; margin-bottom: 5px; color: #666; }
+        .url-preview code { background: white; padding: 8px; border-radius: 4px; display: block; word-break: break-all; font-size: 0.9rem; border: 1px solid #e0e0e0; }
       </style>
-      <script>
-        document.addEventListener('DOMContentLoaded', function() {
-          const urlParams = new URLSearchParams(window.location.search);
-          const fromUpload = urlParams.get('from') === 'upload';
-          
-          const backLink = document.querySelector('.back-link a');
-          if (fromUpload && backLink) {
-            backLink.href = '/upload';
-            backLink.innerHTML = '← Back to Upload';
-          }
-          
-          const newArtistName = sessionStorage.getItem('newArtistName');
-          if (newArtistName) {
-            document.querySelector('input[name="name"]').value = newArtistName;
-            sessionStorage.removeItem('newArtistName');
-          }
-        });
-      </script>
     </head>
     <body>
       <div class="container">
         <h1>Create New Artist</h1>
         <form action="/artist/create" method="POST" enctype="multipart/form-data">
           <label>Artist Name</label>
-          <input type="text" name="name" required>
+          <input type="text" name="name" id="artistName" required>
+          
+          <div class="url-preview">
+            <small>Artist page will be:</small>
+            <code id="urlPreview">/artist/...</code>
+          </div>
+          
           <label>Artist Bio (Optional)</label>
           <textarea name="description" rows="3"></textarea>
+          
           <label>Genre (Optional)</label>
           <input type="text" name="genre" placeholder="e.g. Zam Pop, Gospel, Hip Hop">
+          
           <label>Artist Image (Optional)</label>
           <input type="file" name="thumbnail" accept="image/*">
+          
           <button type="submit">Create Artist</button>
         </form>
         <div class="back-link">
-          <a href="/upload">← Back to Upload</a>
+          <a href="/admin">← Back to Admin</a>
         </div>
       </div>
+      
+      <script>
+        const nameInput = document.getElementById('artistName');
+        const urlPreview = document.getElementById('urlPreview');
+        
+        function generateSlug(text) {
+          if (!text) return 'untitled';
+          return text
+            .toLowerCase()
+            .replace(/[^\\w\\s-]/g, ' ')
+            .replace(/\\s+/g, ' ')
+            .replace(/ /g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '') || 'untitled';
+        }
+        
+        function updatePreview() {
+          const slug = generateSlug(nameInput.value);
+          urlPreview.textContent = '/artist/' + slug;
+        }
+        
+        nameInput.addEventListener('input', updatePreview);
+        updatePreview();
+      </script>
     </body>
     </html>
     `;
@@ -731,27 +776,36 @@ export async function handleArtists(req, env, ctx) {
   }
 
   if (path === "/artist/create" && req.method === "POST") {
-    const formData = await req.formData();
-    const name = formData.get("name");
-    const description = formData.get("description") || "";
-    const genre = formData.get("genre") || "";
-    const thumbnailFile = formData.get("thumbnail");
+    try {
+      const formData = await req.formData();
+      const name = formData.get("name");
+      const description = formData.get("description") || "";
+      const genre = formData.get("genre") || "";
+      const thumbnailFile = formData.get("thumbnail");
 
-    if (!name) {
-      return new Response("Missing artist name", { status: 400 });
-    }
+      if (!name) {
+        return new Response("Missing artist name", { status: 400 });
+      }
 
-    const artistId = sanitize(name);
-    const artists = await getArtists(env);
+      const artistId = sanitize(name);
+      const artists = await getArtists(env);
 
-    let thumbnailKey = null;
-    if (thumbnailFile && thumbnailFile.size > 0) {
-      const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
-      thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
-      await env.media.put(thumbnailKey, thumbnailFile.stream());
-    }
+      // Check if artist already exists
+      if (artists[artistId]) {
+        return new Response("Artist with this name already exists", { status: 400 });
+      }
 
-    if (!artists[artistId]) {
+      let thumbnailKey = null;
+      if (thumbnailFile && thumbnailFile.size > 0) {
+        const imgType = thumbnailFile.type.includes("png") ? "png" : "jpg";
+        thumbnailKey = `artists/thumbnails/${artistId}.${imgType}`;
+        await env.media.put(thumbnailKey, thumbnailFile.stream());
+      }
+
+      // Generate slug
+      const slug = slugManager.generateArtistSlug(name);
+
+      // Create artist object
       artists[artistId] = {
         id: artistId,
         name: name,
@@ -763,34 +817,47 @@ export async function handleArtists(req, env, ctx) {
         albums: []
       };
       await saveArtists(env, artists);
-    }
 
-    const html = `
+      // Register slug
+      await slugManager.registerSlug('artists', artistId, slug, {
+        name: name,
+        genre: genre,
+        created: Date.now()
+      });
+
+      const html = `
       <!DOCTYPE html>
       <html>
       <head>
         <title>Artist Created - ZEDALBUMS</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-          body { font-family: Arial, sans-serif; padding: 50px; background: #f0f0f0; text-align: center; }
-          .success { background: white; padding: 30px; border-radius: 8px; max-width: 500px; margin: 0 auto; }
-          h1 { color: #9b59b6; }
-          .btn { display: inline-block; margin: 10px; padding: 12px 24px; background: #9b59b6; color: white; text-decoration: none; border-radius: 4px; }
-          .btn:hover { background: #8e44ad; }
-          .btn-upload { background: #ff5500; }
+          body { font-family: system-ui; padding: 20px; background: #f4f4f9; margin: 0; }
+          .success { background: white; padding: 30px; border-radius: 12px; max-width: 500px; margin: 0 auto; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+          h1 { color: #28a745; }
+          .url { background: #f0f0f0; padding: 12px; border-radius: 8px; word-break: break-all; font-family: monospace; margin: 20px 0; border: 1px solid #e0e0e0; }
+          .btn { display: inline-block; margin: 10px; padding: 12px 24px; background: #ff5500; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+          .btn:hover { background: #e64c00; }
+          .btn-secondary { background: #6c757d; }
+          .btn-secondary:hover { background: #5a6268; }
         </style>
       </head>
       <body>
         <div class="success">
           <h1>✅ Artist Created!</h1>
           <p style="font-size: 1.2rem;">${name}</p>
-          <a href="/artist/${artistId}" class="btn">View Artist</a>
-          <a href="/upload" class="btn btn-upload">Upload Songs</a>
-          <p style="margin-top: 20px;"><a href="/artist/create">Create Another Artist</a></p>
+          <div class="url">/artist/${slug}</div>
+          <a href="/artist/${slug}" class="btn">View Artist</a>
+          <a href="/artist/create" class="btn btn-secondary">Create Another</a>
+          <p style="margin-top: 20px;"><a href="/admin">← Back to Admin</a></p>
         </div>
       </body>
       </html>
     `;
-    return new Response(html, { headers: { "Content-Type": "text/html" } });
+      return new Response(html, { headers: { "Content-Type": "text/html" } });
+    } catch (error) {
+      return new Response(`Error creating artist: ${error.message}`, { status: 500 });
+    }
   }
 
   return new Response("Not found", { status: 404 });
