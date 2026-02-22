@@ -5,7 +5,6 @@ import { handleAlbums } from './routes/albums.js';
 import { handleArtists } from './routes/artists.js';
 import { handlePlaylists } from './routes/playlists.js';
 import { handleSongs } from './routes/songs.js';
-import { handleUpload } from './routes/upload.js';
 import { handleCharts } from './routes/charts.js';
 import { handleSearch } from './routes/search.js';
 import { handleAdmin } from './routes/admin/index.js';
