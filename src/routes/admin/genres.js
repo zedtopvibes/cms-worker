@@ -2,6 +2,7 @@
 import { GenreManager } from '../../helpers/genreManager.js';
 import { adminLayout } from './layout.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { SlugManager } from './slug.js';
 
 export async function handleGenres(req, env, ctx, auth) {
   const url = new URL(req.url);
