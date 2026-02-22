@@ -5,20 +5,23 @@ import { incrementPlays, incrementDownloads } from '../helpers/playsDownloadsEnh
 import { getArtists, getAlbums, getPlaylists, getMetadata } from '../helpers/storage.js';
 import { getSongStats } from '../helpers/db.js';
 import { formatDuration } from '../helpers/formatting.js';
-import { SlugManager } from '../helpers/slug.js';
+// REMOVE: import { SlugManager } from '../helpers/slug.js';
 
 export async function handleSongs(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
-  const slugManager = new SlugManager(env);
+  // REMOVE: const slugManager = new SlugManager(env);
 
   // Song detail page
   if (path.startsWith("/song/")) {
-    // Get slug from URL (e.g., "drake-gods-plan")
-    const slug = decodeURIComponent(path.replace("/song/", ""));
+    // Get filename from URL (e.g., "artist_song.mp3" or "artist_song")
+    const filename = decodeURIComponent(path.replace("/song/", ""));
     
-    // Get baseName from slug
-    const baseName = await slugManager.getIdFromSlug('songs', slug);
+    // Get baseName from filename (remove .mp3 if present)
+    let baseName = filename;
+    if (baseName.endsWith('.mp3')) {
+      baseName = baseName.slice(0, -4);
+    }
     
     if (!baseName) {
       return new Response("Song not found", { status: 404 });
@@ -136,7 +139,7 @@ export async function handleSongs(req, env, ctx) {
           .slice(0, 10)
           .map(async (songKey, index) => {
             const m = await getMetadata(env, songKey);
-            const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+            // REMOVE slug lookup - use songKey directly
             let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
             let sartistDisplay = "";
             if (m) {
@@ -167,7 +170,7 @@ export async function handleSongs(req, env, ctx) {
             const sdurationFormatted = formatDuration(sdurationSeconds);
             const trackNum = (index + 1).toString().padStart(2, '0');
             return `
-              <div class="album-item" onclick="window.location='/song/${songSlug}?playlist=${playlistId}'">
+              <div class="album-item" onclick="window.location='/song/${songKey}?playlist=${playlistId}'">
                 <div class="album-thumbnail ${shasImage ? '' : 'placeholder'}">
                   ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
                 </div>
@@ -189,7 +192,7 @@ export async function handleSongs(req, env, ctx) {
     } else if (albumInfo && albumId) {
       const albumSongs = await Promise.all(albumInfo.songs.map(async (songKey, index) => {
         const m = await getMetadata(env, songKey);
-        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+        // REMOVE slug lookup - use songKey directly
         let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
         let sartistDisplay = "";
         if (m) {
@@ -222,7 +225,7 @@ export async function handleSongs(req, env, ctx) {
         const isCurrentSong = songKey === baseName;
         const activeClass = isCurrentSong ? ' style="background: rgba(255, 85, 0, 0.05); border-left: 4px solid #ff5500;"' : '';
         return `
-          <div class="album-item" onclick="window.location='/song/${songSlug}'"${activeClass}>
+          <div class="album-item" onclick="window.location='/song/${songKey}'"${activeClass}>
             <div class="album-thumbnail ${shasImage ? '' : 'placeholder'}">
               ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
             </div>
@@ -254,7 +257,7 @@ export async function handleSongs(req, env, ctx) {
         .slice(0, 2);
       
       moreByArtistHtml = await Promise.all(artistAlbums.map(async album => {
-        const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+        // REMOVE slug lookup - use album.id directly
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
         if (album.thumbnail) {
@@ -274,7 +277,7 @@ export async function handleSongs(req, env, ctx) {
           year: 'numeric' 
         });
         return `
-          <div class="album-item" onclick="window.location='/album/${albumSlug}'">
+          <div class="album-item" onclick="window.location='/album/${album.id}'">
             <div class="album-thumbnail ${hasImage ? '' : 'placeholder'}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
             </div>
@@ -306,7 +309,7 @@ export async function handleSongs(req, env, ctx) {
       const fName = f.key.split("/")[1];
       const fBaseName = fName.replace(".mp3", "");
       const m = await getMetadata(env, fBaseName);
-      const songSlug = await slugManager.getSlugFromId('songs', fBaseName) || fBaseName;
+      // REMOVE slug lookup - use fBaseName directly
       let fTitle = m ? m.title : fBaseName.split("_").slice(1).join(" ");
       let fArtistDisplay = "";
       if (m) {
@@ -342,7 +345,7 @@ export async function handleSongs(req, env, ctx) {
       const fDurationSeconds = m?.duration || 0;
       const fDurationFormatted = formatDuration(fDurationSeconds);
       return `
-        <div class="album-item" onclick="window.location='/song/${songSlug}'">
+        <div class="album-item" onclick="window.location='/song/${fBaseName}'">
           <div class="album-thumbnail ${fHasImage ? '' : 'placeholder'}">
             ${fHasImage ? `<img src="${fThumbUrl}" alt="${fTitle}" loading="lazy">` : ''}
           </div>
@@ -418,13 +421,11 @@ export async function handleSongs(req, env, ctx) {
         `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`
       );
     } else {
-      // Get artist slug for breadcrumb
-      const artistSlug = await slugManager.getSlugFromId('artists', primaryArtistId) || primaryArtistId;
-      
+      // REMOVE slug lookup - use primaryArtistId directly
       html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
       html = html.replace(/<a href="songs\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
       html = html.replace(/<a href="artists\.html" class="breadcrumb-link">/g, '<a href="/artists" class="breadcrumb-link">');
-      html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${artistSlug}" class="breadcrumb-link">${primaryArtistName}</a>`);
+      html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${primaryArtistId}" class="breadcrumb-link">${primaryArtistName}</a>`);
       html = html.replace(/<span class="breadcrumb-current">.*?<\/span>/, `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`);
     }
 
@@ -439,9 +440,8 @@ export async function handleSongs(req, env, ctx) {
     html = html.replace(/<p class="playlist-description">[\s\S]*?<\/p>/, `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistDisplay}.`}</p>`);
     html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${durationFormatted}</span>`);
     
-    // Update download button with slug
-    const currentSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
-    html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${currentSlug}" class="download-mini-btn"`);
+    // REMOVE slug lookup - use baseName directly for download
+    html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${baseName}" class="download-mini-btn"`);
 
     html = html.replace(
       /<h2 class="section-title">.*?<\/h2>/,
@@ -510,11 +510,14 @@ export async function handleSongs(req, env, ctx) {
 
   // Download endpoint
   if (path.startsWith("/download/")) {
-    // Get slug from URL
-    const slug = decodeURIComponent(path.replace("/download/", ""));
+    // Get filename from URL
+    const filename = decodeURIComponent(path.replace("/download/", ""));
     
-    // Get baseName from slug
-    const baseName = await slugManager.getIdFromSlug('songs', slug);
+    // Get baseName from filename (remove .mp3 if present)
+    let baseName = filename;
+    if (baseName.endsWith('.mp3')) {
+      baseName = baseName.slice(0, -4);
+    }
     
     if (!baseName) {
       return new Response("Song not found", { status: 404 });
