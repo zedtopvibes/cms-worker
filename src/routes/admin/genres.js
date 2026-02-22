@@ -1,4 +1,4 @@
-// src/routes/admin/genres.js
+// src/routes/admin/genres.js 
 import { GenreManager } from '../../helpers/genreManager.js';
 import { adminLayout } from './layout.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
