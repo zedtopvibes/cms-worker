@@ -1,26 +1,37 @@
 // ==================== SONGS ROUTES ====================
 // ALL IMPORTS AT THE TOP
 import { incrementPageView } from '../helpers/pageViews.js';
-import { incrementPlays, incrementDownloads } from '../helpers/playsDownloadsEnhanced.js'; // ✅ UPDATED IMPORT
+import { incrementPlays, incrementDownloads } from '../helpers/playsDownloadsEnhanced.js';
 import { getArtists, getAlbums, getPlaylists, getMetadata } from '../helpers/storage.js';
-import { getSongStats } from '../helpers/db.js'; // Removed incrementPlay, incrementDownload
+import { getSongStats } from '../helpers/db.js';
 import { formatDuration } from '../helpers/formatting.js';
+import { SlugManager } from '../helpers/slug.js';
 
 export async function handleSongs(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
+  const slugManager = new SlugManager(env);
 
   // Song detail page
   if (path.startsWith("/song/")) {
-    const fileName = decodeURIComponent(path.replace("/song/", ""));
-    const baseName = fileName.replace(".mp3", "");
+    // Get slug from URL (e.g., "drake-gods-plan")
+    const slug = decodeURIComponent(path.replace("/song/", ""));
     
+    // Get baseName from slug
+    const baseName = await slugManager.getIdFromSlug('songs', slug);
+    
+    if (!baseName) {
+      return new Response("Song not found", { status: 404 });
+    }
+    
+    // Now get the audio file using baseName
+    const fileName = baseName + ".mp3";
     const audioObj = await env.media.get(`songs/${fileName}`);
     if (!audioObj) {
       return new Response("Song not found", { status: 404 });
     }
 
-    // ✅ TRACK PAGE VIEW
+    // TRACK PAGE VIEW
     ctx.waitUntil(incrementPageView(env, 'song', baseName));
 
     const stats = await getSongStats(baseName, env);
@@ -125,6 +136,7 @@ export async function handleSongs(req, env, ctx) {
           .slice(0, 10)
           .map(async (songKey, index) => {
             const m = await getMetadata(env, songKey);
+            const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
             let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
             let sartistDisplay = "";
             if (m) {
@@ -155,7 +167,7 @@ export async function handleSongs(req, env, ctx) {
             const sdurationFormatted = formatDuration(sdurationSeconds);
             const trackNum = (index + 1).toString().padStart(2, '0');
             return `
-              <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}?playlist=${playlistId}'">
+              <div class="album-item" onclick="window.location='/song/${songSlug}?playlist=${playlistId}'">
                 <div class="album-thumbnail ${shasImage ? '' : 'placeholder'}">
                   ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
                 </div>
@@ -177,6 +189,7 @@ export async function handleSongs(req, env, ctx) {
     } else if (albumInfo && albumId) {
       const albumSongs = await Promise.all(albumInfo.songs.map(async (songKey, index) => {
         const m = await getMetadata(env, songKey);
+        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
         let stitle = m ? m.title : songKey.split("_").slice(1).join(" ");
         let sartistDisplay = "";
         if (m) {
@@ -209,7 +222,7 @@ export async function handleSongs(req, env, ctx) {
         const isCurrentSong = songKey === baseName;
         const activeClass = isCurrentSong ? ' style="background: rgba(255, 85, 0, 0.05); border-left: 4px solid #ff5500;"' : '';
         return `
-          <div class="album-item" onclick="window.location='/song/${encodeURIComponent(songKey + ".mp3")}'"${activeClass}>
+          <div class="album-item" onclick="window.location='/song/${songSlug}'"${activeClass}>
             <div class="album-thumbnail ${shasImage ? '' : 'placeholder'}">
               ${shasImage ? `<img src="${sthumbUrl}" alt="${stitle}" loading="lazy">` : ''}
             </div>
@@ -241,6 +254,7 @@ export async function handleSongs(req, env, ctx) {
         .slice(0, 2);
       
       moreByArtistHtml = await Promise.all(artistAlbums.map(async album => {
+        const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
         let thumbUrl = "/images/placeholder.jpg";
         let hasImage = false;
         if (album.thumbnail) {
@@ -260,7 +274,7 @@ export async function handleSongs(req, env, ctx) {
           year: 'numeric' 
         });
         return `
-          <div class="album-item" onclick="window.location='/album/${album.id}'">
+          <div class="album-item" onclick="window.location='/album/${albumSlug}'">
             <div class="album-thumbnail ${hasImage ? '' : 'placeholder'}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${album.title}" loading="lazy">` : ''}
             </div>
@@ -292,6 +306,7 @@ export async function handleSongs(req, env, ctx) {
       const fName = f.key.split("/")[1];
       const fBaseName = fName.replace(".mp3", "");
       const m = await getMetadata(env, fBaseName);
+      const songSlug = await slugManager.getSlugFromId('songs', fBaseName) || fBaseName;
       let fTitle = m ? m.title : fBaseName.split("_").slice(1).join(" ");
       let fArtistDisplay = "";
       if (m) {
@@ -327,7 +342,7 @@ export async function handleSongs(req, env, ctx) {
       const fDurationSeconds = m?.duration || 0;
       const fDurationFormatted = formatDuration(fDurationSeconds);
       return `
-        <div class="album-item" onclick="window.location='/song/${encodeURIComponent(fName)}'">
+        <div class="album-item" onclick="window.location='/song/${songSlug}'">
           <div class="album-thumbnail ${fHasImage ? '' : 'placeholder'}">
             ${fHasImage ? `<img src="${fThumbUrl}" alt="${fTitle}" loading="lazy">` : ''}
           </div>
@@ -403,10 +418,13 @@ export async function handleSongs(req, env, ctx) {
         `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`
       );
     } else {
+      // Get artist slug for breadcrumb
+      const artistSlug = await slugManager.getSlugFromId('artists', primaryArtistId) || primaryArtistId;
+      
       html = html.replace(/<a href="index\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
       html = html.replace(/<a href="songs\.html" class="breadcrumb-link">/g, '<a href="/" class="breadcrumb-link">');
       html = html.replace(/<a href="artists\.html" class="breadcrumb-link">/g, '<a href="/artists" class="breadcrumb-link">');
-      html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${primaryArtistId}" class="breadcrumb-link">${primaryArtistName}</a>`);
+      html = html.replace(/<a href="artist-yo-maps\.html" class="breadcrumb-link">/g, `<a href="/artist/${artistSlug}" class="breadcrumb-link">${primaryArtistName}</a>`);
       html = html.replace(/<span class="breadcrumb-current">.*?<\/span>/, `<span class="breadcrumb-current"><i class="fas fa-headphones"></i>${songTitle}</span>`);
     }
 
@@ -420,8 +438,10 @@ export async function handleSongs(req, env, ctx) {
     
     html = html.replace(/<p class="playlist-description">[\s\S]*?<\/p>/, `<p class="playlist-description">${description || `"${songTitle}" is a song by ${artistDisplay}.`}</p>`);
     html = html.replace(/<span id="compactTotalTime">[^<]+<\/span>/, `<span id="compactTotalTime">${durationFormatted}</span>`);
-    html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${encodeURIComponent(fileName)}" class="download-mini-btn"`);
-    html = html.replace(/\/songs\/[^"]*\.mp3/g, `/songs/${encodeURIComponent(fileName)}`);
+    
+    // Update download button with slug
+    const currentSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
+    html = html.replace(/<a href="\/download\/[^"]*" class="download-mini-btn"/, `<a href="/download/${currentSlug}" class="download-mini-btn"`);
 
     html = html.replace(
       /<h2 class="section-title">.*?<\/h2>/,
@@ -457,7 +477,7 @@ export async function handleSongs(req, env, ctx) {
     html = html.replace(/<a href="#" class="nav-item">Albums<\/a>/, '<a href="/albums" class="nav-item">Albums</a>');
     html = html.replace(/<a href="#" class="nav-item">Artists<\/a>/, '<a href="/artists" class="nav-item">Artists</a>');
 
-    // ✅ UPDATED SCRIPT - Still calls the API endpoint (no change needed here)
+    // Script for tracking plays (unchanged - still uses baseName)
     const script = `
 <script>
   (function() {
@@ -488,12 +508,22 @@ export async function handleSongs(req, env, ctx) {
     });
   }
 
-  // ✅ UPDATED Download endpoint
+  // Download endpoint
   if (path.startsWith("/download/")) {
-    const fileName = decodeURIComponent(path.replace("/download/", ""));
-    const songKey = fileName.replace(".mp3", "");
+    // Get slug from URL
+    const slug = decodeURIComponent(path.replace("/download/", ""));
+    
+    // Get baseName from slug
+    const baseName = await slugManager.getIdFromSlug('songs', slug);
+    
+    if (!baseName) {
+      return new Response("Song not found", { status: 404 });
+    }
+    
+    const fileName = baseName + ".mp3";
+    const songKey = baseName;
 
-    // ✅ UPDATED: Use new incrementDownloads function
+    // Track download
     ctx.waitUntil(incrementDownloads(env, 'song', songKey));
 
     // Fetch the audio file from R2
