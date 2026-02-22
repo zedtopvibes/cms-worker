@@ -1,4 +1,4 @@
-// ==================== ADMIN  PLAYLISTS MANAGEMENT ====================
+// ==================== ADMIN PLAYLISTS MANAGEMENT ====================
 import { getPlaylists, savePlaylists, getArtists, getAlbums, getMetadata } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
@@ -6,7 +6,7 @@ import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-import { SlugManager } from '../../helpers/slug.js';  // ADD THIS IMPORT
+// REMOVE: import { SlugManager } from '../../helpers/slug.js';
 
 // ===== LIST ALL PLAYLISTS =====
 export async function handleAdminPlaylists(req, env, ctx, auth) {
@@ -15,7 +15,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 20;
-  const slugManager = new SlugManager(env);  // ADD THIS
+  // REMOVE: const slugManager = new SlugManager(env);
 
   // Get all playlists
   const playlists = await getPlaylists(env);
@@ -27,8 +27,8 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
       const stats = await getAggregatedStats(playlist.songs || [], env);
       const pageViews = await getPageViews(env, 'playlist', id);
       
-      // Get slug for this playlist
-      const playlistSlug = await slugManager.getSlugFromId('playlists', id) || id;
+      // REMOVE slug lookup - use id directly
+      // const playlistSlug = await slugManager.getSlugFromId('playlists', id) || id;
       
       // Get featured artists count
       const uniqueArtists = new Set();
@@ -41,7 +41,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
       
       return {
         id,
-        slug: playlistSlug,  // ADD THIS
+        // slug: playlistSlug,  // REMOVE THIS
         title: playlist.title,
         description: playlist.description || '',
         curator: playlist.curator || 'ZEDALBUMS',
@@ -253,7 +253,7 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
             flex-wrap: wrap;
         }
         
-        .playlist-slug-info {
+        .playlist-id-info {
             font-size: 0.75rem;
             color: #4a90e2;
             margin-top: 5px;
@@ -287,9 +287,10 @@ export async function handleAdminPlaylists(req, env, ctx, auth) {
             window.open('/playlist/' + id, '_blank'); 
         };
         
-        window.viewPlaylistBySlug = function(slug) { 
-            window.open('/playlist/' + slug, '_blank'); 
-        };
+        // REMOVE slug function
+        // window.viewPlaylistBySlug = function(slug) { 
+        //     window.open('/playlist/' + slug, '_blank'); 
+        // };
         
         window.editPlaylist = function(id) { 
             window.location.href = '/admin/playlists/edit?id=' + id; 
@@ -472,10 +473,10 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
   const playlistId = sanitize(title) + "_" + Date.now();
   const playlists = await getPlaylists(env);
 
-  // Generate and save slug for playlist
-  const slugManager = new SlugManager(env);
-  const slug = slugManager.generatePlaylistSlug(title);
-  await slugManager.registerSlug('playlists', playlistId, slug, { title });
+  // REMOVE slug generation and registration
+  // const slugManager = new SlugManager(env);
+  // const slug = slugManager.generatePlaylistSlug(title);
+  // await slugManager.registerSlug('playlists', playlistId, slug, { title });
 
   let thumbnailKey = null;
   if (thumbnailFile && thumbnailFile.size > 0) {
@@ -493,8 +494,8 @@ export async function handleAdminPlaylistCreatePost(req, env, ctx, auth) {
     created: Date.now(),
     updated: Date.now(),
     songs: [],
-    genres: genres,
-    slug: slug  // ADD THIS
+    genres: genres
+    // slug: slug  // REMOVE THIS
   };
 
   await savePlaylists(env, playlists);
@@ -519,14 +520,14 @@ export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
   
   const playlists = await getPlaylists(env);
   const playlist = playlists[playlistId];
-  const slugManager = new SlugManager(env);  // ADD THIS
+  // REMOVE: const slugManager = new SlugManager(env);
   
   if (!playlist) {
     return { redirect: '/admin/playlists' };
   }
   
-  // Get playlist slug
-  const playlistSlug = await slugManager.getSlugFromId('playlists', playlistId) || playlistId;
+  // REMOVE slug lookup - use playlistId directly
+  // const playlistSlug = await slugManager.getSlugFromId('playlists', playlistId) || playlistId;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -546,7 +547,7 @@ export async function handleAdminPlaylistEdit(req, env, ctx, auth) {
             <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #4a90e2;">
                 <i class="fas fa-link" style="color: #4a90e2;"></i>
                 <span style="margin-left: 5px;">Playlist URL:</span>
-                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/playlist/${playlistSlug}</code>
+                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/playlist/${playlistId}</code>
             </div>
         </div>
         
@@ -710,19 +711,19 @@ export async function handleAdminPlaylistEditPost(req, env, ctx, auth) {
   
   try {
     const playlists = await getPlaylists(env);
-    const slugManager = new SlugManager(env);  // ADD THIS
+    // REMOVE: const slugManager = new SlugManager(env);
     
     if (!playlists[playlistId]) {
       return { success: false, error: 'Playlist not found' };
     }
     
-    // Check if title changed and update slug if needed
-    const oldTitle = playlists[playlistId].title;
-    if (oldTitle !== title) {
-      const newSlug = slugManager.generatePlaylistSlug(title);
-      await slugManager.registerSlug('playlists', playlistId, newSlug, { title });
-      playlists[playlistId].slug = newSlug;
-    }
+    // REMOVE slug update logic
+    // const oldTitle = playlists[playlistId].title;
+    // if (oldTitle !== title) {
+    //   const newSlug = slugManager.generatePlaylistSlug(title);
+    //   await slugManager.registerSlug('playlists', playlistId, newSlug, { title });
+    //   playlists[playlistId].slug = newSlug;
+    // }
     
     // Update playlist details
     playlists[playlistId].title = title;
@@ -779,8 +780,8 @@ export async function handleAdminPlaylistDelete(req, env, ctx, auth) {
       genres: playlist?.genres,
       created: playlist?.created,
       updated: playlist?.updated,
-      thumbnail: playlist?.thumbnail,
-      slug: playlist?.slug
+      thumbnail: playlist?.thumbnail
+      // slug: playlist?.slug  // REMOVE THIS
     };
     
     // Move to trash
@@ -970,7 +971,7 @@ export async function handleAdminPlaylistSongsPost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views (UPDATED with slug and Preview button)
+// Mobile card with views (UPDATED to use id instead of slug)
 function generateMobileCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short'
@@ -981,7 +982,7 @@ function generateMobileCard(playlist) {
         <div style="font-weight:700; margin-bottom:5px;">${playlist.title}</div>
         <div style="color:#4a90e2; margin-bottom:8px;">by ${playlist.curator}</div>
         <div style="font-size:0.7rem; color:#4a90e2; margin-bottom:8px;">
-            <i class="fas fa-link"></i> /playlist/${playlist.slug}
+            <i class="fas fa-link"></i> /playlist/${playlist.id}
         </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
             <span><i class="fas fa-music"></i> ${playlist.songCount} songs</span>
@@ -1008,7 +1009,7 @@ function generateMobileCard(playlist) {
   `;
 }
 
-// Grid card with views (UPDATED with slug and Preview button)
+// Grid card with views (UPDATED to use id instead of slug)
 function generateGridCard(playlist) {
   const updated = new Date(playlist.updated).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short'
@@ -1016,14 +1017,14 @@ function generateGridCard(playlist) {
   
   return `
     <div class="playlist-grid-card">
-        <div class="playlist-thumbnail" onclick="viewPlaylistBySlug('${playlist.slug}')">
+        <div class="playlist-thumbnail" onclick="viewPlaylist('${playlist.id}')">
             ${playlist.thumbnail ? `<img src="/playlists/thumbnails/${playlist.id}.jpg">` : '📋'}
         </div>
         <div class="playlist-info">
-            <div class="playlist-title" onclick="viewPlaylistBySlug('${playlist.slug}')">${playlist.title}</div>
-            <div class="playlist-curator" onclick="viewPlaylistBySlug('${playlist.slug}')">by ${playlist.curator}</div>
-            <div class="playlist-slug-info">
-                <i class="fas fa-link"></i> /playlist/${playlist.slug}
+            <div class="playlist-title" onclick="viewPlaylist('${playlist.id}')">${playlist.title}</div>
+            <div class="playlist-curator" onclick="viewPlaylist('${playlist.id}')">by ${playlist.curator}</div>
+            <div class="playlist-id-info">
+                <i class="fas fa-link"></i> /playlist/${playlist.id}
             </div>
             <div class="playlist-stats">
                 <span><i class="fas fa-music"></i> ${playlist.songCount}</span>
