@@ -5,7 +5,8 @@ import { getPageViews } from '../../helpers/pageViews.js';
 import { formatDuration, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
-import { GenreManager } from '../../helpers/genreManager.js';  // ADD THIS IMPORT
+import { GenreManager } from '../../helpers/genreManager.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADD THIS IMPORT
 
 export async function handleAdminSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -13,6 +14,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 20;
+  const slugManager = new SlugManager(env);  // ADD THIS
 
   // Get all songs
   const songList = await env.media.list({ prefix: "songs/" });
@@ -28,6 +30,9 @@ export async function handleAdminSongs(req, env, ctx, auth) {
       const meta = await getMetadata(env, baseName);
       const stats = await getSongStats(baseName, env);
       const pageViews = await getPageViews(env, 'song', baseName);
+      
+      // Get slug for this song
+      const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
       
       // Find album
       let albumInfo = null;
@@ -49,6 +54,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
       return {
         fileName,
         baseName,
+        slug: songSlug,  // ADD THIS
         title: meta?.title || baseName.split('_').slice(1).join(' '),
         primaryArtist: meta?.primaryArtist || baseName.split('_')[0],
         primaryArtistName,
@@ -61,8 +67,8 @@ export async function handleAdminSongs(req, env, ctx, auth) {
         views: pageViews,
         uploaded: new Date(song.uploaded),
         size: song.size,
-        genre: meta?.genre || null,  // ADD THIS
-        genres: meta?.genres || []    // ADD THIS
+        genre: meta?.genre || null,
+        genres: meta?.genres || []
       };
     })
   );
@@ -330,6 +336,10 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   const meta = await getMetadata(env, baseName);
   const artists = await getArtists(env);
   const albums = await getAlbums(env);
+  const slugManager = new SlugManager(env);  // ADD THIS
+  
+  // Get song slug
+  const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -363,6 +373,11 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
             <h2 style="font-size: 1.3rem; margin:0;">
                 <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Song
             </h2>
+            <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #ff5500;">
+                <i class="fas fa-link" style="color: #ff5500;"></i>
+                <span style="margin-left: 5px;">Song URL:</span>
+                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/song/${songSlug}</code>
+            </div>
         </div>
         
         <form id="editForm" action="/admin/songs/edit" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
@@ -618,7 +633,7 @@ function generateTableRow(song) {
             <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
                 <i class="fas fa-trash"></i>
             </button>
-            <a href="/song/${encodeURIComponent(song.fileName)}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
+            <a href="/song/${song.slug}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
                 <i class="fas fa-external-link-alt"></i>
             </a>
         </td>
