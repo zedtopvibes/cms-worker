@@ -43,7 +43,27 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     <i class="fas fa-heading" style="color: #ff5500; width: 20px;"></i>
                     Song Title
                 </label>
-                <input type="text" name="title" class="form-control" placeholder="e.g. My Song" required>
+                <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. Drake - God's Plan" required>
+                
+                <!-- URL Preview Section -->
+                <div style="margin-top: 10px; background: #f8f9fa; padding: 12px 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 5px; color: #666;">
+                            <i class="fas fa-link" style="color: #ff5500;"></i>
+                            <span style="font-size: 0.9rem; font-weight: 500;">Final URL:</span>
+                        </div>
+                        <code id="urlPreview" style="flex: 1; padding: 6px 10px; background: white; border-radius: 4px; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                            /song/...
+                        </code>
+                        <button type="button" onclick="copyUrl()" class="btn btn-secondary" style="padding: 6px 15px; font-size: 0.9rem;">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                    <p style="font-size: 0.8rem; color: #666; margin-top: 8px; margin-bottom: 0;">
+                        <i class="fas fa-info-circle"></i> 
+                        URL is generated from the title. Use only letters, numbers, and hyphens.
+                    </p>
+                </div>
             </div>
             
             <!-- Primary Artist - Searchable Select -->
@@ -402,6 +422,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         let audioContext = null;
         
         // DOM Elements
+        const titleInput = document.getElementById('songTitle');
+        const urlPreview = document.getElementById('urlPreview');
         const audioFile = document.getElementById('audioFile');
         const durationContainer = document.getElementById('durationContainer');
         const durationText = document.getElementById('durationText');
@@ -411,6 +433,58 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const exactBadge = document.getElementById('exactBadge');
         const submitBtn = document.getElementById('submitBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
+        
+        // ===== URL PREVIEW FUNCTION =====
+        function generateSlug(text) {
+            if (!text) return 'untitled';
+            
+            let slug = text
+                .toLowerCase()
+                // Replace ft. and feat. with 'ft'
+                .replace(/ft\./g, 'ft')
+                .replace(/feat\./g, 'feat')
+                // Remove all punctuation except hyphens and spaces
+                .replace(/[^\w\s-]/g, ' ')
+                // Replace spaces with hyphens
+                .replace(/\s+/g, '-')
+                // Remove multiple hyphens
+                .replace(/-+/g, '-')
+                // Remove leading/trailing hyphens
+                .replace(/^-|-$/g, '');
+            
+            // If slug is empty after processing
+            if (!slug) slug = 'untitled';
+            
+            return slug;
+        }
+        
+        function updateUrlPreview() {
+            const title = titleInput.value.trim();
+            const slug = generateSlug(title);
+            const baseUrl = window.location.origin;
+            urlPreview.textContent = \`\${baseUrl}/song/\${slug}\`;
+        }
+        
+        let slugUpdateTimeout;
+        titleInput.addEventListener('input', function() {
+            clearTimeout(slugUpdateTimeout);
+            slugUpdateTimeout = setTimeout(updateUrlPreview, 300);
+        });
+        
+        window.copyUrl = function() {
+            const url = urlPreview.textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = event.target.closest('button');
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                setTimeout(() => {
+                    btn.innerHTML = originalHtml;
+                }, 2000);
+            });
+        };
+        
+        // Initial preview
+        updateUrlPreview();
         
         // Dropdown Functions
         function toggleDropdown(type) {
@@ -596,7 +670,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             input.value = JSON.stringify(featuredArtists);
         }
         
-        // Genre Tag - UPDATED with "No genres added" message
+        // Genre Tag
         function updateGenreTag(name, color) {
             const container = document.getElementById('selectedGenreContainer');
             const input = document.getElementById('genreInput');
@@ -623,7 +697,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         
         window.removeGenre = function() {
             selectedGenre = null;
-            updateGenreTag(); // This will now show "No genres added"
+            updateGenreTag();
         };
         
         // Close dropdown on outside click
@@ -665,6 +739,10 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                         const secs = Math.floor(sec % 60);
                         durationText.innerHTML = \`\${min}:\${secs.toString().padStart(2,'0')} <small style="color:#666;">(\${sec.toFixed(2)}s)</small>\`;
                         durationInput.value = sec.toFixed(3);
+                        
+                        // Store milliseconds for ID3 tagging
+                        window.id3Duration = Math.floor(sec * 1000);
+                        
                         exactBadge.style.display = 'inline-block';
                         progressFill.style.width = '100%';
                         submitBtn.disabled = false;
@@ -701,7 +779,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         
         // Initialize
         updateFeaturedTags();
-        updateGenreTag(); // Initialize genre with "No genres added" message
+        updateGenreTag();
     </script>
   `;
 
@@ -720,7 +798,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     const playlistId = formData.get('playlist');
     const featuredJson = formData.get('featured');
     const browserDuration = formData.get('duration');
-    const genreInput = formData.get('genre'); // Get genre input
+    const genreInput = formData.get('genre');
 
     if (!title || !audioFile || !imageFile) {
       return { success: false, error: 'Missing required fields' };
@@ -738,7 +816,6 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     let genre = null;
     if (genreInput) {
       if (genreInput.startsWith('new_')) {
-        // Create new genre
         const genreData = JSON.parse(genreInput.replace('new_', ''));
         const genreManager = new GenreManager(env);
         await genreManager.addGenre(genreData);
@@ -748,7 +825,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       }
     }
 
-    // Process any new featured artists (those starting with 'new_')
+    // Process any new featured artists
     const processedFeatured = [];
     for (const feat of featuredArtists) {
       if (feat.startsWith('new_')) {
@@ -814,6 +891,20 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration = fallbackDurationParser(audioBuffer);
     }
 
+    // Generate slug from title
+    const slugManager = new SlugManager(env);
+    const slug = slugManager.generateSongSlug(title);
+    
+    // Register slug with metadata
+    await slugManager.registerSlug('songs', baseName, slug, {
+      title,
+      artist: artistId,
+      artistName,
+      duration,
+      genre
+    });
+
+    // Store the audio file (will be replaced with ID3 tagged version later)
     await env.media.put(audioKey, audioBuffer);
     await env.media.put(imageKey, imageFile.stream());
     await env.media.put(descKey, description);
@@ -824,25 +915,10 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       featuredArtists: processedFeatured,
       description,
       duration,
-      genre // Add genre to metadata
+      genre,
+      slug  // Store slug in metadata for easy access
     };
     await saveMetadata(env, baseName, metadata);
-
-
-// Generate and save slug from title
-const slugManager = new SlugManager(env);
-const slug = slugManager.generateSongSlug(title);
-await slugManager.registerSlug('songs', baseName, slug, {
-  title,
-  artist: artistId,
-  artistName,
-  duration,
-  genre
-});
-
-// Store slug in metadata for easy access
-metadata.slug = slug;
-await saveMetadata(env, baseName, metadata);
 
     if (albumId && albumId !== '' && albumId !== '__create_new__') {
       await addSongToAlbum(env, albumId, baseName);
@@ -859,7 +935,6 @@ await saveMetadata(env, baseName, metadata);
       await addSongToArtist(env, fid, baseName);
     }
 
-    // ✅ LOG ADMIN ACTIVITY
     await logAdminActivity(env, auth.session.id, 'upload', 'song', baseName, title);
 
     return {
@@ -869,7 +944,8 @@ await saveMetadata(env, baseName, metadata);
       artistName,
       duration,
       albumId,
-      playlistId
+      playlistId,
+      slug  // Return slug for potential use
     };
     
   } catch (error) {
