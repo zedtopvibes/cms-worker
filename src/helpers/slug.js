@@ -266,7 +266,7 @@ export class SlugManager {
   // ===== PRIVATE METHODS =====
 
   /**
-   * Smart slugify - preserves word structure while removing special chars
+   * Balanced slugify - preserves words but removes special chars
    * Only lowercase letters, numbers, and hyphens allowed
    */
   _slugify(text) {
@@ -275,22 +275,25 @@ export class SlugManager {
     // Convert to string and lowercase
     let str = String(text).toLowerCase();
     
-    // STEP 1: Replace common separators with spaces first
-    // This helps preserve word boundaries
+    // STEP 1: Replace common separators with spaces
+    // This handles underscores, hyphens, commas, etc.
     str = str.replace(/[_,\-/\s]+/g, ' ');
     
-    // STEP 2: Remove all special characters but KEEP LETTERS
-    // This is the key fix - we only remove non-letter/number chars
+    // STEP 2: Remove all special characters EXCEPT spaces
+    // This keeps letters, numbers, and spaces only
     str = str.replace(/[^a-z0-9\s]/g, '');
     
-    // STEP 3: Replace spaces with hyphens
+    // STEP 3: Replace multiple spaces with single space
+    str = str.replace(/\s+/g, ' ');
+    
+    // STEP 4: Trim spaces
+    str = str.trim();
+    
+    // STEP 5: Replace spaces with hyphens
     str = str.replace(/\s+/g, '-');
     
-    // STEP 4: Remove multiple hyphens
+    // STEP 6: Remove multiple hyphens (just in case)
     str = str.replace(/-+/g, '-');
-    
-    // STEP 5: Remove leading/trailing hyphens
-    str = str.replace(/^-+|-+$/g, '');
     
     // If result is empty, return empty string
     if (!str) return '';
@@ -317,7 +320,7 @@ export class SlugManager {
     }
     
     this.slugsCache = { songs: {}, artists: {}, albums: {}, playlists: {} };
-    this.reverseCache = { songs: {}, artists: {}, albums: {}, playlists: {} };
+    this.reverseCache = { songs: {}, artists: {}, artists: {}, playlists: {} };
     
     const types = ['songs', 'artists', 'albums', 'playlists'];
     
