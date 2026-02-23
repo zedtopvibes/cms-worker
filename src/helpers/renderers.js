@@ -2,8 +2,12 @@
 // Functions for generating HTML for charts and lists
 
 import { formatNumber } from './formatting.js';
+import { SlugManager } from './slug.js';  // ADDED
 
-export function generateAlbumChartItem(album, thumbUrl, artists, isPreview = false) {
+export async function generateAlbumChartItem(album, thumbUrl, artists, env, isPreview = false) {
+  const slugManager = new SlugManager(env);  // ADDED
+  const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+  
   const primaryArtist = (album.artists?.length && artists[album.artists[0]]) 
     ? artists[album.artists[0]].name 
     : "Various";
@@ -12,8 +16,7 @@ export function generateAlbumChartItem(album, thumbUrl, artists, isPreview = fal
   const trendIcon = album.rankChange > 0 ? 'arrow-up' : (album.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = album.rankChange > 0 ? '#27ae60' : (album.rankChange < 0 ? '#e74c3c' : '#999');
   
-  // Use ID only - slug removed
-  const albumUrl = `/album/${album.id}`;
+  const albumUrl = `/album/${albumSlug}`;
   
   return `
     <div class="album-item" onclick="window.location='${albumUrl}'">
@@ -40,14 +43,16 @@ export function generateAlbumChartItem(album, thumbUrl, artists, isPreview = fal
   `;
 }
 
-export function generateSongChartItem(song, thumbUrl, artists, isPreview = false) {
+export async function generateSongChartItem(song, thumbUrl, artists, env, isPreview = false) {
+  const slugManager = new SlugManager(env);  // ADDED
+  const songSlug = await slugManager.getSlugFromId('songs', song.key) || song.key;
+  
   const primaryArtistName = artists[song.primaryArtist]?.name || song.primaryArtist;
   const rankClass = song.rank === 1 ? 'top1' : (song.rank === 2 ? 'silver' : (song.rank === 3 ? 'bronze' : ''));
   const trendIcon = song.rankChange > 0 ? 'arrow-up' : (song.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = song.rankChange > 0 ? '#27ae60' : (song.rankChange < 0 ? '#e74c3c' : '#999');
   
-  // Use fileName only - slug removed
-  const songUrl = `/song/${encodeURIComponent(song.fileName)}`;
+  const songUrl = `/song/${songSlug}`;
   
   return `
     <div class="album-item" onclick="window.location='${songUrl}'">
@@ -77,13 +82,15 @@ export function generateSongChartItem(song, thumbUrl, artists, isPreview = false
   `;
 }
 
-export function generateArtistChartItem(artist, thumbUrl, isPreview = false) {
+export async function generateArtistChartItem(artist, thumbUrl, env, isPreview = false) {
+  const slugManager = new SlugManager(env);  // ADDED
+  const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+  
   const rankClass = artist.rank === 1 ? 'top1' : (artist.rank === 2 ? 'silver' : (artist.rank === 3 ? 'bronze' : ''));
   const trendIcon = artist.rankChange > 0 ? 'arrow-up' : (artist.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = artist.rankChange > 0 ? '#27ae60' : (artist.rankChange < 0 ? '#e74c3c' : '#999');
   
-  // Use ID only - slug removed
-  const artistUrl = `/artist/${artist.id}`;
+  const artistUrl = `/artist/${artistSlug}`;
   
   return `
     <div class="album-item" onclick="window.location='${artistUrl}'">
@@ -109,7 +116,10 @@ export function generateArtistChartItem(artist, thumbUrl, isPreview = false) {
   `;
 }
 
-export function generatePlaylistChartItem(playlist, thumbUrl, isPreview = false) {
+export async function generatePlaylistChartItem(playlist, thumbUrl, env, isPreview = false) {
+  const slugManager = new SlugManager(env);  // ADDED
+  const playlistSlug = await slugManager.getSlugFromId('playlists', playlist.id) || playlist.id;
+  
   const rankClass = playlist.rank === 1 ? 'top1' : (playlist.rank === 2 ? 'silver' : (playlist.rank === 3 ? 'bronze' : ''));
   const trendIcon = playlist.rankChange > 0 ? 'arrow-up' : (playlist.rankChange < 0 ? 'arrow-down' : 'minus');
   const trendColor = playlist.rankChange > 0 ? '#27ae60' : (playlist.rankChange < 0 ? '#e74c3c' : '#999');
@@ -118,8 +128,7 @@ export function generatePlaylistChartItem(playlist, thumbUrl, isPreview = false)
   const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
   const timeAgo = diffDays === 0 ? 'Today' : diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
   
-  // Use ID only - slug removed
-  const playlistUrl = `/playlist/${playlist.id}`;
+  const playlistUrl = `/playlist/${playlistSlug}`;
   
   return `
     <div class="album-item" onclick="window.location='${playlistUrl}'">
@@ -148,7 +157,10 @@ export function generatePlaylistChartItem(playlist, thumbUrl, isPreview = false)
   `;
 }
 
-export function generateNewReleaseAlbumItem(album, thumbUrl, artists) {
+export async function generateNewReleaseAlbumItem(album, thumbUrl, artists, env) {
+  const slugManager = new SlugManager(env);  // ADDED
+  const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+  
   const primaryArtist = (album.artists?.length && artists[album.artists[0]]) 
     ? artists[album.artists[0]].name 
     : "Various";
@@ -159,8 +171,7 @@ export function generateNewReleaseAlbumItem(album, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
-  // Use ID only - slug removed
-  const albumUrl = `/album/${album.id}`;
+  const albumUrl = `/album/${albumSlug}`;
   
   return `
     <div class="album-item" onclick="window.location='${albumUrl}'">
@@ -180,7 +191,10 @@ export function generateNewReleaseAlbumItem(album, thumbUrl, artists) {
   `;
 }
 
-export function generateNewReleaseSongItem(song, thumbUrl, artists) {
+export async function generateNewReleaseSongItem(song, thumbUrl, artists, env) {
+  const slugManager = new SlugManager(env);  // ADDED
+  const songSlug = await slugManager.getSlugFromId('songs', song.id) || song.id;
+  
   const primaryArtistName = artists[song.artistId]?.name || song.artistId;
   const date = new Date(song.created);
   const now = new Date();
@@ -189,8 +203,7 @@ export function generateNewReleaseSongItem(song, thumbUrl, artists) {
     ? `${diffHours} hours ago` 
     : `${Math.floor(diffHours / 24)} days ago`;
   
-  // FIXED: Removed .mp3 extension
-  const songUrl = `/song/${encodeURIComponent(song.id)}`;
+  const songUrl = `/song/${songSlug}`;
   
   return `
     <div class="album-item" onclick="window.location='${songUrl}'">
