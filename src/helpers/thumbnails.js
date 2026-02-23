@@ -1,4 +1,6 @@
-// ==================== THUMBNAIL HELPER FUNCTIONS ====================
+// ==================== THUMBNAIL HELPERS ====================
+// No changes needed for Phase 3 - these functions don't generate URLs
+// They just return image paths which are used by renderers
 
 export async function getAlbumThumbnailUrl(album, env) {
   if (album.thumbnail) {
@@ -13,12 +15,17 @@ export async function getAlbumThumbnailUrl(album, env) {
   return "/images/placeholder.jpg";
 }
 
-export async function getSongThumbnailUrl(baseName, env) {
+export async function getSongThumbnailUrl(songId, env) {
   try {
-    const jpgObj = await env.media.get(`images/${baseName}.jpg`);
-    if (jpgObj) return `/images/${encodeURIComponent(baseName)}.jpg`;
-    const pngObj = await env.media.get(`images/${baseName}.png`);
-    if (pngObj) return `/images/${encodeURIComponent(baseName)}.png`;
+    const jpgObj = await env.media.get(`images/${songId}.jpg`);
+    if (jpgObj) {
+      return `/images/${encodeURIComponent(songId)}.jpg`;
+    } else {
+      const pngObj = await env.media.get(`images/${songId}.png`);
+      if (pngObj) {
+        return `/images/${encodeURIComponent(songId)}.png`;
+      }
+    }
   } catch (e) {}
   return "/images/placeholder.jpg";
 }
