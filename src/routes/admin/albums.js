@@ -6,7 +6,7 @@ import { formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-// REMOVE: import { SlugManager } from '../../helpers/slug.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADDED
 
 // ===== LIST ALL ALBUMS =====
 export async function handleAdminAlbums(req, env, ctx, auth) {
@@ -15,7 +15,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 15;
-  // REMOVE: const slugManager = new SlugManager(env);
+  const slugManager = new SlugManager(env);  // ADDED
 
   // Get all albums
   const albums = await getAlbums(env);
@@ -27,8 +27,8 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
       const stats = await getAggregatedStats(album.songs || [], env);
       const pageViews = await getPageViews(env, 'album', id);
       
-      // REMOVE slug lookup - use id directly
-      // const albumSlug = await slugManager.getSlugFromId('albums', id) || id;
+      // Get slug
+      const albumSlug = await slugManager.getSlugFromId('albums', id) || id;
       
       // Get primary artist name
       let primaryArtist = 'Various';
@@ -42,7 +42,7 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
       
       return {
         id,
-        // slug: albumSlug,  // REMOVE THIS
+        slug: albumSlug,  // ADDED
         title: album.title,
         description: album.description || '',
         thumbnail: album.thumbnail,
@@ -250,14 +250,14 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
             flex-wrap: wrap;
         }
         
-        .album-id-info {
-            font-size: 0.75rem;
+        .slug-info {
+            font-size: 0.7rem;
             color: #4a90e2;
-            margin-top: 5px;
-            padding: 4px 8px;
             background: #f0f7ff;
+            padding: 2px 6px;
             border-radius: 4px;
             display: inline-block;
+            margin-top: 5px;
         }
         
         @media (min-width: 768px) {
@@ -280,14 +280,9 @@ export async function handleAdminAlbums(req, env, ctx, auth) {
             if (e.key === 'Enter') applyFilters();
         });
         
-        window.viewAlbum = function(id) { 
-            window.open('/album/' + id, '_blank'); 
+        window.viewAlbum = function(slug) { 
+            window.open('/album/' + slug, '_blank'); 
         };
-        
-        // REMOVE slug function
-        // window.viewAlbumBySlug = function(slug) { 
-        //     window.open('/album/' + slug, '_blank'); 
-        // };
         
         window.editAlbum = function(id) { 
             window.location.href = '/admin/albums/edit?id=' + id; 
@@ -465,11 +460,6 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
   const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
   await env.media.put(thumbnailKey, thumbnailFile.stream());
 
-  // REMOVE slug generation and registration
-  // const slugManager = new SlugManager(env);
-  // const slug = slugManager.generateAlbumSlug(title);
-  // await slugManager.registerSlug('albums', albumId, slug, { title });
-
   albums[albumId] = {
     id: albumId,
     title: title,
@@ -479,10 +469,19 @@ export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
     songs: [],
     artists: [],
     genre: genre || undefined
-    // slug: slug  // REMOVE THIS
   };
 
   await saveAlbums(env, albums);
+
+  // Generate and register slug
+  const slugManager = new SlugManager(env);
+  const baseSlug = slugManager.generateAlbumSlug(title);
+  const finalSlug = await slugManager.generateUniqueSlug('albums', baseSlug);
+  await slugManager.registerSlug('albums', albumId, finalSlug, {
+    title,
+    genre,
+    created: Date.now()
+  });
   
   // Log activity
   await logAdminActivity(env, auth.session.id, 'create', 'album', albumId, title);
@@ -505,14 +504,14 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
   const albums = await getAlbums(env);
   const album = albums[albumId];
   const artists = await getArtists(env);
-  // REMOVE: const slugManager = new SlugManager(env);
+  const slugManager = new SlugManager(env);  // ADDED
   
   if (!album) {
     return { redirect: '/admin/albums' };
   }
   
-  // REMOVE slug lookup - use albumId directly
-  // const albumSlug = await slugManager.getSlugFromId('albums', albumId) || albumId;
+  // Get slug
+  const albumSlug = await slugManager.getSlugFromId('albums', albumId) || albumId;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -536,9 +535,19 @@ export async function handleAdminAlbumEdit(req, env, ctx, auth) {
                 <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Album: ${album.title}
             </h2>
             <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #ff5500;">
-                <i class="fas fa-link" style="color: #ff5500;"></i>
-                <span style="margin-left: 5px;">Album URL:</span>
-                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/album/${albumId}</code>
+                <div style="margin-bottom: 5px;">
+                    <i class="fas fa-link" style="color: #ff5500;"></i>
+                    <span style="margin-left: 5px;">Album URL (slug):</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/album/${albumSlug}</code>
+                </div>
+                <div>
+                    <i class="fas fa-database" style="color: #4a90e2;"></i>
+                    <span style="margin-left: 5px;">Internal ID:</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">${albumId}</code>
+                </div>
+                <p style="font-size:0.8rem; color:#666; margin-top:5px; margin-bottom:0;">
+                    <i class="fas fa-info-circle"></i> Changing title will generate a new slug. Old URL will 404.
+                </p>
             </div>
         </div>
         
@@ -702,19 +711,13 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   
   try {
     const albums = await getAlbums(env);
-    // REMOVE: const slugManager = new SlugManager(env);
     
     if (!albums[albumId]) {
       return { success: false, error: 'Album not found' };
     }
     
-    // REMOVE slug update logic
-    // const oldTitle = albums[albumId].title;
-    // if (oldTitle !== title) {
-    //   const newSlug = slugManager.generateAlbumSlug(title);
-    //   await slugManager.registerSlug('albums', albumId, newSlug, { title });
-    //   albums[albumId].slug = newSlug;
-    // }
+    // Check if title changed
+    const oldTitle = albums[albumId].title;
     
     // Update album details
     albums[albumId].title = title;
@@ -732,6 +735,14 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
     
     await saveAlbums(env, albums);
     
+    // Regenerate slug if title changed
+    if (oldTitle !== title) {
+      const slugManager = new SlugManager(env);
+      const baseSlug = slugManager.generateAlbumSlug(title);
+      const newSlug = await slugManager.generateUniqueSlug('albums', baseSlug);
+      await slugManager.registerSlug('albums', albumId, newSlug, { title, genre });
+    }
+    
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'album', albumId, title);
     
@@ -741,7 +752,7 @@ export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ALBUM DELETION - UPDATED to use trash =====
+// ===== HANDLE ALBUM DELETION =====
 export async function handleAdminAlbumDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const albumId = url.searchParams.get('id');
@@ -781,8 +792,11 @@ export async function handleAdminAlbumDelete(req, env, ctx, auth) {
       genre: album?.genre,
       created: album?.created,
       thumbnail: album?.thumbnail
-      // slug: album?.slug  // REMOVE THIS
     };
+    
+    // Delete slug first
+    const slugManager = new SlugManager(env);
+    await slugManager.deleteSlug('albums', albumId);
     
     // Move to trash
     const result = await moveToTrash(
@@ -975,7 +989,7 @@ export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
 
 // ===== HELPER FUNCTIONS =====
 
-// Mobile card with views (UPDATED to use id instead of slug)
+// Mobile card with views
 function generateMobileCard(album) {
   const date = new Date(album.created).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -988,15 +1002,15 @@ function generateMobileCard(album) {
     <div class="mobile-card">
         <div style="font-weight:700; margin-bottom:5px;">${album.title} ${genreHtml}</div>
         <div style="color:#ff5500; margin-bottom:8px;">${album.primaryArtist}</div>
+        <div style="font-size:0.7rem; color:#4a90e2; margin-bottom:8px;">
+            <i class="fas fa-link"></i> /album/${album.slug}
+        </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
             <span><i class="fas fa-music"></i> ${album.songCount} songs</span>
             <span><i class="fas fa-play" style="color:#ff5500;"></i> ${formatNumber(album.plays)}</span>
             <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
         </div>
         <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">${date}</div>
-        <div style="font-size:0.7rem; color:#4a90e2; margin-bottom:8px;">
-            <i class="fas fa-link"></i> /album/${album.id}
-        </div>
         <div style="display:flex; gap:8px;">
             <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
             <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
@@ -1006,19 +1020,19 @@ function generateMobileCard(album) {
   `;
 }
 
-// Grid card with views (UPDATED to use id instead of slug)
+// Grid card with views
 function generateGridCard(album) {
   return `
     <div class="album-grid-card">
-        <div class="album-thumbnail" onclick="viewAlbum('${album.id}')">
+        <div class="album-thumbnail" onclick="viewAlbum('${album.slug}')">
             ${album.thumbnail ? `<img src="/albums/thumbnails/${album.id}.jpg">` : '💿'}
         </div>
         <div class="album-info">
-            <div class="album-title" onclick="viewAlbum('${album.id}')">${album.title}</div>
-            <div class="album-artist" onclick="viewAlbum('${album.id}')">${album.primaryArtist}</div>
+            <div class="album-title" onclick="viewAlbum('${album.slug}')">${album.title}</div>
+            <div class="album-artist" onclick="viewAlbum('${album.slug}')">${album.primaryArtist}</div>
             ${album.genre ? `<div style="color: #ff5500; font-size: 0.8rem; margin-bottom: 5px;">${album.genre}</div>` : ''}
-            <div class="album-id-info">
-                <i class="fas fa-link"></i> /album/${album.id}
+            <div class="slug-info">
+                <i class="fas fa-link"></i> /album/${album.slug}
             </div>
             <div class="album-stats">
                 <span><i class="fas fa-music"></i> ${album.songCount}</span>
