@@ -1,4 +1,4 @@
-// ==================== ARTISTS  ROUTES ====================
+// ==================== ARTISTS ROUTES ====================
 // ALL IMPORTS AT THE TOP 
 import { incrementPageView } from '../helpers/pageViews.js';
 import { 
@@ -11,12 +11,12 @@ import {
 } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
-// REMOVE: import { SlugManager } from '../helpers/slug.js';
+import { SlugManager } from '../helpers/slug.js';  // ADDED
 
 export async function handleArtists(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
-  // REMOVE: const slugManager = new SlugManager(env);
+  const slugManager = new SlugManager(env);  // ADDED
 
   // Artists list page
   if (path === "/artists") {
@@ -52,8 +52,8 @@ export async function handleArtists(req, env, ctx) {
         } catch (e) {}
       }
 
-      // REMOVE slug lookup - use artist.id directly
-      // const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      // Get slug for linking
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
 
       const songCount = artist.songs?.length || 0;
       const sinceYear = new Date(artist.created).getFullYear();
@@ -62,7 +62,7 @@ export async function handleArtists(req, env, ctx) {
         : '';
 
       return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -109,15 +109,14 @@ export async function handleArtists(req, env, ctx) {
         } catch (e) {}
       }
       
-      // REMOVE slug lookup - use artist.id directly
-      // const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
       
       const songCount = artist.songs?.length || 0;
       const bgStyle = hasImage 
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
       return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -149,8 +148,7 @@ export async function handleArtists(req, env, ctx) {
         } catch (e) {}
       }
       
-      // REMOVE slug lookup - use artist.id directly
-      // const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
+      const artistSlug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
       
       const songCount = artist.songs?.length || 0;
       const sinceYear = new Date(artist.created).getFullYear();
@@ -158,7 +156,7 @@ export async function handleArtists(req, env, ctx) {
         ? `style="background-image:url('${thumbUrl}');background-size:cover;background-position:center;"`
         : '';
       return `
-        <div class="album-item" onclick="window.location='/artist/${artist.id}'">
+        <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
           <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
           <div class="album-info">
             <span class="album-title">${artist.name}</span>
@@ -222,13 +220,13 @@ export async function handleArtists(req, env, ctx) {
     });
   }
 
-  // Artist detail page
+  // Artist detail page - Strict slug-only lookup
   if (path.startsWith("/artist/") && !path.startsWith("/artist/create")) {
-    // Get artist ID directly from URL
-    const artistId = decodeURIComponent(path.replace("/artist/", ""));
+    // Get slug from URL
+    const slug = decodeURIComponent(path.replace("/artist/", ""));
     
-    // REMOVE slug lookup - use artistId directly
-    // const artistId = await slugManager.getIdFromSlug('artists', slug);
+    // Get artist ID from slug - if null, artist doesn't exist (404)
+    const artistId = await slugManager.getIdFromSlug('artists', slug);
     
     if (!artistId) {
       return new Response("Artist not found", { status: 404 });
@@ -345,11 +343,10 @@ export async function handleArtists(req, env, ctx) {
         const meta = await getMetadata(env, songKey);
         const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
         const uploaded = alb.created;
-        // REMOVE slug lookup - use songKey directly
-        // const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
         allSongs.push({
           key: songKey,
-          // slug: songSlug,
+          slug: songSlug,
           title,
           artistName,
           artists: [artistName],
@@ -366,11 +363,10 @@ export async function handleArtists(req, env, ctx) {
       const uploaded = audioObj?.uploaded || Date.now();
       const meta = await getMetadata(env, songKey);
       const title = meta ? meta.title : songKey.split("_").slice(1).join(" ");
-      // REMOVE slug lookup - use songKey directly
-      // const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+      const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
       allSongs.push({
         key: songKey,
-        // slug: songSlug,
+        slug: songSlug,
         title,
         artistName,
         artists: [artistName],
@@ -390,11 +386,10 @@ export async function handleArtists(req, env, ctx) {
         const uploaded = audioObj?.uploaded || Date.now();
         const primaryArtistName = artists[meta.primaryArtist]?.name || meta.primaryArtist;
         const title = meta.title;
-        // REMOVE slug lookup - use songKey directly
-        // const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+        const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
         allSongs.push({
           key: songKey,
-          // slug: songSlug,
+          slug: songSlug,
           title,
           artistName: primaryArtistName,
           artists: [primaryArtistName, ...meta.featuredArtists.map(fid => artists[fid]?.name || fid)],
@@ -434,7 +429,7 @@ export async function handleArtists(req, env, ctx) {
         const roleBadge = song.role === 'featured' ? '<span class="featured-badge">Featured</span>' : '';
 
         return `
-          <div class="album-item" onclick="window.location='/song/${song.key}'">
+          <div class="album-item" onclick="window.location='/song/${song.slug}'">
             <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${song.title}" loading="lazy">` : ""}
             </div>
@@ -463,12 +458,11 @@ export async function handleArtists(req, env, ctx) {
             hasImage = true;
           } catch (e) {}
         }
-        // REMOVE slug lookup - use alb.id directly
-        // const albumSlug = await slugManager.getSlugFromId('albums', alb.id) || alb.id;
+        const albumSlug = await slugManager.getSlugFromId('albums', alb.id) || alb.id;
         
         const date = formatDate(alb.created);
         return `
-          <div class="album-item" onclick="window.location='/album/${alb.id}'">
+          <div class="album-item" onclick="window.location='/album/${albumSlug}'">
             <div class="album-thumbnail ${hasImage ? "" : "placeholder"}">
               ${hasImage ? `<img src="${thumbUrl}" alt="${alb.title}" loading="lazy">` : ""}
             </div>
@@ -525,14 +519,13 @@ export async function handleArtists(req, env, ctx) {
                   hasImage = true;
                 } catch (e) {}
               }
-              // REMOVE slug lookup - use a.id directly
-              // const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
+              const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
               
               const bgStyle = hasImage
                 ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
                 : "";
               return `
-                <div class="album-item" onclick="window.location='/artist/${a.id}'">
+                <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
                   <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
                   <div class="album-info">
                     <span class="album-title">${a.name}</span>
@@ -565,13 +558,14 @@ export async function handleArtists(req, env, ctx) {
             } catch (e) {}
           }
           
+          const playlistSlug = await slugManager.getSlugFromId('playlists', pl.id) || pl.id;
           const thumbnailClass = hasImage ? '' : 'playlist-thumbnail';
           const thumbnailContent = hasImage 
             ? `<img src="${thumbUrl}" alt="${pl.title}" loading="lazy">` 
             : '';
           
           return `
-            <div class="album-item" onclick="window.location='/playlist/${pl.id}'">
+            <div class="album-item" onclick="window.location='/playlist/${playlistSlug}'">
               <div class="album-thumbnail ${thumbnailClass}">
                 ${thumbnailContent}
               </div>
@@ -619,8 +613,7 @@ export async function handleArtists(req, env, ctx) {
                   hasImage = true;
                 } catch (e) {}
               }
-              // REMOVE slug lookup - use a.id directly
-              // const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
+              const artistSlug = await slugManager.getSlugFromId('artists', a.id) || a.id;
               
               const bgStyle = hasImage
                 ? `style="background-image:url('${thumbUrl}');background-size:cover;"`
@@ -628,7 +621,7 @@ export async function handleArtists(req, env, ctx) {
               const songCount = a.songs?.length || 0;
               const since = a.created ? new Date(a.created).getFullYear() : "N/A";
               return `
-                <div class="album-item" onclick="window.location='/artist/${a.id}'">
+                <div class="album-item" onclick="window.location='/artist/${artistSlug}'">
                   <div class="album-thumbnail artist-thumbnail" ${bgStyle}></div>
                   <div class="album-info">
                     <span class="album-title">${a.name}</span>
@@ -767,9 +760,8 @@ export async function handleArtists(req, env, ctx) {
           if (!text) return 'untitled';
           return text
             .toLowerCase()
-            .replace(/[^\\w\\s-]/g, ' ')
-            .replace(/\\s+/g, ' ')
-            .replace(/ /g, '-')
+            .replace(/[^a-z0-9\\s-]/g, '')
+            .replace(/\\s+/g, '-')
             .replace(/-+/g, '-')
             .replace(/^-|-$/g, '') || 'untitled';
         }
@@ -815,9 +807,6 @@ export async function handleArtists(req, env, ctx) {
         await env.media.put(thumbnailKey, thumbnailFile.stream());
       }
 
-      // REMOVE slug generation
-      // const slug = slugManager.generateArtistSlug(name);
-
       // Create artist object
       artists[artistId] = {
         id: artistId,
@@ -831,12 +820,15 @@ export async function handleArtists(req, env, ctx) {
       };
       await saveArtists(env, artists);
 
-      // REMOVE slug registration
-      // await slugManager.registerSlug('artists', artistId, slug, {
-      //   name: name,
-      //   genre: genre,
-      //   created: Date.now()
-      // });
+      // Generate and register slug
+      const slugManager = new SlugManager(env);
+      const baseSlug = slugManager.generateArtistSlug(name);
+      const finalSlug = await slugManager.generateUniqueSlug('artists', baseSlug);
+      await slugManager.registerSlug('artists', artistId, finalSlug, {
+        name,
+        genre,
+        created: Date.now()
+      });
 
       const html = `
       <!DOCTYPE html>
@@ -859,8 +851,8 @@ export async function handleArtists(req, env, ctx) {
         <div class="success">
           <h1>✅ Artist Created!</h1>
           <p style="font-size: 1.2rem;">${name}</p>
-          <div class="url">/artist/${artistId}</div>
-          <a href="/artist/${artistId}" class="btn">View Artist</a>
+          <div class="url">/artist/${finalSlug}</div>
+          <a href="/artist/${finalSlug}" class="btn">View Artist</a>
           <a href="/artist/create" class="btn btn-secondary">Create Another</a>
           <p style="margin-top: 20px;"><a href="/admin">← Back to Admin</a></p>
         </div>
