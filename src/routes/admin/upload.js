@@ -1,9 +1,20 @@
 // ==================== ADMIN UPLOAD HELPER FUNCTIONS ====================
 import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSongToAlbum, addSongToPlaylist, addSongToArtist, addAlbumToArtist, addArtistToAlbum } from '../../helpers/storage.js';
-import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { GenreManager } from '../../helpers/genreManager.js';
 import { SlugManager } from '../../helpers/slug.js';
+
+// Import formatting functions with fallbacks
+import * as formatting from '../../helpers/formatting.js';
+const sanitize = formatting.sanitize || function(str) { 
+    return str ? str.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') : ''; 
+};
+const formatDuration = formatting.formatDuration || function(sec) { 
+    const min = Math.floor(sec / 60);
+    const seconds = Math.floor(sec % 60);
+    return min + ':' + seconds.toString().padStart(2, '0'); 
+};
+const fallbackDurationParser = formatting.fallbackDurationParser || function() { return 0; };
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
