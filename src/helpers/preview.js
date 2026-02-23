@@ -4,18 +4,21 @@ import { getArtists, getAlbums, getPlaylists } from './storage.js';
 import { getSongStats } from './db.js';
 import { getPageViews } from './pageViews.js';
 import { formatDuration, formatNumber } from './formatting.js';
+import { SlugManager } from './slug.js';  // ADDED
 
 export async function getPreviewData(env, type, id) {
+  const slugManager = new SlugManager(env);  // ADDED
+  
   try {
     switch (type) {
       case 'song':
-        return await getSongPreview(env, id);
+        return await getSongPreview(env, id, slugManager);
       case 'album':
-        return await getAlbumPreview(env, id);
+        return await getAlbumPreview(env, id, slugManager);
       case 'artist':
-        return await getArtistPreview(env, id);
+        return await getArtistPreview(env, id, slugManager);
       case 'playlist':
-        return await getPlaylistPreview(env, id);
+        return await getPlaylistPreview(env, id, slugManager);
       default:
         return null;
     }
@@ -25,11 +28,14 @@ export async function getPreviewData(env, type, id) {
   }
 }
 
-async function getSongPreview(env, id) {
+async function getSongPreview(env, id, slugManager) {
   const meta = await getMetadata(env, id);
   const stats = await getSongStats(id, env);
   const artists = await getArtists(env);
   const views = await getPageViews(env, 'song', id);
+  
+  // Get slug
+  const slug = await slugManager.getSlugFromId('songs', id) || id;
   
   // Get thumbnail URL
   let thumbUrl = null;
@@ -58,6 +64,7 @@ async function getSongPreview(env, id) {
   return {
     type: 'song',
     id,
+    slug,
     title: meta?.title || id.split('_').slice(1).join(' ') || id,
     artist: artistName,
     featured: featuredText,
@@ -67,17 +74,20 @@ async function getSongPreview(env, id) {
     downloads: formatNumber(stats.downloads),
     views: formatNumber(views),
     description: meta?.description || 'No description available',
-    url: `/song/${encodeURIComponent(id)}`
+    url: `/song/${slug}`
   };
 }
 
-async function getAlbumPreview(env, id) {
+async function getAlbumPreview(env, id, slugManager) {
   const albums = await getAlbums(env);
   const album = albums[id];
   const artists = await getArtists(env);
   const views = await getPageViews(env, 'album', id);
   
   if (!album) return null;
+  
+  // Get slug
+  const slug = await slugManager.getSlugFromId('albums', id) || id;
   
   // Get thumbnail URL
   let thumbUrl = null;
@@ -99,6 +109,7 @@ async function getAlbumPreview(env, id) {
   return {
     type: 'album',
     id,
+    slug,
     title: album.title,
     artist: primaryArtist,
     allArtists: artistNames,
@@ -109,16 +120,19 @@ async function getAlbumPreview(env, id) {
     created: new Date(album.created).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric'
     }),
-    url: `/album/${id}`
+    url: `/album/${slug}`
   };
 }
 
-async function getArtistPreview(env, id) {
+async function getArtistPreview(env, id, slugManager) {
   const artists = await getArtists(env);
   const artist = artists[id];
   const views = await getPageViews(env, 'artist', id);
   
   if (!artist) return null;
+  
+  // Get slug
+  const slug = await slugManager.getSlugFromId('artists', id) || id;
   
   // Get thumbnail URL
   let thumbUrl = null;
@@ -130,6 +144,7 @@ async function getArtistPreview(env, id) {
   return {
     type: 'artist',
     id,
+    slug,
     name: artist.name,
     thumbnail: thumbUrl,
     genre: artist.genre || 'Various',
@@ -141,16 +156,19 @@ async function getArtistPreview(env, id) {
     created: new Date(artist.created).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric'
     }),
-    url: `/artist/${id}`
+    url: `/artist/${slug}`
   };
 }
 
-async function getPlaylistPreview(env, id) {
+async function getPlaylistPreview(env, id, slugManager) {
   const playlists = await getPlaylists(env);
   const playlist = playlists[id];
   const views = await getPageViews(env, 'playlist', id);
   
   if (!playlist) return null;
+  
+  // Get slug
+  const slug = await slugManager.getSlugFromId('playlists', id) || id;
   
   // Get thumbnail URL
   let thumbUrl = null;
@@ -162,6 +180,7 @@ async function getPlaylistPreview(env, id) {
   return {
     type: 'playlist',
     id,
+    slug,
     title: playlist.title,
     curator: playlist.curator || 'ZEDALBUMS',
     thumbnail: thumbUrl,
@@ -171,6 +190,6 @@ async function getPlaylistPreview(env, id) {
     created: new Date(playlist.created).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric'
     }),
-    url: `/playlist/${id}`
+    url: `/playlist/${slug}`
   };
 }
