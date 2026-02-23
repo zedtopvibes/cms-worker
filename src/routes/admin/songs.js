@@ -1,4 +1,4 @@
-// ====================  ADMIN SONGS MANAGEMENT ====================
+// ==================== ADMIN SONGS MANAGEMENT ====================
 import { getArtists, getAlbums, getMetadata, saveMetadata } from '../../helpers/storage.js';
 import { getSongStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
@@ -6,7 +6,7 @@ import { formatDuration, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-// REMOVE: import { SlugManager } from '../../helpers/slug.js';  // REMOVE THIS IMPORT
+import { SlugManager } from '../../helpers/slug.js';  // ADDED
 
 export async function handleAdminSongs(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -14,7 +14,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'date';
   const ITEMS_PER_PAGE = 20;
-  // REMOVE: const slugManager = new SlugManager(env);  // REMOVE THIS
+  const slugManager = new SlugManager(env);  // ADDED
 
   // Get all songs
   const songList = await env.media.list({ prefix: "songs/" });
@@ -31,8 +31,8 @@ export async function handleAdminSongs(req, env, ctx, auth) {
       const stats = await getSongStats(baseName, env);
       const pageViews = await getPageViews(env, 'song', baseName);
       
-      // REMOVE slug lookup - use baseName directly
-      // const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
+      // Get slug
+      const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
       
       // Find album
       let albumInfo = null;
@@ -54,7 +54,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
       return {
         fileName,
         baseName,
-        // slug: songSlug,  // REMOVE THIS
+        slug: songSlug,  // ADDED
         title: meta?.title || baseName.split('_').slice(1).join(' '),
         primaryArtist: meta?.primaryArtist || baseName.split('_')[0],
         primaryArtistName,
@@ -186,7 +186,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
             <table class="admin-table">
                 <thead>
                     <tr>
-                        <th>Title</th>
+                        <th>Title / Slug</th>
                         <th>Artist</th>
                         <th>Album</th>
                         <th>Genre</th>
@@ -221,6 +221,16 @@ export async function handleAdminSongs(req, env, ctx, auth) {
         @media (max-width: 767px) {
             .table-responsive { display: none; }
         }
+        
+        .slug-info {
+            font-size: 0.7rem;
+            color: #4a90e2;
+            background: #f0f7ff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 3px;
+        }
     </style>
     
     <script>
@@ -254,7 +264,7 @@ export async function handleAdminSongs(req, env, ctx, auth) {
 
 // ===== EDIT/DELETE FUNCTIONS WITH ACTIVITY LOGGING =====
 
-// Handle song deletion - UPDATED to use trash
+// Handle song deletion
 export async function handleAdminSongDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const baseName = url.searchParams.get('name');
@@ -298,7 +308,11 @@ export async function handleAdminSongDelete(req, env, ctx, auth) {
       genres: meta?.genres
     };
     
-    // Move to trash instead of deleting
+    // Delete slug first
+    const slugManager = new SlugManager(env);
+    await slugManager.deleteSlug('songs', baseName);
+    
+    // Move to trash
     const result = await moveToTrash(
       env, 
       auth.session.id, 
@@ -336,10 +350,10 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
   const meta = await getMetadata(env, baseName);
   const artists = await getArtists(env);
   const albums = await getAlbums(env);
-  // REMOVE: const slugManager = new SlugManager(env);  // REMOVE THIS
+  const slugManager = new SlugManager(env);  // ADDED
   
-  // REMOVE slug lookup - use baseName directly
-  // const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
+  // Get slug
+  const songSlug = await slugManager.getSlugFromId('songs', baseName) || baseName;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -374,9 +388,19 @@ export async function handleAdminSongEdit(req, env, ctx, auth) {
                 <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Song
             </h2>
             <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #ff5500;">
-                <i class="fas fa-link" style="color: #ff5500;"></i>
-                <span style="margin-left: 5px;">Song URL:</span>
-                <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/song/${baseName}</code>
+                <div style="margin-bottom: 5px;">
+                    <i class="fas fa-link" style="color: #ff5500;"></i>
+                    <span style="margin-left: 5px;">Song URL (slug):</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/song/${songSlug}</code>
+                </div>
+                <div>
+                    <i class="fas fa-database" style="color: #4a90e2;"></i>
+                    <span style="margin-left: 5px;">Internal ID:</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">${baseName}</code>
+                </div>
+                <p style="font-size:0.8rem; color:#666; margin-top:5px; margin-bottom:0;">
+                    <i class="fas fa-info-circle"></i> Changing title or artist will generate a new slug. Old URL will 404.
+                </p>
             </div>
         </div>
         
@@ -529,7 +553,7 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
   const featuredArtistsStr = formData.get('featuredArtists');
   const description = formData.get('description');
   const duration = parseFloat(formData.get('duration'));
-  const genre = formData.get('genre');  // Get selected genre
+  const genre = formData.get('genre');
   
   if (!baseName || !title || !primaryArtist) {
     return { success: false, error: 'Missing required fields' };
@@ -541,6 +565,9 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
     : [];
   
   try {
+    // Check if title or artist changed
+    const oldMeta = await getMetadata(env, baseName);
+    
     // Update metadata
     const metadata = {
       title,
@@ -548,12 +575,28 @@ export async function handleAdminSongEditPost(req, env, ctx, auth) {
       featuredArtists,
       description,
       duration,
-      genre: genre || undefined  // Save genre (undefined if empty)
+      genre: genre || undefined
     };
     await saveMetadata(env, baseName, metadata);
     
     // Update description file
     await env.media.put(`descriptions/${baseName}.txt`, description);
+    
+    // Check if title or primary artist changed - regenerate slug
+    if (oldMeta.title !== title || oldMeta.primaryArtist !== primaryArtist) {
+      const slugManager = new SlugManager(env);
+      
+      // Generate new slug
+      const baseSlug = slugManager.generateSongSlug(title, primaryArtist);
+      const newSlug = await slugManager.generateUniqueSlug('songs', baseSlug);
+      
+      // Register new slug (old slug still exists but won't be found in forward lookup)
+      await slugManager.registerSlug('songs', baseName, newSlug, {
+        title,
+        artist: primaryArtist,
+        updatedAt: Date.now()
+      });
+    }
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'song', baseName, title);
@@ -583,6 +626,9 @@ function generateMobileCard(song) {
         <div style="font-weight: 700; margin-bottom: 5px;">${song.title} ${genreHtml}</div>
         <div style="color: #ff5500; font-size: 0.9rem; margin-bottom: 5px;">${song.primaryArtistName}</div>
         ${featuredHtml}
+        <div style="font-size: 0.7rem; color: #4a90e2; margin: 5px 0;">
+            <i class="fas fa-link"></i> /song/${song.slug}
+        </div>
         <div style="font-size: 0.85rem; color: #666; margin: 5px 0;">Album: ${song.album?.title || '—'}</div>
         <div style="display: flex; gap: 15px; flex-wrap: wrap; margin: 8px 0;">
             <span><i class="fas fa-clock"></i> ${formatDuration(song.duration)}</span>
@@ -616,7 +662,10 @@ function generateTableRow(song) {
   
   return `
     <tr>
-        <td><strong>${song.title}</strong></td>
+        <td>
+            <strong>${song.title}</strong><br>
+            <span class="slug-info"><i class="fas fa-link"></i> /song/${song.slug}</span>
+        </td>
         <td>${song.primaryArtistName}${song.featuredNames ? `<br><small>feat. ${song.featuredNames}</small>` : ''}</td>
         <td>${song.album?.title || '—'}</td>
         <td>${genreHtml}</td>
@@ -633,7 +682,7 @@ function generateTableRow(song) {
             <button onclick="deleteSong('${song.baseName}')" class="btn btn-danger btn-sm" title="Delete" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-right: 5px;">
                 <i class="fas fa-trash"></i>
             </button>
-            <a href="/song/${song.baseName}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
+            <a href="/song/${song.slug}" target="_blank" class="btn btn-secondary btn-sm" title="View" style="background: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; display: inline-block;">
                 <i class="fas fa-external-link-alt"></i>
             </a>
         </td>
