@@ -511,8 +511,8 @@ export async function handleAdmin(req, env, ctx) {
     }
   }
 
-  // ===== UPLOAD SONG =====
-  if (path === '/upload') {
+  // ===== UPLOAD SONG (continued from before) =====
+if (path === '/upload') {
     if (req.method === 'GET') {
       const content = await handleAdminUpload(req, env, ctx, auth);
       return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, 
@@ -546,7 +546,7 @@ export async function handleAdmin(req, env, ctx) {
         });
       }
       
-      // SUCCESS PAGE - UPDATED WITH SLUGS (NEEDS FIX)
+      // ===== UPDATED SUCCESS PAGE WITH SLUG =====
       const content = `
         <div style="text-align: center; padding: 20px 10px;">
             <div style="background: #d4edda; color: #155724; padding: 25px 20px; border-radius: 12px; margin-bottom: 30px;">
@@ -558,14 +558,35 @@ export async function handleAdmin(req, env, ctx) {
                     <i class="fas fa-clock" style="color: #ff5500;"></i>
                     <strong>Duration:</strong> ${formatDuration(result.duration)}
                 </div>
-                <div style="margin-top: 15px; background: #f8f9fa; padding: 10px; border-radius: 8px;">
-                    <i class="fas fa-link" style="color: #ff5500;"></i>
-                    <span style="font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px;">/song/${result.baseName}</span>
+                
+                <!-- Slug URL Display -->
+                <div style="margin-top: 15px; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                    <div style="display: flex; align-items: center; gap: 5px; color: #666; margin-bottom: 5px;">
+                        <i class="fas fa-link" style="color: #ff5500;"></i>
+                        <span style="font-weight: 500;">Public URL (slug):</span>
+                    </div>
+                    <code style="display: block; background: white; padding: 10px; border-radius: 6px; font-size: 0.9rem; border: 1px solid #e0e0e0; word-break: break-all;">
+                        /song/${result.slug}
+                    </code>
+                    
+                    <div style="display: flex; align-items: center; gap: 5px; color: #666; margin-top: 10px; margin-bottom: 5px;">
+                        <i class="fas fa-database" style="color: #4a90e2;"></i>
+                        <span style="font-weight: 500;">Internal ID:</span>
+                    </div>
+                    <code style="display: block; background: white; padding: 10px; border-radius: 6px; font-size: 0.9rem; border: 1px solid #e0e0e0; word-break: break-all;">
+                        ${result.baseName}
+                    </code>
                 </div>
+                
+                <p style="font-size: 0.85rem; color: #666; margin-top: 10px;">
+                    <i class="fas fa-info-circle"></i> 
+                    The slug is the only URL that will work. Old ID-based URLs will return 404.
+                </p>
             </div>
+            
             <div style="display: flex; flex-direction: column; gap: 12px; max-width: 320px; margin: 0 auto;">
-                <!-- View Song - Now using baseName -->
-                <a href="/song/${result.baseName}" class="btn btn-primary" target="_blank" style="padding: 16px;">
+                <!-- View Song - Using slug -->
+                <a href="/song/${result.slug}" class="btn btn-primary" target="_blank" style="padding: 16px;">
                     <i class="fas fa-play"></i> View Song
                 </a>
                 
@@ -604,55 +625,6 @@ export async function handleAdmin(req, env, ctx) {
       ), {
         headers: { 'Content-Type': 'text/html' }
       });
-    }
-  }
-
-  // ===== ALBUMS MANAGEMENT =====
-  if (path === '/albums') {
-    const content = await handleAdminAlbums(req, env, ctx, auth);
-    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, 
-      { total: totalDuplicates }, 
-      { total: totalMissingIssues }, 
-      { total: totalQualityIssues },
-      { total: totalGenres }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-
-  if (path === '/albums/edit') {
-    if (req.method === 'GET') {
-      const result = await handleAdminAlbumEdit(req, env, ctx, auth);
-      if (result.redirect) {
-        return new Response(null, { status: 302, headers: { Location: result.redirect } });
-      }
-      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, 
-        { total: totalDuplicates }, 
-        { total: totalMissingIssues }, 
-        { total: totalQualityIssues },
-        { total: totalGenres }
-      ), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-    if (req.method === 'POST') {
-      const result = await handleAdminAlbumEditPost(req, env, ctx, auth);
-      if (result.success) {
-        return new Response(null, {
-          status: 302,
-          headers: { Location: result.redirect || '/admin/albums?updated=1' }
-        });
-      } else {
-        const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        return new Response(adminLayout('Error', content, auth, 'albums', 0, 
-          { total: totalDuplicates }, 
-          { total: totalMissingIssues }, 
-          { total: totalQualityIssues },
-          { total: totalGenres }
-        ), {
-          headers: { 'Content-Type': 'text/html' }
-        });
-      }
     }
   }
 
