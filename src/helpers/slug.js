@@ -266,8 +266,8 @@ export class SlugManager {
   // ===== PRIVATE METHODS =====
 
   /**
-   * Strict slugify - ONLY lowercase letters, numbers, and hyphens
-   * Removes EVERYTHING else
+   * Smart slugify - preserves word structure while removing special chars
+   * Only lowercase letters, numbers, and hyphens allowed
    */
   _slugify(text) {
     if (!text) return '';
@@ -275,11 +275,21 @@ export class SlugManager {
     // Convert to string and lowercase
     let str = String(text).toLowerCase();
     
-    // Replace ALL special characters and whitespace with hyphens
-    // This regex keeps only letters, numbers, and replaces everything else with hyphens
-    str = str.replace(/[^a-z0-9]+/g, '-');
+    // STEP 1: Replace common separators with spaces first
+    // This helps preserve word boundaries
+    str = str.replace(/[_,\-/\s]+/g, ' ');
     
-    // Remove leading/trailing hyphens
+    // STEP 2: Remove all special characters but KEEP LETTERS
+    // This is the key fix - we only remove non-letter/number chars
+    str = str.replace(/[^a-z0-9\s]/g, '');
+    
+    // STEP 3: Replace spaces with hyphens
+    str = str.replace(/\s+/g, '-');
+    
+    // STEP 4: Remove multiple hyphens
+    str = str.replace(/-+/g, '-');
+    
+    // STEP 5: Remove leading/trailing hyphens
     str = str.replace(/^-+|-+$/g, '');
     
     // If result is empty, return empty string
