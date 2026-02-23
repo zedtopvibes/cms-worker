@@ -78,7 +78,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             <div class="form-group">
                 <label>
                     <i class="fas fa-microphone" style="color: #ff5500; width: 20px;"></i>
-                    Primary Artist
+                    Primary Artist <span style="color: #ff5500;">*</span>
                 </label>
                 
                 <div class="searchable-select-container">
@@ -114,6 +114,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                         </button>
                     </div>
                 </div>
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                    <i class="fas fa-info-circle"></i> Primary artist is used for ID3 tags only, not in the URL.
+                </p>
             </div>
             
             <!-- Featured Artists -->
@@ -671,8 +674,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 // Strict slug generation - only lowercase, numbers, hyphens
                 let slug = text
                     .toLowerCase()
-                    .replace(/[^a-z0-9\s]/g, '') // Remove all special chars
-                    .replace(/\s+/g, '-') // Spaces to hyphens
+                    .replace(/[^a-z0-9\\s]/g, '') // Remove all special chars
+                    .replace(/\\s+/g, '-') // Spaces to hyphens
                     .replace(/-+/g, '-') // Collapse multiple hyphens
                     .replace(/^-|-$/g, ''); // Trim hyphens
                 
@@ -692,8 +695,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 if (!title && !artistName) return 'untitled.mp3';
                 
                 // Sanitize for filename (allow underscores for internal use)
-                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
-                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
+                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
+                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
                 
                 if (!cleanArtist && !cleanTitle) return 'untitled.mp3';
                 if (!cleanArtist) return cleanTitle + '.mp3';
@@ -727,7 +730,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 updateUrlPreview();
             });
             
-            // Watch for artist selection changes
+            // Watch for artist selection changes (still needed for internal filename)
             const observer = new MutationObserver(function() {
                 updateUrlPreview();
             });
@@ -859,7 +862,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const name = document.getElementById(type + 'NewArtistName').value.trim();
             if (!name) { alert('Please enter a name'); return; }
             
-            const tempId = 'new_' + name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+            const tempId = 'new_' + name.replace(/\\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
             
             if (type === 'primary') {
                 document.getElementById('primaryArtistInput').value = tempId;
@@ -876,7 +879,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         }
         
         function saveNewGenre() {
-            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\s+/g, '-');
+            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\\s+/g, '-');
             const name = document.getElementById('genreNewName').value.trim();
             const color = document.querySelector('input[name="newGenreColor"]:checked')?.value;
             const icon = document.querySelector('input[name="newGenreIcon"]:checked')?.value;
@@ -1059,8 +1062,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
 export async function handleAdminUploadPost(req, env, ctx, auth) {
   try {
     const formData = await req.formData();
-    const rawTitle = formData.get('title');
-    const rawArtist = formData.get('artist');
+    const rawTitle = formData.get('title');           // Use raw for display
+    const rawArtist = formData.get('artist');         // Use raw for display
     const description = formData.get('description');
     const audioFile = formData.get('audio');
     const imageFile = formData.get('image');
@@ -1121,12 +1124,12 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       }
     }
 
-    let artistName = rawArtist;
+    let artistName = rawArtist;        // Keep raw for display
     let artistId = rawArtist;
 
     // Process new primary artist
     if (rawArtist && rawArtist.startsWith('new_')) {
-      artistName = rawArtist.replace('new_', '');
+      artistName = rawArtist.replace('new_', '');  // Keep raw for display
       artistId = sanitize(artistName);
       const artists = await getArtists(env);
       if (!artists[artistId]) {
@@ -1143,10 +1146,12 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       }
     }
 
+    // SANITIZED VERSIONS - for internal storage only
     const safeTitle = sanitize(rawTitle);
     const safeArtist = sanitize(artistName);
     const baseName = `${safeArtist}_${safeTitle}`;
 
+    // R2 storage keys (use sanitized versions for filesystem safety)
     const audioKey = `songs/${baseName}.mp3`;
     const descKey = `descriptions/${baseName}.txt`;
     const imgType = imageFile.type.includes('png') ? 'png' : 'jpg';
@@ -1161,26 +1166,18 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration = fallbackDurationParser(audioBuffer);
     }
 
-    // ===== ID3 TAGGING SECTION =====
+    // ===== ID3 TAGGING SECTION - USING RAW VALUES =====
     const SITENAME = "ZEDALBUMS";
     
-    // Construct artist string for ID3 tag
-    let id3ArtistString = artistName;
-    if (processedFeatured.length > 0) {
-      const artists = await getArtists(env);
-      const featuredNames = processedFeatured.map(fid => artists[fid]?.name || fid).join(', ');
-      id3ArtistString = `${artistName} feat. ${featuredNames}`;
-    }
-    
     // Primary artist ONLY for ID3 artist field (no featured artists)
-    const primaryArtistOnly = artistName;
+    const primaryArtistOnly = artistName;  // Raw artist name
     
-    // Full title with featured artists for display
-    const fullTitleWithFeatured = rawTitle;
+    // Full title with featured artists for display (already includes "ft. Rihanna" etc.)
+    const fullTitleWithFeatured = rawTitle;  // Raw title
     
-    // ID3 Tags - Clean separation
-    const taggedTitle = `${fullTitleWithFeatured} (${SITENAME})`;
-    const taggedArtist = `${primaryArtistOnly} | ${SITENAME}`;
+    // ID3 Tags - Clean separation with RAW values (no underscores)
+    const taggedTitle = `${fullTitleWithFeatured} (${SITENAME})`;  // Title with featured artists
+    const taggedArtist = `${primaryArtistOnly} | ${SITENAME}`;     // Primary artist only
     
     // Convert duration to milliseconds for ID3 tag
     const durationMs = Math.floor(duration * 1000);
@@ -1192,14 +1189,14 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration: durationMs
     });
     
-    // Generate filename with site name
+    // Generate filename with site name - Using RAW values (no underscores)
     const finalFilename = `${rawTitle} (${SITENAME}).mp3`;
     
     // Store the TAGGED file
     await env.media.put(audioKey, taggedMp3, {
       httpMetadata: { 
         contentType: 'audio/mpeg',
-        contentDisposition: `inline; filename="${finalFilename}"`
+        contentDisposition: `inline; filename="${finalFilename}"`  // Raw filename for download
       }
     });
 
@@ -1210,24 +1207,24 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // ===== SLUG GENERATION AND REGISTRATION =====
     const slugManager = new SlugManager(env);
     
-    // Generate clean slug from title ONLY (no artist prefix)
-    const baseSlug = slugManager.generateSongSlug(rawTitle, '');
+    // Generate clean slug from title ONLY (using raw title)
+    const baseSlug = slugManager.generateSongSlug(rawTitle, ''); // Empty artist to prevent duplication
     
     // Ensure uniqueness
     const finalSlug = await slugManager.generateUniqueSlug('songs', baseSlug);
     
     // Register in database
     await slugManager.registerSlug('songs', baseName, finalSlug, {
-      title: rawTitle,
+      title: rawTitle,  // Store raw title in metadata
       artist: artistId,
-      artistName: artistName,
+      artistName: artistName,  // Store raw artist name
       duration,
       genre,
       featured: processedFeatured,
       uploadedAt: Date.now()
     });
 
-    // Store metadata
+    // Store metadata (using raw values for display)
     const metadata = {
       title: rawTitle,
       primaryArtist: artistId,
@@ -1235,7 +1232,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       description,
       duration,
       genre,
-      filename: finalFilename
+      filename: finalFilename  // Raw filename for display
     };
     await saveMetadata(env, baseName, metadata);
 
@@ -1264,12 +1261,12 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       success: true,
       baseName,
       slug: finalSlug,
-      title: rawTitle,
-      artistName: artistName,
+      title: rawTitle,           // Return raw title
+      artistName: artistName,    // Return raw artist name
       duration,
       albumId,
       playlistId,
-      filename: finalFilename
+      filename: finalFilename    // Raw filename
     };
     
   } catch (error) {
