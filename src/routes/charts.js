@@ -25,13 +25,10 @@ import {
   generateNewReleaseSongItem
 } from '../helpers/renderers.js';
 
-// REMOVE: import { SlugManager } from '../helpers/slug.js';
-
 export async function handleCharts(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
   const subPath = path.replace("/charts", "") || "/";
-  // REMOVE: const slugManager = new SlugManager(env);
 
   // Track chart page views
   let chartType = 'charts-overview';
@@ -95,8 +92,7 @@ export async function handleCharts(req, env, ctx) {
   let html = await templateObj.text();
 
   const chartData = await dataFunction();
-  // REMOVE slugManager from render functions
-  html = await renderFunction(html, chartData, env);
+  html = await renderFunction(html, chartData, env);  // Pass env to renderer
 
   html = html.replace(/<title>.*?<\/title>/, `<title>${title} - ZEDALBUMS</title>`);
 
@@ -108,38 +104,34 @@ export async function handleCharts(req, env, ctx) {
   });
 }
 
-// Chart rendering functions - REMOVE slugManager parameter
+// Chart rendering functions - Pass env to all renderers
 async function renderChartsOverview(html, data, env) {
   const artists = await getArtists(env);
   
   const albumsHtml = await Promise.all(data.topAlbums.map(async (item) => {
     let thumbUrl = await getAlbumThumbnailUrl(item, env);
-    // REMOVE slugManager parameter
-    return generateAlbumChartItem(item, thumbUrl, artists, true);
+    return generateAlbumChartItem(item, thumbUrl, artists, env, true);  // Pass env
   }));
   html = html.replace(/<!-- TOP_ALBUMS_START -->[\s\S]*?<!-- TOP_ALBUMS_END -->/, 
     `<!-- TOP_ALBUMS_START -->${albumsHtml.join('')}<!-- TOP_ALBUMS_END -->`);
 
   const songsHtml = await Promise.all(data.topSongs.map(async (item) => {
     let thumbUrl = await getSongThumbnailUrl(item.key, env);
-    // REMOVE slugManager parameter
-    return generateSongChartItem(item, thumbUrl, artists, true);
+    return generateSongChartItem(item, thumbUrl, artists, env, true);  // Pass env
   }));
   html = html.replace(/<!-- TOP_SONGS_START -->[\s\S]*?<!-- TOP_SONGS_END -->/, 
     `<!-- TOP_SONGS_START -->${songsHtml.join('')}<!-- TOP_SONGS_END -->`);
 
   const artistsHtml = await Promise.all(data.topArtists.map(async (item) => {
     let thumbUrl = await getArtistThumbnailUrl(item, env);
-    // REMOVE slugManager parameter
-    return generateArtistChartItem(item, thumbUrl, true);
+    return generateArtistChartItem(item, thumbUrl, env, true);  // Pass env
   }));
   html = html.replace(/<!-- TOP_ARTISTS_START -->[\s\S]*?<!-- TOP_ARTISTS_END -->/, 
     `<!-- TOP_ARTISTS_START -->${artistsHtml.join('')}<!-- TOP_ARTISTS_END -->`);
 
   const playlistsHtml = await Promise.all(data.topPlaylists.map(async (item) => {
     let thumbUrl = await getPlaylistThumbnailUrl(item, env);
-    // REMOVE slugManager parameter
-    return generatePlaylistChartItem(item, thumbUrl, true);
+    return generatePlaylistChartItem(item, thumbUrl, env, true);  // Pass env
   }));
   html = html.replace(/<!-- TOP_PLAYLISTS_START -->[\s\S]*?<!-- TOP_PLAYLISTS_END -->/, 
     `<!-- TOP_PLAYLISTS_START -->${playlistsHtml.join('')}<!-- TOP_PLAYLISTS_END -->`);
@@ -147,12 +139,10 @@ async function renderChartsOverview(html, data, env) {
   const newReleasesHtml = await Promise.all(data.newReleases.map(async (item) => {
     if (item.type === 'album') {
       let thumbUrl = await getAlbumThumbnailUrl(item, env);
-      // REMOVE slugManager parameter
-      return generateNewReleaseAlbumItem(item, thumbUrl, artists);
+      return generateNewReleaseAlbumItem(item, thumbUrl, artists, env);  // Pass env
     } else {
       let thumbUrl = await getSongThumbnailUrl(item.id, env);
-      // REMOVE slugManager parameter
-      return generateNewReleaseSongItem(item, thumbUrl, artists);
+      return generateNewReleaseSongItem(item, thumbUrl, artists, env);  // Pass env
     }
   }));
   html = html.replace(/<!-- NEW_RELEASES_START -->[\s\S]*?<!-- NEW_RELEASES_END -->/, 
@@ -165,8 +155,7 @@ async function renderAlbumsChart(html, data, env) {
   const artists = await getArtists(env);
   const albumsHtml = await Promise.all(data.items.map(async (item) => {
     let thumbUrl = await getAlbumThumbnailUrl(item, env);
-    // REMOVE slugManager parameter
-    return generateAlbumChartItem(item, thumbUrl, artists, false);
+    return generateAlbumChartItem(item, thumbUrl, artists, env, false);  // Pass env
   }));
   return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
     `<!-- ITEMS_START -->${albumsHtml.join('')}<!-- ITEMS_END -->`);
@@ -176,8 +165,7 @@ async function renderSongsChart(html, data, env) {
   const artists = await getArtists(env);
   const songsHtml = await Promise.all(data.items.map(async (item) => {
     let thumbUrl = await getSongThumbnailUrl(item.key, env);
-    // REMOVE slugManager parameter
-    return generateSongChartItem(item, thumbUrl, artists, false);
+    return generateSongChartItem(item, thumbUrl, artists, env, false);  // Pass env
   }));
   return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
     `<!-- ITEMS_START -->${songsHtml.join('')}<!-- ITEMS_END -->`);
@@ -186,8 +174,7 @@ async function renderSongsChart(html, data, env) {
 async function renderArtistsChart(html, data, env) {
   const artistsHtml = await Promise.all(data.items.map(async (item) => {
     let thumbUrl = await getArtistThumbnailUrl(item, env);
-    // REMOVE slugManager parameter
-    return generateArtistChartItem(item, thumbUrl, false);
+    return generateArtistChartItem(item, thumbUrl, env, false);  // Pass env
   }));
   return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
     `<!-- ITEMS_START -->${artistsHtml.join('')}<!-- ITEMS_END -->`);
@@ -196,8 +183,7 @@ async function renderArtistsChart(html, data, env) {
 async function renderPlaylistsChart(html, data, env) {
   const playlistsHtml = await Promise.all(data.items.map(async (item) => {
     let thumbUrl = await getPlaylistThumbnailUrl(item, env);
-    // REMOVE slugManager parameter
-    return generatePlaylistChartItem(item, thumbUrl, false);
+    return generatePlaylistChartItem(item, thumbUrl, env, false);  // Pass env
   }));
   return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
     `<!-- ITEMS_START -->${playlistsHtml.join('')}<!-- ITEMS_END -->`);
@@ -208,12 +194,10 @@ async function renderNewReleases(html, data, env) {
   const releasesHtml = await Promise.all(data.items.map(async (item) => {
     if (item.type === 'album') {
       let thumbUrl = await getAlbumThumbnailUrl(item, env);
-      // REMOVE slugManager parameter
-      return generateNewReleaseAlbumItem(item, thumbUrl, artists);
+      return generateNewReleaseAlbumItem(item, thumbUrl, artists, env);  // Pass env
     } else {
       let thumbUrl = await getSongThumbnailUrl(item.id, env);
-      // REMOVE slugManager parameter
-      return generateNewReleaseSongItem(item, thumbUrl, artists);
+      return generateNewReleaseSongItem(item, thumbUrl, artists, env);  // Pass env
     }
   }));
   return html.replace(/<!-- ITEMS_START -->[\s\S]*?<!-- ITEMS_END -->/, 
