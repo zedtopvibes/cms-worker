@@ -1,15 +1,15 @@
-// ==================== ALBUMS  ROUTES ====================
+// ==================== ALBUMS ROUTES ====================
 // ALL IMPORTS AT THE TOP
 import { getAlbums, getArtists, getMetadata, saveAlbums } from '../helpers/storage.js';
 import { getAggregatedStats } from '../helpers/db.js';
 import { formatDuration } from '../helpers/formatting.js';
 import { incrementPageView } from '../helpers/pageViews.js';
-// REMOVE: import { SlugManager } from '../helpers/slug.js';
+import { SlugManager } from '../helpers/slug.js';  // ADDED
 
 export async function handleAlbums(req, env, ctx) {
   const url = new URL(req.url);
   const path = url.pathname;
-  // REMOVE: const slugManager = new SlugManager(env);
+  const slugManager = new SlugManager(env);  // ADDED
   
   // Albums list page
   if (path === "/albums") {
@@ -25,15 +25,15 @@ export async function handleAlbums(req, env, ctx) {
     // Sort albums by created date (newest first)
     const albumList = Object.values(albums).sort((a, b) => b.created - a.created);
     
-    // Generate HTML for each album with ID-based links
+    // Generate HTML for each album with slug-based links
     const albumsHtml = await Promise.all(albumList.map(async album => {
       // Get artist names
       const artistNames = (album.artists || [])
         .map(aid => artists[aid]?.name || aid)
         .join(', ');
       
-      // REMOVE slug lookup - use album.id directly
-      // const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
+      // Get slug for linking
+      const albumSlug = await slugManager.getSlugFromId('albums', album.id) || album.id;
       
       // Format date
       const date = album.created ? new Date(album.created) : new Date();
@@ -47,7 +47,7 @@ export async function handleAlbums(req, env, ctx) {
       const songCount = album.songs?.length || 0;
       
       return `
-        <div class="album-item" onclick="window.location='/album/${album.id}'">
+        <div class="album-item" onclick="window.location='/album/${albumSlug}'">
           <div class="album-thumbnail">
             ${album.thumbnail ? `<img src="${album.thumbnail}" alt="${album.title}">` : '<i class="fas fa-compact-disc"></i>'}
           </div>
@@ -74,13 +74,13 @@ export async function handleAlbums(req, env, ctx) {
     });
   }
   
-  // Album detail page
+  // Album detail page - Strict slug-only lookup
   if (path.startsWith("/album/") && !path.startsWith("/album/create")) {
-    // Get album ID directly from URL
-    const albumId = decodeURIComponent(path.replace("/album/", ""));
+    // Get slug from URL
+    const slug = decodeURIComponent(path.replace("/album/", ""));
     
-    // REMOVE slug lookup - use albumId directly
-    // const albumId = await slugManager.getIdFromSlug('albums', slug);
+    // Get album ID from slug - if null, album doesn't exist (404)
+    const albumId = await slugManager.getIdFromSlug('albums', slug);
     
     if (!albumId) {
       return new Response("Album not found", { status: 404 });
@@ -131,8 +131,7 @@ export async function handleAlbums(req, env, ctx) {
     let totalDuration = 0;
     const songsWithDetails = await Promise.all((album.songs || []).map(async (songKey, index) => {
       const meta = await getMetadata(env, songKey);
-      // REMOVE slug lookup - use songKey directly
-      // const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
+      const songSlug = await slugManager.getSlugFromId('songs', songKey) || songKey;
       
       const duration = meta?.duration || 0;
       totalDuration += duration;
@@ -170,7 +169,7 @@ export async function handleAlbums(req, env, ctx) {
       
       return {
         html: `
-          <div class="album-item" onclick="window.location='/song/${songKey}'">
+          <div class="album-item" onclick="window.location='/song/${songSlug}'">
             <div class="album-thumbnail">
               <img src="${thumbUrl}" alt="${songTitle}" loading="lazy">
             </div>
@@ -205,8 +204,7 @@ export async function handleAlbums(req, env, ctx) {
       .slice(0, 3);
     
     const similarAlbumsHtml = await Promise.all(similarAlbums.map(async a => {
-      // REMOVE slug lookup - use a.id directly
-      // const albumSlug = await slugManager.getSlugFromId('albums', a.id) || a.id;
+      const albumSlug = await slugManager.getSlugFromId('albums', a.id) || a.id;
       
       const artistName = a.artists?.map(aid => artists[aid]?.name || aid).join(', ') || 'Various Artists';
       const songCount = a.songs?.length || 0;
@@ -214,7 +212,7 @@ export async function handleAlbums(req, env, ctx) {
       const year = date.getFullYear();
       
       return `
-        <div class="album-item" onclick="window.location='/album/${a.id}'">
+        <div class="album-item" onclick="window.location='/album/${albumSlug}'">
           <div class="album-thumbnail">
             ${a.thumbnail ? `<img src="${a.thumbnail}" alt="${a.title}">` : '<i class="fas fa-compact-disc"></i>'}
           </div>
@@ -230,8 +228,7 @@ export async function handleAlbums(req, env, ctx) {
       `;
     }));
     
-    // REMOVE slug lookup - use primaryArtistId directly
-    // const artistSlug = await slugManager.getSlugFromId('artists', primaryArtistId) || primaryArtistId;
+    const artistSlug = await slugManager.getSlugFromId('artists', primaryArtistId) || primaryArtistId;
     
     // Replace template placeholders
     html = html
@@ -248,7 +245,7 @@ export async function handleAlbums(req, env, ctx) {
       .replace('<!-- SIMILAR_ALBUMS_LIST -->', similarAlbumsHtml.length ? similarAlbumsHtml.join('') : '<div style="padding: 20px; text-align: center; color: #666;">No similar albums found</div>')
       .replace(
         /<a href="\/artist\/[^"]*" class="view-all">/g,
-        `<a href="/artist/${primaryArtistId}" class="view-all">`
+        `<a href="/artist/${artistSlug}" class="view-all">`
       );
     
     // Update breadcrumb
@@ -347,9 +344,8 @@ export async function handleAlbums(req, env, ctx) {
           if (!text) return 'untitled';
           return text
             .toLowerCase()
-            .replace(/[^\\w\\s-]/g, ' ')
-            .replace(/\\s+/g, ' ')
-            .replace(/ /g, '-')
+            .replace(/[^a-z0-9\\s-]/g, '')
+            .replace(/\\s+/g, '-')
             .replace(/-+/g, '-')
             .replace(/^-|-$/g, '') || 'untitled';
         }
@@ -404,10 +400,7 @@ export async function handleAlbums(req, env, ctx) {
         thumbnailKey = `albums/thumbnails/${albumId}.${ext}`;
         await env.media.put(thumbnailKey, thumbnailFile.stream());
       }
-      
-      // REMOVE slug generation
-      // const slug = slugManager.generateAlbumSlug(title);
-      
+
       // Create album object
       albums[albumId] = {
         id: albumId,
@@ -423,14 +416,17 @@ export async function handleAlbums(req, env, ctx) {
       
       // Save albums
       await saveAlbums(env, albums);
-      
-      // REMOVE slug registration
-      // await slugManager.registerSlug('albums', albumId, slug, {
-      //   title: title,
-      //   artists: artistsSelected,
-      //   genre: genre,
-      //   created: Date.now()
-      // });
+
+      // Generate and register slug
+      const slugManager = new SlugManager(env);
+      const baseSlug = slugManager.generateAlbumSlug(title);
+      const finalSlug = await slugManager.generateUniqueSlug('albums', baseSlug);
+      await slugManager.registerSlug('albums', albumId, finalSlug, {
+        title,
+        artists: artistsSelected,
+        genre,
+        created: Date.now()
+      });
       
       // Success page
       const successHtml = `
@@ -452,8 +448,8 @@ export async function handleAlbums(req, env, ctx) {
         <div class="success">
           <h1>✅ Album Created!</h1>
           <p style="font-size: 1.2rem;">${title}</p>
-          <div class="url">/album/${albumId}</div>
-          <a href="/album/${albumId}" class="btn">View Album</a>
+          <div class="url">/album/${finalSlug}</div>
+          <a href="/album/${finalSlug}" class="btn">View Album</a>
           <a href="/album/create" class="btn" style="background: #6c757d;">Create Another</a>
         </div>
       </body>
