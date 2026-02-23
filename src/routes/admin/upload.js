@@ -674,8 +674,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 // Strict slug generation - only lowercase, numbers, hyphens
                 let slug = text
                     .toLowerCase()
-                    .replace(/[^a-z0-9\s]/g, '') // Remove all special chars
-                    .replace(/\s+/g, '-') // Spaces to hyphens
+                    .replace(/[^a-z0-9\\s]/g, '') // Remove all special chars
+                    .replace(/\\s+/g, '-') // Spaces to hyphens
                     .replace(/-+/g, '-') // Collapse multiple hyphens
                     .replace(/^-|-$/g, ''); // Trim hyphens
                 
@@ -695,7 +695,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 if (!title && !artistName) return 'untitled.mp3';
                 
                 // Sanitize for internal filename - title only, no artist
-                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
+                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
                 
                 if (!cleanTitle) return 'untitled.mp3';
                 
@@ -790,16 +790,16 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             
             const selectedId = type === 'primary' ? document.getElementById('primaryArtistInput').value : null;
             
-            listContainer.innerHTML = filtered.map(artist => {
+            let html = '';
+            filtered.forEach(artist => {
                 const isSelected = type === 'primary' ? artist.id === selectedId : featuredArtists.includes(artist.id);
-                return `
-                    <div class="artist-item \${isSelected ? 'selected' : ''}" 
-                         onclick="selectArtist('\${type}', '\${artist.id}', '\${artist.name.replace(/'/g, "\\\\'")}')">
-                        <span class="artist-name">\${artist.name}</span>
-                        <span class="artist-song-count">\${artist.songCount} songs</span>
-                    </div>
-                `;
-            }).join('');
+                html += '<div class="artist-item ' + (isSelected ? 'selected' : '') + '" onclick="selectArtist(\'' + type + '\', \'' + artist.id + '\', \'' + artist.name.replace(/'/g, "\\'") + '\')">';
+                html += '<span class="artist-name">' + artist.name + '</span>';
+                html += '<span class="artist-song-count">' + artist.songCount + ' songs</span>';
+                html += '</div>';
+            });
+            
+            listContainer.innerHTML = html;
         }
         
         function renderGenreList() {
@@ -813,15 +813,18 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 return;
             }
             
-            listContainer.innerHTML = filtered.map(genre => `
-                <div class="artist-item" onclick="selectGenre('\${genre.id}', '\${genre.name.replace(/'/g, "\\\\'")}', '\${genre.color}')">
-                    <span style="display: flex; align-items: center; gap: 8px;">
-                        <i class="fas \${genre.icon}" style="color: \${genre.color};"></i>
-                        <span class="artist-name">\${genre.name}</span>
-                    </span>
-                    <span class="artist-song-count">\${genre.id}</span>
-                </div>
-            `).join('');
+            let html = '';
+            filtered.forEach(genre => {
+                html += '<div class="artist-item" onclick="selectGenre(\'' + genre.id + '\', \'' + genre.name.replace(/'/g, "\\'") + '\', \'' + genre.color + '\')">';
+                html += '<span style="display: flex; align-items: center; gap: 8px;">';
+                html += '<i class="fas ' + genre.icon + '" style="color: ' + genre.color + ';"></i>';
+                html += '<span class="artist-name">' + genre.name + '</span>';
+                html += '</span>';
+                html += '<span class="artist-song-count">' + genre.id + '</span>';
+                html += '</div>';
+            });
+            
+            listContainer.innerHTML = html;
         }
         
         function selectArtist(type, id, name) {
@@ -859,7 +862,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const name = document.getElementById(type + 'NewArtistName').value.trim();
             if (!name) { alert('Please enter a name'); return; }
             
-            const tempId = 'new_' + name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+            const tempId = 'new_' + name.replace(/\\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
             
             if (type === 'primary') {
                 document.getElementById('primaryArtistInput').value = tempId;
@@ -876,7 +879,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         }
         
         function saveNewGenre() {
-            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\s+/g, '-');
+            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\\s+/g, '-');
             const name = document.getElementById('genreNewName').value.trim();
             const color = document.querySelector('input[name="newGenreColor"]:checked')?.value;
             const icon = document.querySelector('input[name="newGenreIcon"]:checked')?.value;
@@ -932,7 +935,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 
                 const tag = document.createElement('div');
                 tag.className = 'featured-tag';
-                tag.innerHTML = `<span>\${name}</span><i class="fas fa-times-circle" onclick="removeFeatured(\${index})"></i>`;
+                tag.innerHTML = '<span>' + name + '</span><i class="fas fa-times-circle" onclick="removeFeatured(' + index + ')"></i>';
                 container.appendChild(tag);
             });
             
@@ -950,7 +953,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 const tag = document.createElement('div');
                 tag.className = 'genre-tag';
                 tag.style.background = color;
-                tag.innerHTML = `<span>\${name}</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>`;
+                tag.innerHTML = '<span>' + name + '</span><i class="fas fa-times-circle" onclick="removeGenre()"></i>';
                 container.appendChild(tag);
                 input.value = selectedGenre;
             } else {
@@ -1006,7 +1009,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                         const sec = b.duration;
                         const min = Math.floor(sec / 60);
                         const secs = Math.floor(sec % 60);
-                        durationText.innerHTML = `\${min}:\${secs.toString().padStart(2,'0')} <small style="color:#666;">(\${sec.toFixed(2)}s)</small>`;
+                        durationText.innerHTML = min + ':' + secs.toString().padStart(2,'0') + ' <small style="color:#666;">(' + sec.toFixed(2) + 's)</small>';
                         durationInput.value = sec.toFixed(3);
                         
                         // Store milliseconds for ID3 tagging
