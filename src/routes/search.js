@@ -2,6 +2,7 @@
 import { getAlbums, getArtists, getPlaylists, getMetadata } from '../helpers/storage.js';
 import { getSongStats } from '../helpers/db.js';
 import { sanitize, formatDuration } from '../helpers/formatting.js';
+import { SlugManager } from '../helpers/slug.js';  // ADDED
 
 export async function handleSearch(req, env, ctx) {
   const url = new URL(req.url);
@@ -9,6 +10,7 @@ export async function handleSearch(req, env, ctx) {
   const type = url.searchParams.get("type") || "all";
   const page = parseInt(url.searchParams.get("page")) || 1;
   const ITEMS_PER_PAGE = 20;
+  const slugManager = new SlugManager(env);  // ADDED
 
   // Get template
   const templateObj = await env.media.get("search.html");
@@ -69,10 +71,14 @@ export async function handleSearch(req, env, ctx) {
 
           // Get stats
           const stats = await getSongStats(baseName, env);
+          
+          // Get slug
+          const slug = await slugManager.getSlugFromId('songs', baseName) || baseName;
 
           return {
             type: 'song',
             id: baseName,
+            slug,
             title,
             artist: artistName,
             artistId,
@@ -81,7 +87,7 @@ export async function handleSearch(req, env, ctx) {
             plays: stats.plays,
             downloads: stats.downloads,
             uploaded: file.uploaded,
-            url: `/song/${encodeURIComponent(baseName)}`,
+            url: `/song/${slug}`,
             score: calculateRelevance(title, artistName, lowercaseQuery)
           };
         })
@@ -92,8 +98,8 @@ export async function handleSearch(req, env, ctx) {
 
     // Search albums
     if (type === "all" || type === "albums") {
-      albumResults = Object.values(albums)
-        .map(album => {
+      albumResults = await Promise.all(
+        Object.values(albums).map(async album => {
           const albumArtist = album.artists?.length ? 
             (artists[album.artists[0]]?.name || "Various") : "Various";
           
@@ -109,27 +115,31 @@ export async function handleSearch(req, env, ctx) {
             const ext = album.thumbnail.split(".").pop();
             thumbUrl = `/albums/thumbnails/${encodeURIComponent(album.id)}.${ext}`;
           }
+          
+          const slug = await slugManager.getSlugFromId('albums', album.id) || album.id;
 
           return {
             type: 'album',
             id: album.id,
+            slug,
             title: album.title,
             artist: albumArtist,
             thumbnail: thumbUrl,
             songCount: album.songs?.length || 0,
             created: album.created,
-            url: `/album/${album.id}`,
+            url: `/album/${slug}`,
             score: calculateRelevance(album.title, albumArtist, lowercaseQuery)
           };
         })
-        .filter(r => r !== null)
+      );
+      albumResults = albumResults.filter(r => r !== null)
         .sort((a, b) => b.score - a.score);
     }
 
     // Search artists
     if (type === "all" || type === "artists") {
-      artistResults = Object.values(artists)
-        .map(artist => {
+      artistResults = await Promise.all(
+        Object.values(artists).map(async artist => {
           const matches = 
             artist.name.toLowerCase().includes(lowercaseQuery) ||
             artist.genre?.toLowerCase().includes(lowercaseQuery) ||
@@ -142,28 +152,32 @@ export async function handleSearch(req, env, ctx) {
             const ext = artist.thumbnail.split(".").pop();
             thumbUrl = `/artists/thumbnails/${encodeURIComponent(artist.id)}.${ext}`;
           }
+          
+          const slug = await slugManager.getSlugFromId('artists', artist.id) || artist.id;
 
           return {
             type: 'artist',
             id: artist.id,
+            slug,
             name: artist.name,
             genre: artist.genre || 'Various',
             thumbnail: thumbUrl,
             songCount: artist.songs?.length || 0,
             albumCount: artist.albums?.length || 0,
             created: artist.created,
-            url: `/artist/${artist.id}`,
+            url: `/artist/${slug}`,
             score: calculateRelevance(artist.name, artist.genre || '', lowercaseQuery)
           };
         })
-        .filter(r => r !== null)
+      );
+      artistResults = artistResults.filter(r => r !== null)
         .sort((a, b) => b.score - a.score);
     }
 
     // Search playlists
     if (type === "all" || type === "playlists") {
-      playlistResults = Object.values(playlists)
-        .map(playlist => {
+      playlistResults = await Promise.all(
+        Object.values(playlists).map(async playlist => {
           const matches = 
             playlist.title.toLowerCase().includes(lowercaseQuery) ||
             playlist.description?.toLowerCase().includes(lowercaseQuery) ||
@@ -176,20 +190,24 @@ export async function handleSearch(req, env, ctx) {
             const ext = playlist.thumbnail.split(".").pop();
             thumbUrl = `/playlists/thumbnails/${encodeURIComponent(playlist.id)}.${ext}`;
           }
+          
+          const slug = await slugManager.getSlugFromId('playlists', playlist.id) || playlist.id;
 
           return {
             type: 'playlist',
             id: playlist.id,
+            slug,
             title: playlist.title,
             curator: playlist.curator || 'ZEDALBUMS.TOP',
             thumbnail: thumbUrl,
             songCount: playlist.songs?.length || 0,
             created: playlist.created,
-            url: `/playlist/${playlist.id}`,
+            url: `/playlist/${slug}`,
             score: calculateRelevance(playlist.title, playlist.curator || '', lowercaseQuery)
           };
         })
-        .filter(r => r !== null)
+      );
+      playlistResults = playlistResults.filter(r => r !== null)
         .sort((a, b) => b.score - a.score);
     }
   }
