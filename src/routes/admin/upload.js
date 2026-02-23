@@ -3,7 +3,7 @@ import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSong
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-import { SlugManager } from '../../helpers/slug.js';  // ADDED
+import { SlugManager } from '../../helpers/slug.js';
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
@@ -12,7 +12,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
   const genreManager = new GenreManager(env);
   const genresData = await genreManager.getGenres();
   const genres = genresData.genres;
-  const slugManager = new SlugManager(env);  // ADDED
+  const slugManager = new SlugManager(env);
   
   const albumOptions = Object.keys(albums).map(id => {
     const album = albums[id];
@@ -653,7 +653,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const submitBtn = document.getElementById('submitBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
         
-        // ===== URL PREVIEW FUNCTIONS =====
+        // ===== URL PREVIEW FUNCTIONS WITH DEBUG LOGGING =====
         (function() {
             const titleInput = document.getElementById('songTitle');
             const urlPreview = document.getElementById('urlPreview');
@@ -668,15 +668,34 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             function generateSlug(text) {
                 if (!text || text.trim() === '') return '';
                 
-                // Strict slug generation - only lowercase, numbers, hyphens
-                let slug = text
-                    .toLowerCase()
-                    .replace(/[^a-z0-9\s]/g, '') // Remove all special chars
-                    .replace(/\s+/g, '-') // Spaces to hyphens
-                    .replace(/-+/g, '-') // Collapse multiple hyphens
-                    .replace(/^-|-$/g, ''); // Trim hyphens
+                console.log('🎯 generateSlug input:', text);
                 
-                return slug || 'untitled';
+                // Step 1: Lowercase
+                let step1 = text.toLowerCase();
+                console.log('Step 1 (lowercase):', step1);
+                
+                // Step 2: Remove special chars (keep letters, numbers, spaces)
+                // This regex keeps a-z, 0-9, and spaces. Removes everything else.
+                let step2 = step1.replace(/[^a-z0-9\\s]/g, '');
+                console.log('Step 2 (remove specials):', step2);
+                
+                // Step 3: Spaces to hyphens
+                let step3 = step2.replace(/\\s+/g, '-');
+                console.log('Step 3 (spaces to hyphens):', step3);
+                
+                // Step 4: Collapse multiple hyphens
+                let step4 = step3.replace(/-+/g, '-');
+                console.log('Step 4 (collapse hyphens):', step4);
+                
+                // Step 5: Trim hyphens from start and end
+                let step5 = step4.replace(/^-|-$/g, '');
+                console.log('Step 5 (trim hyphens):', step5);
+                
+                let result = step5 || 'untitled';
+                console.log('✅ FINAL SLUG:', result);
+                console.log('---');
+                
+                return result;
             }
             
             function getArtistName() {
@@ -692,8 +711,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 if (!title && !artistName) return 'untitled.mp3';
                 
                 // Sanitize for filename (allow underscores for internal use)
-                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
-                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
+                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
+                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
                 
                 if (!cleanArtist && !cleanTitle) return 'untitled.mp3';
                 if (!cleanArtist) return cleanTitle + '.mp3';
@@ -706,9 +725,16 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 const title = titleInput.value.trim();
                 const artistName = getArtistName();
                 
+                console.log('🔄 Updating URL preview...');
+                console.log('Title:', title);
+                console.log('Artist:', artistName);
+                
                 // Generate slug for public URL
                 const titleSlug = generateSlug(title);
                 const artistSlug = generateSlug(artistName);
+                
+                console.log('Title slug:', titleSlug);
+                console.log('Artist slug:', artistSlug);
                 
                 let slug = '';
                 if (artistSlug && titleSlug) {
@@ -721,12 +747,18 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     slug = 'untitled';
                 }
                 
+                console.log('Combined slug:', slug);
+                
                 const baseUrl = window.location.origin;
                 urlPreview.textContent = baseUrl + '/song/' + slug;
                 
                 // Generate internal filename (with underscores)
                 const filename = generateFilename(title, artistName);
                 filenamePreview.textContent = filename;
+                
+                console.log('Final URL:', urlPreview.textContent);
+                console.log('Internal filename:', filename);
+                console.log('---');
             }
             
             // Initial update
