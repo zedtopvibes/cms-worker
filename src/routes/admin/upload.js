@@ -1,9 +1,9 @@
-// ==================== ADMIN  UPLOAD HELPER FUNCTIONS ====================
+// ==================== ADMIN UPLOAD HELPER FUNCTIONS ====================
 import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSongToAlbum, addSongToPlaylist, addSongToArtist, addAlbumToArtist, addArtistToAlbum } from '../../helpers/storage.js';
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-// REMOVE: import { SlugManager } from '../../helpers/slug.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADDED
 
 export async function handleAdminUpload(req, env, ctx, auth) {
   const albums = await getAlbums(env);
@@ -12,6 +12,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
   const genreManager = new GenreManager(env);
   const genresData = await genreManager.getGenres();
   const genres = genresData.genres;
+  const slugManager = new SlugManager(env);  // ADDED
   
   const albumOptions = Object.keys(albums).map(id => {
     const album = albums[id];
@@ -45,12 +46,12 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </label>
                 <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. My Song" required>
                 
-                <!-- URL Preview Section - Mobile Friendly -->
+                <!-- URL Preview Section - Shows both filename and slug -->
                 <div style="margin-top: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;">
                     <div style="display: flex; align-items: flex-start; gap: 8px; flex-direction: column;">
                         <div style="display: flex; align-items: center; gap: 5px; color: #666; width: 100%;">
                             <i class="fas fa-link" style="color: #ff5500; flex-shrink: 0;"></i>
-                            <span style="font-size: 0.9rem; font-weight: 500;">Final URL:</span>
+                            <span style="font-size: 0.9rem; font-weight: 500;">Final URL (slug):</span>
                         </div>
                         <div style="display: flex; width: 100%; gap: 8px; flex-wrap: wrap;">
                             <code id="urlPreview" style="flex: 1; min-width: 200px; padding: 8px 10px; background: white; border-radius: 4px; font-size: 0.85rem; border: 1px solid #e0e0e0; word-break: break-all; white-space: normal;">
@@ -60,10 +61,15 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                                 <i class="fas fa-copy"></i> Copy
                             </button>
                         </div>
+                        <div style="display: flex; align-items: center; gap: 5px; color: #666; width: 100%; margin-top: 5px;">
+                            <i class="fas fa-database" style="color: #4a90e2; flex-shrink: 0;"></i>
+                            <span style="font-size: 0.9rem; font-weight: 500;">Internal filename:</span>
+                            <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;" id="filenamePreview">artist_song.mp3</code>
+                        </div>
                     </div>
                     <p style="font-size: 0.8rem; color: #666; margin-top: 8px; margin-bottom: 0;">
                         <i class="fas fa-info-circle"></i> 
-                        URL is generated from the title and artist name.
+                        Slug is generated from title and artist name. Only lowercase letters, numbers, and hyphens allowed.
                     </p>
                 </div>
             </div>
@@ -651,34 +657,76 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         (function() {
             const titleInput = document.getElementById('songTitle');
             const urlPreview = document.getElementById('urlPreview');
+            const filenamePreview = document.getElementById('filenamePreview');
+            const primaryArtistInput = document.getElementById('primaryArtistInput');
             
             if (!titleInput || !urlPreview) {
                 console.error('URL preview elements not found');
                 return;
             }
             
-            function generateFilename(title) {
-                if (!title || title.trim() === '') return 'untitled';
+            function generateSlug(text) {
+                if (!text || text.trim() === '') return '';
                 
-                // Simple sanitization - remove special chars, replace spaces with underscores
-                let filename = title
+                // Strict slug generation - only lowercase, numbers, hyphens
+                let slug = text
                     .toLowerCase()
-                    .replace(/[^a-z0-9\s]/g, '') // Remove special chars
-                    .replace(/\s+/g, '_') // Replace spaces with underscore
-                    .replace(/_+/g, '_') // Remove multiple underscores
-                    .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
+                    .replace(/[^a-z0-9\s]/g, '') // Remove all special chars
+                    .replace(/\s+/g, '-') // Spaces to hyphens
+                    .replace(/-+/g, '-') // Collapse multiple hyphens
+                    .replace(/^-|-$/g, ''); // Trim hyphens
                 
-                // If filename is empty after processing
-                if (!filename) filename = 'untitled';
+                return slug || 'untitled';
+            }
+            
+            function getArtistName() {
+                const selectedDisplay = document.getElementById('primarySelectedDisplay').textContent;
+                if (selectedDisplay && selectedDisplay !== '-- Select Primary Artist --') {
+                    // Extract artist name (remove " (new)" if present)
+                    return selectedDisplay.replace(' (new)', '');
+                }
+                return '';
+            }
+            
+            function generateFilename(title, artistName) {
+                if (!title && !artistName) return 'untitled.mp3';
                 
-                return filename;
+                // Sanitize for filename (allow underscores for internal use)
+                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
+                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
+                
+                if (!cleanArtist && !cleanTitle) return 'untitled.mp3';
+                if (!cleanArtist) return cleanTitle + '.mp3';
+                if (!cleanTitle) return cleanArtist + '.mp3';
+                
+                return cleanArtist + '_' + cleanTitle + '.mp3';
             }
             
             function updateUrlPreview() {
                 const title = titleInput.value.trim();
-                const filename = generateFilename(title);
+                const artistName = getArtistName();
+                
+                // Generate slug for public URL
+                const titleSlug = generateSlug(title);
+                const artistSlug = generateSlug(artistName);
+                
+                let slug = '';
+                if (artistSlug && titleSlug) {
+                    slug = artistSlug + '-' + titleSlug;
+                } else if (artistSlug) {
+                    slug = artistSlug;
+                } else if (titleSlug) {
+                    slug = titleSlug;
+                } else {
+                    slug = 'untitled';
+                }
+                
                 const baseUrl = window.location.origin;
-                urlPreview.textContent = baseUrl + '/song/' + filename;
+                urlPreview.textContent = baseUrl + '/song/' + slug;
+                
+                // Generate internal filename (with underscores)
+                const filename = generateFilename(title, artistName);
+                filenamePreview.textContent = filename;
             }
             
             // Initial update
@@ -689,9 +737,15 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 updateUrlPreview();
             });
             
-            // Also update on blur
-            titleInput.addEventListener('blur', function() {
+            // Watch for artist selection changes
+            const observer = new MutationObserver(function() {
                 updateUrlPreview();
+            });
+            
+            observer.observe(document.getElementById('primarySelectedDisplay'), { 
+                childList: true, 
+                characterData: true,
+                subtree: true 
             });
             
             // Make copyUrl function globally available
@@ -1011,7 +1065,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
   return content;
 }
 
-// ===== POST HANDLER WITH ID3 TAGGING =====
+// ===== POST HANDLER WITH SLUG GENERATION =====
 export async function handleAdminUploadPost(req, env, ctx, auth) {
   try {
     const formData = await req.formData();
@@ -1118,18 +1172,17 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     }
 
     // ===== ID3 TAGGING SECTION =====
-    const SITENAME = "ZEDALBUMS"; // Your site name for branding
+    const SITENAME = "ZEDALBUMS";
     
     // Construct artist string for ID3 tag
     let id3ArtistString = artistName;
     if (processedFeatured.length > 0) {
-      // Get featured artist names
       const artists = await getArtists(env);
       const featuredNames = processedFeatured.map(fid => artists[fid]?.name || fid).join(', ');
       id3ArtistString = `${artistName} feat. ${featuredNames}`;
     }
     
-    // Add site name to artist and title (as per ID3 script)
+    // Add site name to artist and title
     const taggedTitle = `${title} (${SITENAME})`;
     const taggedArtist = `${id3ArtistString} | ${SITENAME}`;
     
@@ -1146,31 +1199,39 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // Generate filename with site name
     const finalFilename = `${title} - ${artistName} (${SITENAME}).mp3`;
     
-    // Store the TAGGED file (overwrites the original upload)
+    // Store the TAGGED file
     await env.media.put(audioKey, taggedMp3, {
       httpMetadata: { 
         contentType: 'audio/mpeg',
         contentDisposition: `inline; filename="${finalFilename}"`
       }
     });
-    // ===== END ID3 TAGGING =====
 
-    // Store image and description (unchanged)
+    // Store image and description
     await env.media.put(imageKey, imageFile.stream());
     await env.media.put(descKey, description);
 
-    // REMOVE slug generation and registration
-    // const slugManager = new SlugManager(env);
-    // const slug = slugManager.generateSongSlug(title);
-    // await slugManager.registerSlug('songs', baseName, slug, {
-    //   title,
-    //   artist: artistId,
-    //   artistName,
-    //   duration,
-    //   genre
-    // });
+    // ===== SLUG GENERATION AND REGISTRATION =====
+    const slugManager = new SlugManager(env);
+    
+    // Generate clean slug from title and artist
+    const baseSlug = slugManager.generateSongSlug(title, artistId);
+    
+    // Ensure uniqueness
+    const finalSlug = await slugManager.generateUniqueSlug('songs', baseSlug);
+    
+    // Register in database
+    await slugManager.registerSlug('songs', baseName, finalSlug, {
+      title,
+      artist: artistId,
+      artistName,
+      duration,
+      genre,
+      featured: processedFeatured,
+      uploadedAt: Date.now()
+    });
 
-    // Store metadata (without slug)
+    // Store metadata (without slug - stored separately in slug system)
     const metadata = {
       title,
       primaryArtist: artistId,
@@ -1178,8 +1239,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       description,
       duration,
       genre,
-      // slug, // REMOVED
-      filename: finalFilename // Store the branded filename
+      filename: finalFilename
     };
     await saveMetadata(env, baseName, metadata);
 
@@ -1207,12 +1267,12 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     return {
       success: true,
       baseName,
+      slug: finalSlug,  // Return slug for success page
       title,
       artistName,
       duration,
       albumId,
       playlistId,
-      // slug, // REMOVED
       filename: finalFilename
     };
     
