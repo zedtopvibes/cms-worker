@@ -9,7 +9,7 @@ export class SlugManager {
     this.slugsCache = null;
     this.reverseCache = null;
     this.cacheTimestamp = 0;
-    const CACHE_DURATION = 60000; // 1 minute
+    this.CACHE_DURATION = 60000; // 1 minute
   }
 
   // ===== PUBLIC METHODS =====
@@ -272,31 +272,44 @@ export class SlugManager {
   _slugify(text) {
     if (!text) return '';
     
+    // Debug logging
+    console.log('🔍 SLUGIFY INPUT:', text);
+    
     // Convert to string and lowercase
     let str = String(text).toLowerCase();
+    console.log('1️⃣ Lowercase:', str);
     
     // STEP 1: Replace common separators with spaces
     // This handles underscores, hyphens, commas, etc.
     str = str.replace(/[_,\-/\s]+/g, ' ');
+    console.log('2️⃣ After separator replacement:', str);
     
-    // STEP 2: Remove all special characters EXCEPT spaces
-    // This keeps letters, numbers, and spaces only
+    // STEP 2: REMOVE ALL SPECIAL CHARACTERS BUT KEEP LETTERS, NUMBERS, AND SPACES
+    // IMPORTANT: This regex KEEPS a-z, 0-9, and spaces. Removes everything else.
     str = str.replace(/[^a-z0-9\s]/g, '');
+    console.log('3️⃣ After removing special chars:', str);
     
     // STEP 3: Replace multiple spaces with single space
     str = str.replace(/\s+/g, ' ');
+    console.log('4️⃣ After collapsing spaces:', str);
     
-    // STEP 4: Trim spaces
+    // STEP 4: Trim spaces from start and end
     str = str.trim();
+    console.log('5️⃣ After trim:', str);
     
     // STEP 5: Replace spaces with hyphens
     str = str.replace(/\s+/g, '-');
+    console.log('6️⃣ After hyphens:', str);
     
     // STEP 6: Remove multiple hyphens (just in case)
     str = str.replace(/-+/g, '-');
+    console.log('7️⃣ After removing multiple hyphens:', str);
     
     // If result is empty, return empty string
     if (!str) return '';
+    
+    console.log('✅ FINAL SLUG:', str);
+    console.log('---');
     
     return str;
   }
@@ -315,12 +328,12 @@ export class SlugManager {
    * Load all slugs into cache (for performance)
    */
   async _loadCache() {
-    if (this.slugsCache && Date.now() - this.cacheTimestamp < 60000) {
+    if (this.slugsCache && Date.now() - this.cacheTimestamp < this.CACHE_DURATION) {
       return;
     }
     
     this.slugsCache = { songs: {}, artists: {}, albums: {}, playlists: {} };
-    this.reverseCache = { songs: {}, artists: {}, artists: {}, playlists: {} };
+    this.reverseCache = { songs: {}, artists: {}, albums: {}, playlists: {} };
     
     const types = ['songs', 'artists', 'albums', 'playlists'];
     
