@@ -77,6 +77,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     <div style="display: flex; gap: 8px;">
                         <input type="text" id="primaryNewArtistName" class="form-control" placeholder="Artist Name">
                         <button type="button" onclick="saveNewArtist('primary')" class="btn btn-primary">Save</button>
+                        <button type="button" onclick="cancelNewArtist('primary')" class="btn btn-secondary">X</button>
                     </div>
                 </div>
             </div>
@@ -101,6 +102,13 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     </div>
                 </div>
                 <input type="hidden" name="featured" id="featuredInput" value="[]">
+                <div id="featuredNewArtistContainer" style="margin-top: 10px; display: none;">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="featuredNewArtistName" class="form-control" placeholder="Artist Name">
+                        <button type="button" onclick="saveNewArtist('featured')" class="btn btn-primary">Save</button>
+                        <button type="button" onclick="cancelNewArtist('featured')" class="btn btn-secondary">X</button>
+                    </div>
+                </div>
             </div>
 
             <div class="form-group">
@@ -165,12 +173,13 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         .searchable-select { padding: 10px; border: 1px solid #ddd; border-radius: 5px; cursor: pointer; display: flex; justify-content: space-between; background: white; }
         .searchable-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; z-index: 100; max-height: 250px; overflow-y: auto; }
         .search-box { padding: 10px; border-bottom: 1px solid #eee; display: flex; gap: 10px; }
+        .artist-list { padding: 0; }
         .artist-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #f9f9f9; }
         .artist-item:hover { background: #f0f0f0; }
         .btn { border: none; border-radius: 5px; cursor: pointer; }
         .btn-primary { background: #ff5500; color: white; }
         .btn-secondary { background: #666; color: white; }
-        .tag { background: #ff5500; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; }
+        .tag { background: #ff5500; color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; margin-right: 5px; margin-bottom: 5px; }
     </style>
 
     <script>
@@ -178,11 +187,13 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const genres = ${JSON.stringify(genres)};
         let featuredList = [];
 
+        // Correctly mirror your formatting.js sanitize function
         function sanitize(text) {
+            if (!text) return '';
             return text.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_');
         }
 
-        // --- PREVIEW LOGIC ---
+        // --- PREVIEW LOGIC (FIXED) ---
         document.getElementById('songTitle').addEventListener('input', function(e) {
             const title = e.target.value;
             const safe = sanitize(title);
@@ -195,7 +206,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         // --- DROPDOWN LOGIC ---
         function toggleDropdown(id) {
             const el = document.getElementById(id + 'Dropdown');
-            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            const isNone = el.style.display === 'none';
+            document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
+            el.style.display = isNone ? 'block' : 'none';
             if(el.style.display === 'block') renderList(id);
         }
 
@@ -216,6 +229,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             list.innerHTML = html;
         }
 
+        window.filterArtists = (type) => renderList(type);
+        window.filterGenres = () => renderList('genre');
+
         function selectArtist(type, id, name) {
             if(type === 'primary') {
                 document.getElementById('primaryArtistInput').value = id;
@@ -231,11 +247,14 @@ export async function handleAdminUpload(req, env, ctx, auth) {
 
         function updateFeaturedUI() {
             const container = document.getElementById('selectedFeaturedContainer');
-            container.innerHTML = featuredList.map(id => \`<span class="tag">\${artists[id]?.name || id} <i class="fas fa-times" onclick="removeFeatured('\${id}')"></i></span>\`).join('');
+            container.innerHTML = featuredList.map(id => {
+                const name = artists[id] ? artists[id].name : id.replace('new_', '');
+                return \`<span class="tag">\${name} <i class="fas fa-times" style="cursor:pointer" onclick="removeFeatured('\${id}')"></i></span>\`;
+            }).join('');
             document.getElementById('featuredInput').value = JSON.stringify(featuredList);
         }
 
-        function removeFeatured(id) {
+        window.removeFeatured = (id) => {
             featuredList = featuredList.filter(i => i !== id);
             updateFeaturedUI();
         }
@@ -249,16 +268,21 @@ export async function handleAdminUpload(req, env, ctx, auth) {
 
         function showCreateArtist(type) {
             document.getElementById(type + 'NewArtistContainer').style.display = 'block';
-            toggleDropdown(type);
+            document.querySelectorAll('.searchable-dropdown').forEach(d => d.style.display = 'none');
         }
 
-        function saveNewArtist(type) {
+        window.saveNewArtist = (type) => {
             const name = document.getElementById(type + 'NewArtistName').value;
             if(name) selectArtist(type, 'new_' + name, name);
-            document.getElementById(type + 'NewArtistContainer').style.display = 'none';
+            cancelNewArtist(type);
         }
 
-        // --- AUDIO DURATION ---
+        window.cancelNewArtist = (type) => {
+            document.getElementById(type + 'NewArtistContainer').style.display = 'none';
+            document.getElementById(type + 'NewArtistName').value = '';
+        }
+
+        // --- AUDIO DURATION (FIXED) ---
         document.getElementById('audioFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(!file) return;
@@ -286,12 +310,12 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
   try {
     const formData = await req.formData();
     const rawTitle = formData.get('title');
-    const rawArtist = formData.get('artist'); // This is the ID or "new_Name"
+    const rawArtist = formData.get('artist'); 
     const audioFile = formData.get('audio');
     const imageFile = formData.get('image');
     const SITENAME = "ZEDALBUMS";
 
-    // 1. Resolve Primary Artist Name for ID3
+    // 1. Resolve Primary Artist Name for ID3 (Clean)
     let cleanArtistName = "";
     if (rawArtist.startsWith('new_')) {
         cleanArtistName = rawArtist.replace('new_', '');
@@ -302,13 +326,14 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
 
     // 2. Storage Setup
     const safeTitle = sanitize(rawTitle);
-    const audioKey = `songs/${safeTitle}.mp3`; // Internal storage is just title
+    const audioKey = `songs/${safeTitle}.mp3`; 
     const imageKey = `images/${safeTitle}.jpg`;
 
     // 3. ID3 & Filename
     const audioBuffer = await audioFile.arrayBuffer();
     const duration = parseFloat(formData.get('duration')) || 0;
     
+    // Requirements: ID3 is title (site) | artist | site
     const taggedTitle = `${rawTitle} (${SITENAME})`;
     const taggedArtist = `${cleanArtistName} | ${SITENAME}`;
     const cleanDownloadName = `${rawTitle} (${SITENAME}).mp3`;
@@ -319,7 +344,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration: Math.floor(duration * 1000)
     });
 
-    // 4. Upload to R2 with correct download name
+    // 4. Upload to R2 with correct download name header
     await env.media.put(audioKey, taggedMp3, {
       httpMetadata: { 
         contentType: 'audio/mpeg',
@@ -328,22 +353,36 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     });
     await env.media.put(imageKey, imageFile.stream());
 
-    // 5. Database Save
+    // 5. Database Save & Slug
     const slugManager = new SlugManager(env);
     const baseSlug = safeTitle.replace(/_/g, '-');
     const finalSlug = await slugManager.generateUniqueSlug('songs', baseSlug);
 
+    const artistId = rawArtist.startsWith('new_') ? sanitize(cleanArtistName) : rawArtist;
+    
+    // Ensure artist exists in DB
+    const artists = await getArtists(env);
+    if (!artists[artistId]) {
+        artists[artistId] = { id: artistId, name: cleanArtistName, created: Date.now(), songs: [], albums: [] };
+        await saveArtists(env, artists);
+    }
+
     await saveMetadata(env, safeTitle, {
       title: rawTitle,
-      artist: rawArtist.startsWith('new_') ? sanitize(cleanArtistName) : rawArtist,
+      artist: artistId,
       artistName: cleanArtistName,
       duration: duration,
-      uploadedAt: Date.now()
+      uploadedAt: Date.now(),
+      filename: cleanDownloadName
     });
+
+    await addSongToArtist(env, artistId, safeTitle);
+    await logAdminActivity(env, auth.session.id, 'upload', 'song', safeTitle, rawTitle);
 
     return { success: true, slug: finalSlug };
 
   } catch (err) {
+    console.error(err);
     return { success: false, error: err.message };
   }
 }
@@ -378,7 +417,7 @@ function createTextFrame(type, value) {
   const size = 1 + enc.length;
   frame[4] = (size >> 24) & 0xFF; frame[5] = (size >> 16) & 0xFF; 
   frame[6] = (size >> 8) & 0xFF; frame[7] = size & 0xFF;
-  frame[10] = 0x03; // UTF-8
+  frame[10] = 0x03; // UTF-8 Encoding
   frame.set(enc, 11);
   return frame;
 }
