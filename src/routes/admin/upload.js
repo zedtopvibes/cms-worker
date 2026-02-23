@@ -44,7 +44,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     <i class="fas fa-heading" style="color: #ff5500; width: 20px;"></i>
                     Song Title
                 </label>
-                <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. My Song" required>
+                <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. Drake - God's Plan" required>
                 
                 <!-- URL Preview Section - Shows both filename and slug -->
                 <div style="margin-top: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;">
@@ -69,7 +69,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     </div>
                     <p style="font-size: 0.8rem; color: #666; margin-top: 8px; margin-bottom: 0;">
                         <i class="fas fa-info-circle"></i> 
-                        Slug is generated from title and artist name. Only lowercase letters, numbers, and hyphens allowed.
+                        Slug is generated from title only. Artist name is used for ID3 tags only.
                     </p>
                 </div>
             </div>
@@ -78,7 +78,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             <div class="form-group">
                 <label>
                     <i class="fas fa-microphone" style="color: #ff5500; width: 20px;"></i>
-                    Primary Artist
+                    Primary Artist <span style="color: #ff5500;">*</span>
                 </label>
                 
                 <div class="searchable-select-container">
@@ -114,6 +114,9 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                         </button>
                     </div>
                 </div>
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                    <i class="fas fa-info-circle"></i> Primary artist is used for ID3 tags only, not in the URL.
+                </p>
             </div>
             
             <!-- Featured Artists -->
@@ -653,7 +656,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         const submitBtn = document.getElementById('submitBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
         
-        // ===== URL PREVIEW FUNCTIONS WITH DEBUG LOGGING =====
+        // ===== URL PREVIEW FUNCTIONS =====
         (function() {
             const titleInput = document.getElementById('songTitle');
             const urlPreview = document.getElementById('urlPreview');
@@ -668,34 +671,15 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             function generateSlug(text) {
                 if (!text || text.trim() === '') return '';
                 
-                console.log('🎯 generateSlug input:', text);
+                // Strict slug generation - only lowercase, numbers, hyphens
+                let slug = text
+                    .toLowerCase()
+                    .replace(/[^a-z0-9\\s]/g, '') // Remove all special chars
+                    .replace(/\\s+/g, '-') // Spaces to hyphens
+                    .replace(/-+/g, '-') // Collapse multiple hyphens
+                    .replace(/^-|-$/g, ''); // Trim hyphens
                 
-                // Step 1: Lowercase
-                let step1 = text.toLowerCase();
-                console.log('Step 1 (lowercase):', step1);
-                
-                // Step 2: Remove special chars (keep letters, numbers, spaces)
-                // This regex keeps a-z, 0-9, and spaces. Removes everything else.
-                let step2 = step1.replace(/[^a-z0-9\\s]/g, '');
-                console.log('Step 2 (remove specials):', step2);
-                
-                // Step 3: Spaces to hyphens
-                let step3 = step2.replace(/\\s+/g, '-');
-                console.log('Step 3 (spaces to hyphens):', step3);
-                
-                // Step 4: Collapse multiple hyphens
-                let step4 = step3.replace(/-+/g, '-');
-                console.log('Step 4 (collapse hyphens):', step4);
-                
-                // Step 5: Trim hyphens from start and end
-                let step5 = step4.replace(/^-|-$/g, '');
-                console.log('Step 5 (trim hyphens):', step5);
-                
-                let result = step5 || 'untitled';
-                console.log('✅ FINAL SLUG:', result);
-                console.log('---');
-                
-                return result;
+                return slug || 'untitled';
             }
             
             function getArtistName() {
@@ -725,29 +709,10 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 const title = titleInput.value.trim();
                 const artistName = getArtistName();
                 
-                console.log('🔄 Updating URL preview...');
-                console.log('Title:', title);
-                console.log('Artist:', artistName);
-                
-                // Generate slug for public URL
+                // Generate slug for public URL - from title only (no artist prefix)
                 const titleSlug = generateSlug(title);
-                const artistSlug = generateSlug(artistName);
                 
-                console.log('Title slug:', titleSlug);
-                console.log('Artist slug:', artistSlug);
-                
-                let slug = '';
-                if (artistSlug && titleSlug) {
-                    slug = artistSlug + '-' + titleSlug;
-                } else if (artistSlug) {
-                    slug = artistSlug;
-                } else if (titleSlug) {
-                    slug = titleSlug;
-                } else {
-                    slug = 'untitled';
-                }
-                
-                console.log('Combined slug:', slug);
+                let slug = titleSlug || 'untitled';
                 
                 const baseUrl = window.location.origin;
                 urlPreview.textContent = baseUrl + '/song/' + slug;
@@ -755,10 +720,6 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 // Generate internal filename (with underscores)
                 const filename = generateFilename(title, artistName);
                 filenamePreview.textContent = filename;
-                
-                console.log('Final URL:', urlPreview.textContent);
-                console.log('Internal filename:', filename);
-                console.log('---');
             }
             
             // Initial update
@@ -769,7 +730,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 updateUrlPreview();
             });
             
-            // Watch for artist selection changes
+            // Watch for artist selection changes (still needed for internal filename)
             const observer = new MutationObserver(function() {
                 updateUrlPreview();
             });
@@ -1206,7 +1167,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // ===== ID3 TAGGING SECTION =====
     const SITENAME = "ZEDALBUMS";
     
-    // Construct artist string for ID3 tag
+    // Construct artist string for ID3 tag (primary artist only)
     let id3ArtistString = artistName;
     if (processedFeatured.length > 0) {
       const artists = await getArtists(env);
@@ -1214,9 +1175,9 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       id3ArtistString = `${artistName} feat. ${featuredNames}`;
     }
     
-    // Add site name to artist and title
-    const taggedTitle = `${title} (${SITENAME})`;
-    const taggedArtist = `${id3ArtistString} | ${SITENAME}`;
+    // ID3 Tags - Clean separation of artist and title
+    const taggedTitle = `${title} | ${SITENAME}`;  // Title with site name
+    const taggedArtist = `${id3ArtistString} | ${SITENAME}`;  // Artist with site name
     
     // Convert duration to milliseconds for ID3 tag
     const durationMs = Math.floor(duration * 1000);
@@ -1228,8 +1189,8 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration: durationMs
     });
     
-    // Generate filename with site name
-    const finalFilename = `${title} - ${artistName} (${SITENAME}).mp3`;
+    // Generate filename with site name - Title only, no artist duplication
+    const finalFilename = `${title} (${SITENAME}).mp3`;
     
     // Store the TAGGED file
     await env.media.put(audioKey, taggedMp3, {
@@ -1246,8 +1207,8 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // ===== SLUG GENERATION AND REGISTRATION =====
     const slugManager = new SlugManager(env);
     
-    // Generate clean slug from title and artist
-    const baseSlug = slugManager.generateSongSlug(title, artistId);
+    // Generate clean slug from title ONLY (no artist prefix)
+    const baseSlug = slugManager.generateSongSlug(title, ''); // Empty artist to prevent duplication
     
     // Ensure uniqueness
     const finalSlug = await slugManager.generateUniqueSlug('songs', baseSlug);
@@ -1263,7 +1224,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       uploadedAt: Date.now()
     });
 
-    // Store metadata (without slug - stored separately in slug system)
+    // Store metadata
     const metadata = {
       title,
       primaryArtist: artistId,
@@ -1299,7 +1260,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     return {
       success: true,
       baseName,
-      slug: finalSlug,  // Return slug for success page
+      slug: finalSlug,
       title,
       artistName,
       duration,
