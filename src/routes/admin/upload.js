@@ -1167,17 +1167,15 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // ===== ID3 TAGGING SECTION =====
     const SITENAME = "ZEDALBUMS";
     
-    // Construct artist string for ID3 tag (primary artist only)
-    let id3ArtistString = artistName;
-    if (processedFeatured.length > 0) {
-      const artists = await getArtists(env);
-      const featuredNames = processedFeatured.map(fid => artists[fid]?.name || fid).join(', ');
-      id3ArtistString = `${artistName} feat. ${featuredNames}`;
-    }
+    // Primary artist ONLY for ID3 artist field (no featured artists)
+    const primaryArtistOnly = artistName;
     
-    // ID3 Tags - Clean separation of artist and title
-    const taggedTitle = `${title} | ${SITENAME}`;  // Title with site name
-    const taggedArtist = `${id3ArtistString} | ${SITENAME}`;  // Artist with site name
+    // Full title with featured artists for display (already includes "ft. Rihanna" etc.)
+    const fullTitleWithFeatured = title;
+    
+    // ID3 Tags - Clean separation
+    const taggedTitle = `${fullTitleWithFeatured} (${SITENAME})`;  // Title with featured artists
+    const taggedArtist = `${primaryArtistOnly} | ${SITENAME}`;     // Primary artist only
     
     // Convert duration to milliseconds for ID3 tag
     const durationMs = Math.floor(duration * 1000);
