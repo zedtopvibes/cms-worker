@@ -1062,8 +1062,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
 export async function handleAdminUploadPost(req, env, ctx, auth) {
   try {
     const formData = await req.formData();
-    const rawTitle = formData.get('title');           // Use raw for display
-    const rawArtist = formData.get('artist');         // Use raw for display
+    const title = formData.get('title');
+    const artist = formData.get('artist');
     const description = formData.get('description');
     const audioFile = formData.get('audio');
     const imageFile = formData.get('image');
@@ -1073,7 +1073,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     const browserDuration = formData.get('duration');
     const genreInput = formData.get('genre');
 
-    if (!rawTitle || !audioFile || !imageFile) {
+    if (!title || !audioFile || !imageFile) {
       return { success: false, error: 'Missing required fields' };
     }
 
@@ -1124,12 +1124,12 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       }
     }
 
-    let artistName = rawArtist;        // Keep raw for display
-    let artistId = rawArtist;
+    let artistName = artist;
+    let artistId = artist;
 
     // Process new primary artist
-    if (rawArtist && rawArtist.startsWith('new_')) {
-      artistName = rawArtist.replace('new_', '');  // Keep raw for display
+    if (artist && artist.startsWith('new_')) {
+      artistName = artist.replace('new_', '');
       artistId = sanitize(artistName);
       const artists = await getArtists(env);
       if (!artists[artistId]) {
@@ -1146,12 +1146,10 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       }
     }
 
-    // SANITIZED VERSIONS - for internal storage only
-    const safeTitle = sanitize(rawTitle);
+    const safeTitle = sanitize(title);
     const safeArtist = sanitize(artistName);
     const baseName = `${safeArtist}_${safeTitle}`;
 
-    // R2 storage keys (use sanitized versions for filesystem safety)
     const audioKey = `songs/${baseName}.mp3`;
     const descKey = `descriptions/${baseName}.txt`;
     const imgType = imageFile.type.includes('png') ? 'png' : 'jpg';
@@ -1166,18 +1164,20 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration = fallbackDurationParser(audioBuffer);
     }
 
-    // ===== ID3 TAGGING SECTION - USING RAW VALUES =====
+    // ===== ID3 TAGGING SECTION =====
     const SITENAME = "ZEDALBUMS";
     
-    // Primary artist ONLY for ID3 artist field (no featured artists)
-    const primaryArtistOnly = artistName;  // Raw artist name
+    // Construct artist string for ID3 tag (primary artist only)
+    let id3ArtistString = artistName;
+    if (processedFeatured.length > 0) {
+      const artists = await getArtists(env);
+      const featuredNames = processedFeatured.map(fid => artists[fid]?.name || fid).join(', ');
+      id3ArtistString = `${artistName} feat. ${featuredNames}`;
+    }
     
-    // Full title with featured artists for display (already includes "ft. Rihanna" etc.)
-    const fullTitleWithFeatured = rawTitle;  // Raw title
-    
-    // ID3 Tags - Clean separation with RAW values (no underscores)
-    const taggedTitle = `${fullTitleWithFeatured} (${SITENAME})`;  // Title with featured artists
-    const taggedArtist = `${primaryArtistOnly} | ${SITENAME}`;     // Primary artist only
+    // ID3 Tags - Clean separation of artist and title
+    const taggedTitle = `${title} | ${SITENAME}`;  // Title with site name
+    const taggedArtist = `${id3ArtistString} | ${SITENAME}`;  // Artist with site name
     
     // Convert duration to milliseconds for ID3 tag
     const durationMs = Math.floor(duration * 1000);
@@ -1189,14 +1189,14 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration: durationMs
     });
     
-    // Generate filename with site name - Using RAW values (no underscores)
-    const finalFilename = `${rawTitle} (${SITENAME}).mp3`;
+    // Generate filename with site name - Title only, no artist duplication
+    const finalFilename = `${title} (${SITENAME}).mp3`;
     
     // Store the TAGGED file
     await env.media.put(audioKey, taggedMp3, {
       httpMetadata: { 
         contentType: 'audio/mpeg',
-        contentDisposition: `inline; filename="${finalFilename}"`  // Raw filename for download
+        contentDisposition: `inline; filename="${finalFilename}"`
       }
     });
 
@@ -1207,32 +1207,32 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // ===== SLUG GENERATION AND REGISTRATION =====
     const slugManager = new SlugManager(env);
     
-    // Generate clean slug from title ONLY (using raw title)
-    const baseSlug = slugManager.generateSongSlug(rawTitle, ''); // Empty artist to prevent duplication
+    // Generate clean slug from title ONLY (no artist prefix)
+    const baseSlug = slugManager.generateSongSlug(title, ''); // Empty artist to prevent duplication
     
     // Ensure uniqueness
     const finalSlug = await slugManager.generateUniqueSlug('songs', baseSlug);
     
     // Register in database
     await slugManager.registerSlug('songs', baseName, finalSlug, {
-      title: rawTitle,  // Store raw title in metadata
+      title,
       artist: artistId,
-      artistName: artistName,  // Store raw artist name
+      artistName,
       duration,
       genre,
       featured: processedFeatured,
       uploadedAt: Date.now()
     });
 
-    // Store metadata (using raw values for display)
+    // Store metadata
     const metadata = {
-      title: rawTitle,
+      title,
       primaryArtist: artistId,
       featuredArtists: processedFeatured,
       description,
       duration,
       genre,
-      filename: finalFilename  // Raw filename for display
+      filename: finalFilename
     };
     await saveMetadata(env, baseName, metadata);
 
@@ -1255,18 +1255,18 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     }
 
     // Log admin activity
-    await logAdminActivity(env, auth.session.id, 'upload', 'song', baseName, rawTitle);
+    await logAdminActivity(env, auth.session.id, 'upload', 'song', baseName, title);
 
     return {
       success: true,
       baseName,
       slug: finalSlug,
-      title: rawTitle,           // Return raw title
-      artistName: artistName,    // Return raw artist name
+      title,
+      artistName,
       duration,
       albumId,
       playlistId,
-      filename: finalFilename    // Raw filename
+      filename: finalFilename
     };
     
   } catch (error) {
