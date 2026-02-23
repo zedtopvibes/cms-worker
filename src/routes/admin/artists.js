@@ -1,4 +1,4 @@
-// ==================== ADMIN  ARTISTS MANAGEMENT ====================
+// ==================== ADMIN ARTISTS MANAGEMENT ====================
 import { getArtists, saveArtists, getAlbums } from '../../helpers/storage.js';
 import { getAggregatedStats } from '../../helpers/db.js';
 import { getPageViews } from '../../helpers/pageViews.js';
@@ -6,7 +6,7 @@ import { sanitize, formatNumber } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
 import { moveToTrash } from '../../helpers/trash.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-// REMOVE: import { SlugManager } from '../../helpers/slug.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADDED
 
 // ===== LIST ALL ARTISTS =====
 export async function handleAdminArtists(req, env, ctx, auth) {
@@ -15,6 +15,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
   const search = url.searchParams.get('search') || '';
   const sort = url.searchParams.get('sort') || 'name';
   const ITEMS_PER_PAGE = 20;
+  const slugManager = new SlugManager(env);  // ADDED
 
   // Get all artists
   const artists = await getArtists(env);
@@ -26,6 +27,9 @@ export async function handleAdminArtists(req, env, ctx, auth) {
       const stats = await getAggregatedStats(artist.songs || [], env);
       const pageViews = await getPageViews(env, 'artist', id);
       
+      // Get slug
+      const artistSlug = await slugManager.getSlugFromId('artists', id) || id;
+      
       // Get album count
       const albumCount = artist.albums?.length || 0;
       
@@ -34,6 +38,7 @@ export async function handleAdminArtists(req, env, ctx, auth) {
       
       return {
         id,
+        slug: artistSlug,  // ADDED
         name: artist.name,
         description: artist.description || '',
         genre: artist.genre || 'Various',
@@ -235,6 +240,16 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             flex-wrap: wrap;
         }
         
+        .slug-info {
+            font-size: 0.7rem;
+            color: #9b59b6;
+            background: #f3e5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        
         @media (min-width: 768px) {
             .mobile-cards { display: none; }
             .artists-grid { display: grid !important; }
@@ -255,11 +270,22 @@ export async function handleAdminArtists(req, env, ctx, auth) {
             if (e.key === 'Enter') applyFilters();
         });
         
-        window.viewArtist = function(id) { window.open('/artist/' + id, '_blank'); };
-        window.editArtist = function(id) { window.location.href = '/admin/artists/edit?id=' + id; };
-        window.mergeArtist = function(id) { window.location.href = '/admin/artists/merge?id=' + id; };
+        window.viewArtist = function(slug) { 
+            window.open('/artist/' + slug, '_blank'); 
+        };
+        
+        window.editArtist = function(id) { 
+            window.location.href = '/admin/artists/edit?id=' + id; 
+        };
+        
+        window.mergeArtist = function(id) { 
+            window.location.href = '/admin/artists/merge?id=' + id; 
+        };
+        
         window.deleteArtist = function(id) {
-            if (confirm('Delete this artist? It will be moved to trash.')) window.location.href = '/admin/artists/delete?id=' + id;
+            if (confirm('Delete this artist? It will be moved to trash.')) {
+                window.location.href = '/admin/artists/delete?id=' + id;
+            }
         };
     </script>
   `;
@@ -450,6 +476,16 @@ export async function handleAdminArtistCreatePost(req, env, ctx, auth) {
   };
 
   await saveArtists(env, artists);
+
+  // Generate and register slug
+  const slugManager = new SlugManager(env);
+  const baseSlug = slugManager.generateArtistSlug(name);
+  const finalSlug = await slugManager.generateUniqueSlug('artists', baseSlug);
+  await slugManager.registerSlug('artists', artistId, finalSlug, {
+    name,
+    genre,
+    created: Date.now()
+  });
   
   // Log activity
   await logAdminActivity(env, auth.session.id, 'create', 'artist', artistId, name);
@@ -471,10 +507,14 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
   
   const artists = await getArtists(env);
   const artist = artists[artistId];
+  const slugManager = new SlugManager(env);  // ADDED
   
   if (!artist) {
     return { redirect: '/admin/artists' };
   }
+  
+  // Get slug
+  const artistSlug = await slugManager.getSlugFromId('artists', artistId) || artistId;
   
   // Load genres for selection
   const genreManager = new GenreManager(env);
@@ -491,6 +531,21 @@ export async function handleAdminArtistEdit(req, env, ctx, auth) {
             <h2 style="font-size: 1.3rem; margin:0;">
                 <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Artist: ${artist.name}
             </h2>
+            <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #9b59b6;">
+                <div style="margin-bottom: 5px;">
+                    <i class="fas fa-link" style="color: #9b59b6;"></i>
+                    <span style="margin-left: 5px;">Artist URL (slug):</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/artist/${artistSlug}</code>
+                </div>
+                <div>
+                    <i class="fas fa-database" style="color: #4a90e2;"></i>
+                    <span style="margin-left: 5px;">Internal ID:</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">${artistId}</code>
+                </div>
+                <p style="font-size:0.8rem; color:#666; margin-top:5px; margin-bottom:0;">
+                    <i class="fas fa-info-circle"></i> Changing name will generate a new slug. Old URL will 404.
+                </p>
+            </div>
         </div>
         
         <form id="editForm" action="/admin/artists/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
@@ -655,6 +710,9 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
       return { success: false, error: 'Artist not found' };
     }
     
+    // Check if name changed
+    const oldName = artists[artistId].name;
+    
     // Update artist details
     artists[artistId].name = name;
     artists[artistId].genre = genre;
@@ -671,10 +729,13 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
     
     await saveArtists(env, artists);
 
-    // REMOVE slug generation and registration
-    // const slugManager = new SlugManager(env);
-    // const slug = slugManager.generateArtistSlug(name);
-    // await slugManager.registerSlug('artists', artistId, slug, { name });
+    // Regenerate slug if name changed
+    if (oldName !== name) {
+      const slugManager = new SlugManager(env);
+      const baseSlug = slugManager.generateArtistSlug(name);
+      const newSlug = await slugManager.generateUniqueSlug('artists', baseSlug);
+      await slugManager.registerSlug('artists', artistId, newSlug, { name, genre });
+    }
     
     // Log activity
     await logAdminActivity(env, auth.session.id, 'edit', 'artist', artistId, name);
@@ -685,7 +746,7 @@ export async function handleAdminArtistEditPost(req, env, ctx, auth) {
   }
 }
 
-// ===== HANDLE ARTIST DELETION - UPDATED to use trash =====
+// ===== HANDLE ARTIST DELETION =====
 export async function handleAdminArtistDelete(req, env, ctx, auth) {
   const url = new URL(req.url);
   const artistId = url.searchParams.get('id');
@@ -727,6 +788,10 @@ export async function handleAdminArtistDelete(req, env, ctx, auth) {
       created: artist?.created,
       thumbnail: artist?.thumbnail
     };
+    
+    // Delete slug first
+    const slugManager = new SlugManager(env);
+    await slugManager.deleteSlug('artists', artistId);
     
     // Move to trash
     const result = await moveToTrash(
@@ -802,7 +867,7 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
         
         <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #9b59b6;">
             <p><strong>Main Artist:</strong> ${mainArtist.name} ${mainArtist.genre ? `(${mainArtist.genre})` : ''}</p>
-            <p><i class="fas fa-info-circle"></i> This artist will receive all songs and albums from the merged artist.</p>
+            <p><i class="fas fa-info-circle"></i> This artist will receive all songs and albums from the merged artist. The merged artist's slug will be deleted.</p>
         </div>
         
         <form id="mergeForm" action="/admin/artists/merge" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
@@ -820,10 +885,10 @@ export async function handleAdminArtistMerge(req, env, ctx, auth) {
                 <label style="display: block; margin-bottom: 5px; font-weight: 600;">Action after merge</label>
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
                     <label style="display: flex; align-items: center; gap: 5px;">
-                        <input type="radio" name="deleteAfter" value="yes" checked> Delete merged artist
+                        <input type="radio" name="deleteAfter" value="yes" checked> Delete merged artist (slug will be removed)
                     </label>
                     <label style="display: flex; align-items: center; gap: 5px;">
-                        <input type="radio" name="deleteAfter" value="no"> Keep merged artist
+                        <input type="radio" name="deleteAfter" value="no"> Keep merged artist (slug remains)
                     </label>
                 </div>
             </div>
@@ -910,8 +975,13 @@ export async function handleAdminArtistMergePost(req, env, ctx, auth) {
     // Save updated albums
     await saveAlbums(env, albums);
     
-    // Delete merged artist if requested
+    // Delete merged artist's slug if requested
+    const slugManager = new SlugManager(env);
+    
     if (deleteAfter === 'yes') {
+      // Delete slug for merged artist
+      await slugManager.deleteSlug('artists', mergeArtistId);
+      
       // Delete thumbnail if exists
       if (mergeArtist.thumbnail) {
         await env.media.delete(mergeArtist.thumbnail).catch(() => {});
@@ -947,6 +1017,9 @@ function generateMobileCard(artist) {
     <div class="mobile-card">
         <div style="font-weight:700; margin-bottom:5px;">${artist.name} ${genreHtml}</div>
         <div style="color:#9b59b6; margin-bottom:8px;">${artist.genre}</div>
+        <div style="font-size:0.7rem; color:#9b59b6; margin-bottom:8px;">
+            <i class="fas fa-link"></i> /artist/${artist.slug}
+        </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
             <span><i class="fas fa-music"></i> ${artist.songCount} songs</span>
             <span><i class="fas fa-compact-disc"></i> ${artist.albumCount} albums</span>
@@ -976,12 +1049,15 @@ function generateMobileCard(artist) {
 function generateGridCard(artist) {
   return `
     <div class="artist-grid-card">
-        <div class="artist-thumbnail" onclick="viewArtist('${artist.id}')">
+        <div class="artist-thumbnail" onclick="viewArtist('${artist.slug}')">
             ${artist.thumbnail ? `<img src="/artists/thumbnails/${artist.id}.jpg">` : '🎤'}
         </div>
         <div class="artist-info">
-            <div class="artist-name" onclick="viewArtist('${artist.id}')">${artist.name}</div>
-            <div class="artist-genre" onclick="viewArtist('${artist.id}')">${artist.genre}</div>
+            <div class="artist-name" onclick="viewArtist('${artist.slug}')">${artist.name}</div>
+            <div class="artist-genre" onclick="viewArtist('${artist.slug}')">${artist.genre}</div>
+            <div class="slug-info">
+                <i class="fas fa-link"></i> /artist/${artist.slug}
+            </div>
             <div class="artist-stats">
                 <span><i class="fas fa-music"></i> ${artist.songCount}</span>
                 <span><i class="fas fa-compact-disc"></i> ${artist.albumCount}</span>
