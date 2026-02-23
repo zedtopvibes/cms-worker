@@ -2,7 +2,7 @@
 import { GenreManager } from '../../helpers/genreManager.js';
 import { adminLayout } from './layout.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
-
+import { SlugManager } from '../../helpers/slug.js';  // ADDED
 
 export async function handleGenres(req, env, ctx, auth) {
   const url = new URL(req.url);
@@ -12,9 +12,21 @@ export async function handleGenres(req, env, ctx, auth) {
   const genresData = await genreManager.getGenres();
   const genres = genresData.genres;
   const stats = await genreManager.getGenreStats();
+  const slugManager = new SlugManager(env);  // ADDED
 
   // ===== MAIN GENRES DASHBOARD =====
   if (path === '/' || path === '') {
+    // Get slugs for all genres (though genres use ID-based URLs, we'll keep for consistency)
+    const genresWithSlugs = await Promise.all(genres.map(async genre => {
+      // Genres already use slug-like IDs, but we'll validate
+      const isValidSlug = slugManager._isValidSlug(genre.id);
+      return {
+        ...genre,
+        isValidSlug,
+        url: `/genre/${genre.id}`  // Genres already use clean URLs
+      };
+    }));
+
     const content = `
       <div class="genres-dashboard" style="max-width: 100%; overflow-x: hidden;">
         <!-- Header - Stack on mobile, row on desktop -->
@@ -55,8 +67,12 @@ export async function handleGenres(req, env, ctx, auth) {
 
         <!-- Genres Grid - 1 column on mobile, 2 on tablet, 3-4 on desktop -->
         <div style="display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 30px;">
-          ${genres.map(genre => {
+          ${genresWithSlugs.map(genre => {
             const genreStats = stats.find(s => s.id === genre.id) || { songCount: 0, artistCount: 0, albumCount: 0 };
+            const slugStatus = genre.isValidSlug ? 
+              '<span style="color: #28a745; font-size: 0.7rem;"><i class="fas fa-check-circle"></i> valid slug</span>' : 
+              '<span style="color: #dc3545; font-size: 0.7rem;"><i class="fas fa-exclamation-triangle"></i> invalid format</span>';
+            
             return `
             <div class="genre-card" style="background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e8e8e8; width: 100%;">
               <div style="height: 6px; background: ${genre.color};"></div>
@@ -68,6 +84,7 @@ export async function handleGenres(req, env, ctx, auth) {
                     <div style="min-width: 0; flex: 1;">
                       <h3 style="margin: 0 0 3px; font-size: 1.1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${genre.name}</h3>
                       <code style="font-size: 0.65rem; color: #999; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${genre.id}</code>
+                      <div style="margin-top: 3px;">${slugStatus}</div>
                     </div>
                   </div>
                   <div style="display: flex; gap: 6px; flex-shrink: 0;">
@@ -84,6 +101,12 @@ export async function handleGenres(req, env, ctx, auth) {
                 <p style="font-size: 0.85rem; color: #666; margin-bottom: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4;">
                   ${genre.description || 'No description'}
                 </p>
+                
+                <!-- URL Preview -->
+                <div style="background: #f0f9ff; padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; font-size: 0.75rem; border-left: 3px solid ${genre.color};">
+                  <i class="fas fa-link" style="color: ${genre.color};"></i>
+                  <code style="background: white; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${genre.url}</code>
+                </div>
                 
                 <!-- Stats - 2x2 grid on mobile -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.8rem;">
@@ -287,6 +310,17 @@ export async function handleGenres(req, env, ctx, auth) {
             <small style="color: #999; display: block; margin-top: 5px;">Choose an icon for the genre</small>
           </div>
 
+          <!-- URL Preview -->
+          <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 5px; color: #666; margin-bottom: 5px;">
+              <i class="fas fa-link" style="color: #ff5500;"></i>
+              <span style="font-size: 0.9rem; font-weight: 500;">Genre URL:</span>
+            </div>
+            <code id="urlPreview" style="display: block; background: white; padding: 8px; border-radius: 4px; font-size: 0.9rem; border: 1px solid #e0e0e0; word-break: break-all;">
+              /genre/...
+            </code>
+          </div>
+
           <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
             <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 16px;">Create Genre</button>
             <a href="/admin/genres" class="btn btn-secondary" style="width: 100%; padding: 14px; font-size: 16px; text-align: center;">Cancel</a>
@@ -310,6 +344,18 @@ export async function handleGenres(req, env, ctx, auth) {
               document.getElementById('selectedIcon').value = this.value;
             });
           });
+          
+          // URL Preview
+          const idInput = document.querySelector('input[name="id"]');
+          const urlPreview = document.getElementById('urlPreview');
+          
+          function updateUrlPreview() {
+            const id = idInput.value.trim() || 'genre-id';
+            urlPreview.textContent = '/genre/' + id;
+          }
+          
+          idInput.addEventListener('input', updateUrlPreview);
+          updateUrlPreview();
         </script>
 
         <style>
@@ -347,6 +393,12 @@ export async function handleGenres(req, env, ctx, auth) {
     const icon = formData.get('icon') || 'fa-music';
 
     try {
+      // Validate slug format
+      const slugManager = new SlugManager(env);
+      if (!slugManager._isValidSlug(id)) {
+        throw new Error('Genre ID must contain only lowercase letters, numbers, and hyphens');
+      }
+
       await genreManager.addGenre({ id, name, description, color, icon });
       await logAdminActivity(env, auth.session.id, 'create', 'genre', id, name);
       
@@ -396,6 +448,18 @@ export async function handleGenres(req, env, ctx, auth) {
           <h2 style="font-size: 1.3rem; margin:0; display: flex; align-items: center; gap: 8px;">
             <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Genre: <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">${genre.name}</span>
           </h2>
+        </div>
+
+        <!-- URL Info -->
+        <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ff5500;">
+          <div style="margin-bottom: 5px;">
+            <i class="fas fa-link" style="color: #ff5500;"></i>
+            <span style="margin-left: 5px;">Genre URL:</span>
+            <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/genre/${genre.id}</code>
+          </div>
+          <p style="font-size:0.8rem; color:#666; margin-top:5px; margin-bottom:0;">
+            <i class="fas fa-info-circle"></i> Genre ID cannot be changed once created.
+          </p>
         </div>
 
         <form action="/admin/genres/edit" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8; width: 100%;">
