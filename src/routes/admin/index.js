@@ -147,7 +147,7 @@ export async function handleAdmin(req, env, ctx) {
   const totalGenres = genresData.genres.length;
 
 
-/* ===== TEMPORARILY DISABLED - Heavy background features =====
+ ===== TEMPORARILY DISABLED - Heavy background features =====*/
 
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
