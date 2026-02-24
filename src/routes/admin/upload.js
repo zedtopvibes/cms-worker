@@ -69,7 +69,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                     </div>
                     <p style="font-size: 0.8rem; color: #666; margin-top: 8px; margin-bottom: 0;">
                         <i class="fas fa-info-circle"></i> 
-                        Slug is generated from title only. Artist name is used for ID3 tags only.
+                        Enter full title with artist (e.g., "Drake - God's Plan"). Filename and ID3 title will use this exactly.
                     </p>
                 </div>
             </div>
@@ -1062,8 +1062,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
 export async function handleAdminUploadPost(req, env, ctx, auth) {
   try {
     const formData = await req.formData();
-    const title = formData.get('title');
-    const artist = formData.get('artist');
+    const title = formData.get('title'); // Full title e.g., "Drake - God's Plan"
+    const artist = formData.get('artist'); // Primary artist only e.g., "Drake"
     const description = formData.get('description');
     const audioFile = formData.get('audio');
     const imageFile = formData.get('image');
@@ -1077,7 +1077,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       return { success: false, error: 'Missing required fields' };
     }
 
-    // Parse featured artists
+    // Parse featured artists (still stored in DB but ignored in ID3)
     let featuredArtists = [];
     try {
       featuredArtists = featuredJson ? JSON.parse(featuredJson) : [];
@@ -1098,7 +1098,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       }
     }
 
-    // Process any new featured artists
+    // Process any new featured artists (for DB storage only)
     const processedFeatured = [];
     for (const feat of featuredArtists) {
       if (feat.startsWith('new_')) {
@@ -1164,32 +1164,26 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       duration = fallbackDurationParser(audioBuffer);
     }
 
-    // ===== ID3 TAGGING SECTION =====
+    // ===== UPDATED ID3 TAGGING SECTION =====
     const SITENAME = "ZEDALBUMS";
     
-    // Construct artist string for ID3 tag (primary artist only)
-    let id3ArtistString = artistName;
-    if (processedFeatured.length > 0) {
-      const artists = await getArtists(env);
-      const featuredNames = processedFeatured.map(fid => artists[fid]?.name || fid).join(', ');
-      id3ArtistString = `${artistName} feat. ${featuredNames}`;
-    }
-    
-    // ID3 Tags - Clean separation of artist and title
-    const taggedTitle = `${title} | ${SITENAME}`;  // Title with site name
-    const taggedArtist = `${id3ArtistString} | ${SITENAME}`;  // Artist with site name
+    // ID3 Tags - Use full title from form, primary artist only
+    // Featured artists are IGNORED in ID3 tags (only appear in the title text if user included them)
+    const taggedTitle = `${title} (${SITENAME})`;  // Full title + sitename in parentheses
+    const taggedArtist = `${artistName} | ${SITENAME}`;  // Primary artist only + sitename
     
     // Convert duration to milliseconds for ID3 tag
     const durationMs = Math.floor(duration * 1000);
     
-    // Run through ID3 tagger
+    // Run through ID3 tagger (featured artists are completely ignored in ID3)
     const taggedMp3 = addID3Tags(audioBuffer, {
       title: taggedTitle,
       artist: taggedArtist,
       duration: durationMs
     });
     
-    // Generate filename with site name - Title only, no artist duplication
+    // Generate filename - Use FULL title from form + sitename
+    // This matches what the user entered in the title field
     const finalFilename = `${title} (${SITENAME}).mp3`;
     
     // Store the TAGGED file
@@ -1220,15 +1214,15 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       artistName,
       duration,
       genre,
-      featured: processedFeatured,
+      featured: processedFeatured, // Still store featured in DB for associations
       uploadedAt: Date.now()
     });
 
     // Store metadata
     const metadata = {
-      title,
+      title, // Full title as entered
       primaryArtist: artistId,
-      featuredArtists: processedFeatured,
+      featuredArtists: processedFeatured, // Store for DB relationships
       description,
       duration,
       genre,
@@ -1248,8 +1242,10 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       await addSongToPlaylist(env, playlistId, baseName);
     }
 
-    // Add to artist song lists
+    // Add to artist song lists (primary artist)
     await addSongToArtist(env, artistId, baseName);
+    
+    // Add to featured artists song lists (for DB associations only)
     for (const fid of processedFeatured) {
       await addSongToArtist(env, fid, baseName);
     }
@@ -1261,7 +1257,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
       success: true,
       baseName,
       slug: finalSlug,
-      title,
+      title, // Full title
       artistName,
       duration,
       albumId,
