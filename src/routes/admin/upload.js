@@ -1,4 +1,4 @@
-// ==================== ADMIN  UPLOAD HELPER FUNCTIONS ====================
+// ==================== FIXED ADMIN UPLOAD HELPER ====================
 import { getAlbums, getArtists, getPlaylists, saveArtists, saveMetadata, addSongToAlbum, addSongToPlaylist, addSongToArtist, addAlbumToArtist, addArtistToAlbum } from '../../helpers/storage.js';
 import { sanitize, formatDuration, fallbackDurationParser } from '../../helpers/formatting.js';
 import { logAdminActivity } from '../../helpers/dashboardStats.js';
@@ -6,29 +6,62 @@ import { GenreManager } from '../../helpers/genreManager.js';
 import { SlugManager } from '../../helpers/slug.js';
 
 export async function handleAdminUpload(req, env, ctx, auth) {
-  const albums = await getAlbums(env);
-  const artists = await getArtists(env);
-  const playlists = await getPlaylists(env);
+  // Fetch data with error handling
+  let albums = {}, artists = {}, playlists = {};
+  
+  try {
+    albums = await getAlbums(env) || {};
+    artists = await getArtists(env) || {};
+    playlists = await getPlaylists(env) || {};
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    // Return error message to user
+    return `
+      <div class="alert alert-danger">
+        <i class="fas fa-exclamation-circle"></i>
+        Error loading data. Please try again.
+      </div>
+    `;
+  }
+
   const genreManager = new GenreManager(env);
   const genresData = await genreManager.getGenres();
-  const genres = genresData.genres;
-  const slugManager = new SlugManager(env);
+  const genres = genresData?.genres || [];
   
-  const albumOptions = Object.keys(albums).map(id => {
-    const album = albums[id];
-    return `<option value="${id}">${album.title} (${album.songs?.length || 0} tracks)${album.genre ? ` - ${album.genre}` : ''}</option>`;
-  }).join("");
+  // SAFE: Check if objects exist before mapping
+  const albumOptions = albums && Object.keys(albums).length > 0 
+    ? Object.keys(albums).map(id => {
+        const album = albums[id];
+        return `<option value="${id}">${album?.title || 'Unknown'} (${album?.songs?.length || 0} tracks)${album?.genre ? ` - ${album.genre}` : ''}</option>`;
+      }).join("")
+    : '<option value="">No albums available</option>';
 
-  const artistOptions = Object.keys(artists).map(id => {
-    const artist = artists[id];
-    const songCount = artist.songs?.length || 0;
-    return `<option value="${id}">${artist.name} (${songCount} songs)${artist.genre ? ` - ${artist.genre}` : ''}</option>`;
-  }).join("");
+  const artistOptions = artists && Object.keys(artists).length > 0
+    ? Object.keys(artists).map(id => {
+        const artist = artists[id];
+        const songCount = artist?.songs?.length || 0;
+        return `<option value="${id}">${artist?.name || 'Unknown'} (${songCount} songs)${artist?.genre ? ` - ${artist.genre}` : ''}</option>`;
+      }).join("")
+    : '<option value="">No artists available</option>';
 
-  const playlistOptions = Object.keys(playlists).map(id => {
-    const playlist = playlists[id];
-    return `<option value="${id}">${playlist.title} (${playlist.songs?.length || 0} songs)</option>`;
-  }).join("");
+  const playlistOptions = playlists && Object.keys(playlists).length > 0
+    ? Object.keys(playlists).map(id => {
+        const playlist = playlists[id];
+        return `<option value="${id}">${playlist?.title || 'Unknown'} (${playlist?.songs?.length || 0} songs)</option>`;
+      }).join("")
+    : '<option value="">No playlists available</option>';
+
+  // SAFE: Create artists data array with null checks
+  const artistsArray = artists && Object.keys(artists).length > 0
+    ? Object.entries(artists).map(([id, artist]) => ({
+        id: id || '',
+        name: artist?.name || 'Unknown',
+        songCount: artist?.songs?.length || 0
+      }))
+    : [];
+
+  // Sort safely
+  artistsArray.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const content = `
     <div style="max-width: 800px; margin: 0 auto; padding: 0 10px;">
@@ -46,7 +79,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 </label>
                 <input type="text" name="title" id="songTitle" class="form-control" placeholder="e.g. Drake - God's Plan" required>
                 
-                <!-- URL Preview Section - Shows both filename and slug -->
+                <!-- URL Preview Section -->
                 <div style="margin-top: 10px; background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;">
                     <div style="display: flex; align-items: flex-start; gap: 8px; flex-direction: column;">
                         <div style="display: flex; align-items: center; gap: 5px; color: #666; width: 100%;">
@@ -205,7 +238,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                         <div style="margin-bottom: 15px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px;">
                             <label style="display: block; margin-bottom: 5px; font-weight: 600;">Color</label>
                             <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; min-width: 300px;">
-                                ${genreManager.getColorPalette().map(color => `
+                                ${(genreManager.getColorPalette() || []).map(color => `
                                     <label style="display: block; cursor: pointer;">
                                         <input type="radio" name="newGenreColor" value="${color}" style="display: none;">
                                         <div style="height: 40px; background: ${color}; border-radius: 8px; border: 2px solid transparent;" 
@@ -219,7 +252,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                         <div style="margin-bottom: 15px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 5px;">
                             <label style="display: block; margin-bottom: 5px; font-weight: 600;">Icon</label>
                             <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; min-width: 400px;">
-                                ${genreManager.getIconOptions().map(icon => `
+                                ${(genreManager.getIconOptions() || []).map(icon => `
                                     <label style="display: block; cursor: pointer; text-align: center;">
                                         <input type="radio" name="newGenreIcon" value="${icon}" style="display: none;">
                                         <div style="padding: 10px; border: 2px solid #e8e8e8; border-radius: 8px;" 
@@ -629,16 +662,11 @@ export async function handleAdminUpload(req, env, ctx, auth) {
     </style>
     
     <script>
-        // Artists data
-        const artistsData = [
-            ${Object.entries(artists).map(([id, artist]) => {
-                return `{ id: "${id}", name: "${artist.name.replace(/"/g, '\\"')}", songCount: ${artist.songs?.length || 0} }`;
-            }).join(',')}
-        ];
-        artistsData.sort((a, b) => a.name.localeCompare(b.name));
+        // SAFE: Artists data with fallback
+        const artistsData = ${JSON.stringify(artistsArray)};
         
-        // Genres data
-        const genresData = ${JSON.stringify(genres)};
+        // SAFE: Genres data with fallback
+        const genresData = ${JSON.stringify(genres || [])};
         
         // State
         let featuredArtists = [];
@@ -674,8 +702,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 // Strict slug generation - only lowercase, numbers, hyphens
                 let slug = text
                     .toLowerCase()
-                    .replace(/[^a-z0-9\\s]/g, '') // Remove all special chars
-                    .replace(/\\s+/g, '-') // Spaces to hyphens
+                    .replace(/[^a-z0-9\s]/g, '') // Remove all special chars
+                    .replace(/\s+/g, '-') // Spaces to hyphens
                     .replace(/-+/g, '-') // Collapse multiple hyphens
                     .replace(/^-|-$/g, ''); // Trim hyphens
                 
@@ -695,8 +723,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
                 if (!title && !artistName) return 'untitled.mp3';
                 
                 // Sanitize for filename (allow underscores for internal use)
-                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
-                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\\s]/g, '').replace(/\\s+/g, '_') : '';
+                let cleanTitle = title ? title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
+                let cleanArtist = artistName ? artistName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') : '';
                 
                 if (!cleanArtist && !cleanTitle) return 'untitled.mp3';
                 if (!cleanArtist) return cleanTitle + '.mp3';
@@ -784,7 +812,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const searchTerm = document.getElementById(type + 'Search').value.toLowerCase();
             const listContainer = document.getElementById(type + 'ArtistList');
             
-            const filtered = artistsData.filter(a => a.name.toLowerCase().includes(searchTerm));
+            // SAFE: Filter with null check
+            const filtered = artistsData.filter(a => a && a.name && a.name.toLowerCase().includes(searchTerm));
             
             if (filtered.length === 0) {
                 listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No artists found</div>';
@@ -809,7 +838,8 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const searchTerm = document.getElementById('genreSearch').value.toLowerCase();
             const listContainer = document.getElementById('genreList');
             
-            const filtered = genresData.filter(g => g.name.toLowerCase().includes(searchTerm) || g.id.toLowerCase().includes(searchTerm));
+            // SAFE: Filter with null check
+            const filtered = genresData.filter(g => g && (g.name?.toLowerCase().includes(searchTerm) || g.id?.toLowerCase().includes(searchTerm)));
             
             if (filtered.length === 0) {
                 listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">No genres found</div>';
@@ -862,7 +892,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
             const name = document.getElementById(type + 'NewArtistName').value.trim();
             if (!name) { alert('Please enter a name'); return; }
             
-            const tempId = 'new_' + name.replace(/\\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+            const tempId = 'new_' + name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
             
             if (type === 'primary') {
                 document.getElementById('primaryArtistInput').value = tempId;
@@ -879,7 +909,7 @@ export async function handleAdminUpload(req, env, ctx, auth) {
         }
         
         function saveNewGenre() {
-            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\\s+/g, '-');
+            const id = document.getElementById('genreNewId').value.trim().toLowerCase().replace(/\s+/g, '-');
             const name = document.getElementById('genreNewName').value.trim();
             const color = document.querySelector('input[name="newGenreColor"]:checked')?.value;
             const icon = document.querySelector('input[name="newGenreIcon"]:checked')?.value;
@@ -1105,7 +1135,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
         const newArtistName = feat.replace('new_', '');
         const newArtistId = sanitize(newArtistName);
         
-        const artists = await getArtists(env);
+        const artists = await getArtists(env) || {};
         if (!artists[newArtistId]) {
           artists[newArtistId] = {
             id: newArtistId,
@@ -1131,7 +1161,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     if (artist && artist.startsWith('new_')) {
       artistName = artist.replace('new_', '');
       artistId = sanitize(artistName);
-      const artists = await getArtists(env);
+      const artists = await getArtists(env) || {};
       if (!artists[artistId]) {
         artists[artistId] = {
           id: artistId,
@@ -1170,7 +1200,7 @@ export async function handleAdminUploadPost(req, env, ctx, auth) {
     // Construct artist string for ID3 tag (primary artist only)
     let id3ArtistString = artistName;
     if (processedFeatured.length > 0) {
-      const artists = await getArtists(env);
+      const artists = await getArtists(env) || {};
       const featuredNames = processedFeatured.map(fid => artists[fid]?.name || fid).join(', ');
       id3ArtistString = `${artistName} feat. ${featuredNames}`;
     }
