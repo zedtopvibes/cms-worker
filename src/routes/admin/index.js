@@ -117,9 +117,6 @@ export async function handleAdmin(req, env, ctx) {
   const auth = await requireAdmin(req, env);
   if (!auth.authenticated) return auth.response;
 
-
-/* ===== TEMPORARILY DISABLED - Heavy background features =====
-
   // Get duplicate counts for all protected routes (for the badge)
   const detector = new DuplicateDetector(env);
   const duplicateStats = await detector.getDuplicateStats();
@@ -145,9 +142,6 @@ export async function handleAdmin(req, env, ctx) {
   const genreManager = new GenreManager(env);
   const genresData = await genreManager.getGenres();
   const totalGenres = genresData.genres.length;
-
-
- ===== TEMPORARILY DISABLED - Heavy background features =====*/
 
   // ===== DASHBOARD =====
   if (path === '/' || path === '/dashboard') {
