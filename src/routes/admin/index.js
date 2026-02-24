@@ -1,4 +1,4 @@
-// ==================== ADMIN MAIN ROUTER ==================== 
+// ==================== ADMIN MAIN ROUTER ====================
 import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import { adminLayout } from './layout.js';
@@ -96,8 +96,6 @@ import { ContentQualityAnalyzer } from '../../helpers/contentQualityAnalyzer.js'
 // ===== GENRE MANAGEMENT IMPORTS =====
 import { handleGenres } from './genres.js';
 import { GenreManager } from '../../helpers/genreManager.js';
-
-// REMOVE: import { handleSlugs } from './slugs.js';
 
 export async function handleAdmin(req, env, ctx) {
   const url = new URL(req.url);
@@ -511,8 +509,8 @@ export async function handleAdmin(req, env, ctx) {
     }
   }
 
-  // ===== UPLOAD SONG (continued from before) =====
-if (path === '/upload') {
+  // ===== UPLOAD SONG =====
+  if (path === '/upload') {
     if (req.method === 'GET') {
       const content = await handleAdminUpload(req, env, ctx, auth);
       return new Response(adminLayout('Upload Song', content, auth, 'upload', 0, 
@@ -545,8 +543,6 @@ if (path === '/upload') {
           headers: { 'Content-Type': 'text/html' }
         });
       }
-      
-      // ===== UPDATED SUCCESS PAGE WITH SLUG =====
       const content = `
         <div style="text-align: center; padding: 20px 10px;">
             <div style="background: #d4edda; color: #155724; padding: 25px 20px; border-radius: 12px; margin-bottom: 30px;">
@@ -558,65 +554,30 @@ if (path === '/upload') {
                     <i class="fas fa-clock" style="color: #ff5500;"></i>
                     <strong>Duration:</strong> ${formatDuration(result.duration)}
                 </div>
-                
-                <!-- Slug URL Display -->
-                <div style="margin-top: 15px; background: #f8f9fa; padding: 15px; border-radius: 8px;">
-                    <div style="display: flex; align-items: center; gap: 5px; color: #666; margin-bottom: 5px;">
-                        <i class="fas fa-link" style="color: #ff5500;"></i>
-                        <span style="font-weight: 500;">Public URL (slug):</span>
-                    </div>
-                    <code style="display: block; background: white; padding: 10px; border-radius: 6px; font-size: 0.9rem; border: 1px solid #e0e0e0; word-break: break-all;">
-                        /song/${result.slug}
-                    </code>
-                    
-                    <div style="display: flex; align-items: center; gap: 5px; color: #666; margin-top: 10px; margin-bottom: 5px;">
-                        <i class="fas fa-database" style="color: #4a90e2;"></i>
-                        <span style="font-weight: 500;">Internal ID:</span>
-                    </div>
-                    <code style="display: block; background: white; padding: 10px; border-radius: 6px; font-size: 0.9rem; border: 1px solid #e0e0e0; word-break: break-all;">
-                        ${result.baseName}
-                    </code>
-                </div>
-                
-                <p style="font-size: 0.85rem; color: #666; margin-top: 10px;">
-                    <i class="fas fa-info-circle"></i> 
-                    The slug is the only URL that will work. Old ID-based URLs will return 404.
-                </p>
             </div>
-            
             <div style="display: flex; flex-direction: column; gap: 12px; max-width: 320px; margin: 0 auto;">
-                <!-- View Song - Using slug -->
-                <a href="/song/${result.slug}" class="btn btn-primary" target="_blank" style="padding: 16px;">
+                <a href="/song/${encodeURIComponent(result.baseName + '.mp3')}" class="btn btn-primary" target="_blank" style="padding: 16px;">
                     <i class="fas fa-play"></i> View Song
                 </a>
-                
-                <!-- Upload Another -->
                 <a href="/admin/upload" class="btn btn-secondary" style="padding: 16px;">
                     <i class="fas fa-cloud-upload-alt"></i> Upload Another Song
                 </a>
-                
-                <!-- Album Link - If album exists -->
                 ${result.albumId ? `
                     <a href="/album/${result.albumId}" class="btn btn-secondary" target="_blank" style="padding: 16px;">
                         <i class="fas fa-compact-disc"></i> View Album
                     </a>
                 ` : ''}
-                
-                <!-- Playlist Link - If playlist exists -->
                 ${result.playlistId ? `
                     <a href="/playlist/${result.playlistId}" class="btn btn-secondary" target="_blank" style="padding: 16px;">
                         <i class="fas fa-list"></i> View Playlist
                     </a>
                 ` : ''}
-                
-                <!-- Back to Dashboard -->
                 <a href="/admin/dashboard" class="btn btn-secondary" style="padding: 16px; background: #f0f0f0;">
                     <i class="fas fa-tachometer-alt"></i> Back to Dashboard
                 </a>
             </div>
         </div>
       `;
-      
       return new Response(adminLayout('Upload Successful', content, auth, 'upload', 0, 
         { total: totalDuplicates }, 
         { total: totalMissingIssues }, 
@@ -625,6 +586,55 @@ if (path === '/upload') {
       ), {
         headers: { 'Content-Type': 'text/html' }
       });
+    }
+  }
+
+  // ===== ALBUMS MANAGEMENT =====
+  if (path === '/albums') {
+    const content = await handleAdminAlbums(req, env, ctx, auth);
+    return new Response(adminLayout('Manage Albums', content, auth, 'albums', 0, 
+      { total: totalDuplicates }, 
+      { total: totalMissingIssues }, 
+      { total: totalQualityIssues },
+      { total: totalGenres }
+    ), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  if (path === '/albums/edit') {
+    if (req.method === 'GET') {
+      const result = await handleAdminAlbumEdit(req, env, ctx, auth);
+      if (result.redirect) {
+        return new Response(null, { status: 302, headers: { Location: result.redirect } });
+      }
+      return new Response(adminLayout('Edit Album', result.content, auth, 'albums', 0, 
+        { total: totalDuplicates }, 
+        { total: totalMissingIssues }, 
+        { total: totalQualityIssues },
+        { total: totalGenres }
+      ), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+    if (req.method === 'POST') {
+      const result = await handleAdminAlbumEditPost(req, env, ctx, auth);
+      if (result.success) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: result.redirect || '/admin/albums?updated=1' }
+        });
+      } else {
+        const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
+        return new Response(adminLayout('Error', content, auth, 'albums', 0, 
+          { total: totalDuplicates }, 
+          { total: totalMissingIssues }, 
+          { total: totalQualityIssues },
+          { total: totalGenres }
+        ), {
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
     }
   }
 
@@ -1085,11 +1095,6 @@ if (path === '/upload') {
     return await handleGenres(req, env, ctx, auth);
   }
 
-  // REMOVE SLUG MANAGER ROUTE
-  // if (path === '/slugs') {
-  //   return await handleSlugs(req, env, ctx, auth);
-  // }
-
   // ===== ANNOUNCEMENT SYSTEM (Placeholder) =====
   if (path === '/announcements') {
     const content = `
@@ -1149,7 +1154,7 @@ if (path === '/upload') {
       headers: { 'Content-Type': 'text/html' }
     });
   }
- 
+
   // ===== USER MANAGEMENT (Placeholder) =====
   if (path === '/user-management') {
     const content = `
