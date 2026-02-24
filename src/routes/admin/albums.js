@@ -1,711 +1,1075 @@
-// ==================== OPTIMIZED ADMIN MAIN ROUTER ==================== 
-import { handleAdminLogin, handleAdminLoginPost, handleAdminLogout } from './login.js';
-import { requireAdmin } from '../../middleware/adminAuth.js';
-import { adminLayout } from './layout.js';
-import { handleAdminUpload, handleAdminUploadPost } from './upload.js';
-import { formatDuration } from '../../helpers/formatting.js';
-
-// ===== SONGS IMPORTS =====
-import { 
-  handleAdminSongs, 
-  handleAdminSongDelete, 
-  handleAdminSongEdit, 
-  handleAdminSongEditPost 
-} from './songs.js';
-
-// ===== ALBUMS IMPORTS =====
-import { 
-  handleAdminAlbums,
-  handleAdminAlbumCreate,
-  handleAdminAlbumCreatePost,
-  handleAdminAlbumEdit,
-  handleAdminAlbumEditPost,
-  handleAdminAlbumDelete,
-  handleAdminAlbumSongs,
-  handleAdminAlbumSongsPost
-} from './albums.js';
-
-// ===== ARTISTS IMPORTS =====
-import { 
-  handleAdminArtists,
-  handleAdminArtistCreate,
-  handleAdminArtistCreatePost,
-  handleAdminArtistEdit,
-  handleAdminArtistEditPost,
-  handleAdminArtistDelete,
-  handleAdminArtistMerge,
-  handleAdminArtistMergePost
-} from './artists.js';
-
-// ===== PLAYLISTS IMPORTS =====
-import { 
-  handleAdminPlaylists,
-  handleAdminPlaylistCreate,
-  handleAdminPlaylistCreatePost,
-  handleAdminPlaylistEdit,
-  handleAdminPlaylistEditPost,
-  handleAdminPlaylistDelete,
-  handleAdminPlaylistSongs,
-  handleAdminPlaylistSongsPost
-} from './playlists.js';
-
-// ===== STATISTICS IMPORTS =====
-import { handleAdminStats } from './stats.js';
-import { handleAdminSearch } from './search.js';
-
-// ===== BULK OPERATIONS IMPORTS =====
-import { handleAdminBulk, executeBulkAction } from './bulk.js';
-
-// ===== DASHBOARD IMPORTS =====
-import { getDashboardStats } from '../../helpers/dashboardStats.js';
+// ==================== ADMIN ALBUMS MANAGEMENT ====================
+import { getAlbums, getArtists, saveAlbums, getMetadata } from '../../helpers/storage.js';
+import { getAggregatedStats } from '../../helpers/db.js';
+import { getPageViews } from '../../helpers/pageViews.js';
 import { formatNumber } from '../../helpers/formatting.js';
+import { logAdminActivity } from '../../helpers/dashboardStats.js';
+import { moveToTrash } from '../../helpers/trash.js';
+import { GenreManager } from '../../helpers/genreManager.js';
+import { SlugManager } from '../../helpers/slug.js';  // ADDED
 
-// ===== ACTIVITY LOG IMPORTS =====
-import { handleAdminActivity, handleAdminActivityExport } from './activity.js';
-
-// ===== PAGE VIEWS MIGRATIONS =====
-import { handleAdminMigrations } from './migrate.js';
-
-// ===== TRASH IMPORTS =====
-import { 
-  handleAdminTrash,
-  handleTrashRestore,
-  handleTrashDelete,
-  handleTrashEmpty,
-  handleTrashSettings
-} from './trash.js';
-
-// ===== DUPLICATE DETECTOR IMPORTS =====
-import { 
-  handleDuplicateDetector,
-  handleDuplicateDetectorScan,
-  handleDuplicateDetectorMerge 
-} from './duplicateDetector.js';
-
-// ===== MISSING METADATA DETECTOR IMPORTS =====
-import { 
-  handleMissingMetadata
-} from './missingMetadata.js';
-
-// ===== CONTENT QUALITY IMPORTS =====
-import { handleContentQuality } from './contentQuality.js';
-
-// ===== GENRE MANAGEMENT IMPORTS =====
-import { handleGenres } from './genres.js';
-
-// Cache for badge stats with TTL
-const badgeStatsCache = {
-  duplicates: { data: null, timestamp: 0 },
-  missing: { data: null, timestamp: 0 },
-  quality: { data: null, timestamp: 0 },
-  genres: { data: null, timestamp: 0 },
-  TTL: 300000 // 5 minutes in milliseconds
-};
-
-async function getBadgeStats(env, forceRefresh = false) {
-  const now = Date.now();
-  const results = {};
-
-  // Only fetch duplicates if cache expired or forced refresh
-  if (forceRefresh || now - badgeStatsCache.duplicates.timestamp > badgeStatsCache.TTL) {
-    try {
-      const { DuplicateDetector } = await import('../../helpers/duplicateDetector.js');
-      const detector = new DuplicateDetector(env);
-      const duplicateStats = await detector.getDuplicateStats();
-      results.totalDuplicates = duplicateStats.total.artists + duplicateStats.total.albums + 
-                               duplicateStats.total.playlists + duplicateStats.total.songs;
-      badgeStatsCache.duplicates = { data: results.totalDuplicates, timestamp: now };
-    } catch (error) {
-      console.error('Error fetching duplicate stats:', error);
-      results.totalDuplicates = badgeStatsCache.duplicates.data || 0;
-    }
-  } else {
-    results.totalDuplicates = badgeStatsCache.duplicates.data || 0;
-  }
-
-  // Only fetch missing metadata if cache expired or forced refresh
-  if (forceRefresh || now - badgeStatsCache.missing.timestamp > badgeStatsCache.TTL) {
-    try {
-      const { MissingMetadataDetector } = await import('../../helpers/missingMetadataDetector.js');
-      const missingDetector = new MissingMetadataDetector(env);
-      const missingStats = await missingDetector.scanAll();
-      results.totalMissingIssues = missingStats.totals.songsMissingInfo + 
-                                  missingStats.totals.songsMissingThumbnails + 
-                                  missingStats.totals.emptyAlbums + 
-                                  missingStats.totals.emptyPlaylists + 
-                                  missingStats.totals.playlistsMissingThumbnails +
-                                  missingStats.totals.orphanedFiles;
-      badgeStatsCache.missing = { data: results.totalMissingIssues, timestamp: now };
-    } catch (error) {
-      console.error('Error fetching missing stats:', error);
-      results.totalMissingIssues = badgeStatsCache.missing.data || 0;
-    }
-  } else {
-    results.totalMissingIssues = badgeStatsCache.missing.data || 0;
-  }
-
-  // Only fetch quality stats if cache expired or forced refresh
-  if (forceRefresh || now - badgeStatsCache.quality.timestamp > badgeStatsCache.TTL) {
-    try {
-      const { ContentQualityAnalyzer } = await import('../../helpers/contentQualityAnalyzer.js');
-      const qualityAnalyzer = new ContentQualityAnalyzer(env);
-      const qualityStats = await qualityAnalyzer.scanAll();
-      results.totalQualityIssues = qualityStats.totals.total;
-      badgeStatsCache.quality = { data: results.totalQualityIssues, timestamp: now };
-    } catch (error) {
-      console.error('Error fetching quality stats:', error);
-      results.totalQualityIssues = badgeStatsCache.quality.data || 0;
-    }
-  } else {
-    results.totalQualityIssues = badgeStatsCache.quality.data || 0;
-  }
-
-  // Only fetch genre counts if cache expired or forced refresh
-  if (forceRefresh || now - badgeStatsCache.genres.timestamp > badgeStatsCache.TTL) {
-    try {
-      const { GenreManager } = await import('../../helpers/genreManager.js');
-      const genreManager = new GenreManager(env);
-      const genresData = await genreManager.getGenres();
-      results.totalGenres = genresData.genres.length;
-      badgeStatsCache.genres = { data: results.totalGenres, timestamp: now };
-    } catch (error) {
-      console.error('Error fetching genre stats:', error);
-      results.totalGenres = badgeStatsCache.genres.data || 0;
-    }
-  } else {
-    results.totalGenres = badgeStatsCache.genres.data || 0;
-  }
-
-  return results;
-}
-
-// Route configuration to avoid repetitive code
-const routeHandlers = {
-  // Format: [pathPattern, methods, handler, title, menuItem]
-  'album/create': { GET: handleAdminAlbumCreate, POST: handleAdminAlbumCreatePost, title: 'Create Album', menu: 'albums' },
-  'artist/create': { GET: handleAdminArtistCreate, POST: handleAdminArtistCreatePost, title: 'Create Artist', menu: 'artists' },
-  'playlist/create': { GET: handleAdminPlaylistCreate, POST: handleAdminPlaylistCreatePost, title: 'Create Playlist', menu: 'playlists' },
-  'upload': { GET: handleAdminUpload, POST: handleAdminUploadPost, title: 'Upload Song', menu: 'upload' },
-  'songs': { GET: handleAdminSongs, title: 'Manage Songs', menu: 'songs' },
-  'artists': { GET: handleAdminArtists, title: 'Manage Artists', menu: 'artists' },
-  'playlists': { GET: handleAdminPlaylists, title: 'Manage Playlists', menu: 'playlists' },
-  'albums': { GET: handleAdminAlbums, title: 'Manage Albums', menu: 'albums' },
-  'stats': { GET: handleAdminStats, title: 'Statistics', menu: 'stats' },
-  'search': { GET: handleAdminSearch, title: 'Search', menu: 'search' },
-  'bulk': { GET: handleAdminBulk, title: 'Bulk Operations', menu: 'bulk' },
-  'activity': { GET: handleAdminActivity, title: 'Activity Log', menu: 'activity' },
-  'trash': { GET: handleAdminTrash, title: 'Trash', menu: 'trash' }
-};
-
-export async function handleAdmin(req, env, ctx) {
+// ===== LIST ALL ALBUMS =====
+export async function handleAdminAlbums(req, env, ctx, auth) {
   const url = new URL(req.url);
-  const path = url.pathname.replace('/admin', '') || '/';
+  const page = parseInt(url.searchParams.get('page')) || 1;
+  const search = url.searchParams.get('search') || '';
+  const sort = url.searchParams.get('sort') || 'date';
+  const ITEMS_PER_PAGE = 15;
+  const slugManager = new SlugManager(env);  // ADDED
 
-  // ===== PUBLIC ADMIN ROUTES (No login required) =====
-  if (path === '/login') {
-    if (req.method === 'GET') return await handleAdminLogin(req, env, ctx);
-    if (req.method === 'POST') return await handleAdminLoginPost(req, env, ctx);
-  }
-
-  if (path === '/logout') {
-    return await handleAdminLogout(req, env, ctx);
-  }
-
-  // ===== PROTECTED ADMIN ROUTES (Login required) =====
-  const auth = await requireAdmin(req, env);
-  if (!auth.authenticated) return auth.response;
-
-  // Check if this is an AJAX request that doesn't need badge stats
-  const isAjax = req.headers.get('X-Requested-With') === 'XMLHttpRequest';
+  // Get all albums
+  const albums = await getAlbums(env);
+  const artists = await getArtists(env);
   
-  // Only fetch badge stats if not an AJAX request and not a POST that doesn't need them
-  let badgeStats = { totalDuplicates: 0, totalMissingIssues: 0, totalQualityIssues: 0, totalGenres: 0 };
-  if (!isAjax && req.method !== 'POST') {
-    badgeStats = await getBadgeStats(env);
+  // Get detailed album data with views
+  let albumsData = await Promise.all(
+    Object.entries(albums).map(async ([id, album]) => {
+      const stats = await getAggregatedStats(album.songs || [], env);
+      const pageViews = await getPageViews(env, 'album', id);
+      
+      // Get slug
+      const albumSlug = await slugManager.getSlugFromId('albums', id) || id;
+      
+      // Get primary artist name
+      let primaryArtist = 'Various';
+      if (album.artists && album.artists.length > 0) {
+        const artistObj = artists[album.artists[0]];
+        if (artistObj) primaryArtist = artistObj.name;
+      }
+      
+      // Get all artist names
+      const artistNames = album.artists?.map(aid => artists[aid]?.name || aid).join(', ') || 'Various';
+      
+      return {
+        id,
+        slug: albumSlug,  // ADDED
+        title: album.title,
+        description: album.description || '',
+        thumbnail: album.thumbnail,
+        primaryArtist,
+        artistNames,
+        artists: album.artists || [],
+        songs: album.songs || [],
+        songCount: album.songs?.length || 0,
+        plays: stats.plays,
+        downloads: stats.downloads,
+        views: pageViews,
+        created: album.created,
+        hasThumbnail: !!album.thumbnail,
+        genre: album.genre || null
+      };
+    })
+  );
+
+  // Apply search filter
+  if (search) {
+    const searchLower = search.toLowerCase();
+    albumsData = albumsData.filter(album => 
+      album.title.toLowerCase().includes(searchLower) ||
+      album.artistNames.toLowerCase().includes(searchLower) ||
+      album.description.toLowerCase().includes(searchLower)
+    );
   }
 
-  // ===== DASHBOARD =====
-  if (path === '/' || path === '/dashboard') {
-    const stats = await getDashboardStats(env);
+  // Apply sorting with views
+  albumsData.sort((a, b) => {
+    switch (sort) {
+      case 'title':
+        return a.title.localeCompare(b.title);
+      case 'artist':
+        return a.primaryArtist.localeCompare(b.primaryArtist);
+      case 'songs':
+        return b.songCount - a.songCount;
+      case 'plays':
+        return b.plays - a.plays;
+      case 'downloads':
+        return b.downloads - a.downloads;
+      case 'views':
+        return (b.views || 0) - (a.views || 0);
+      case 'date':
+      default:
+        return b.created - a.created;
+    }
+  });
+
+  // Pagination
+  const totalAlbums = albumsData.length;
+  const totalPages = Math.ceil(totalAlbums / ITEMS_PER_PAGE);
+  const startIdx = (page - 1) * ITEMS_PER_PAGE;
+  const pageAlbums = albumsData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+  // Sort options with views
+  const sortOptions = [
+    { value: 'date', label: 'Date Added' },
+    { value: 'title', label: 'Title' },
+    { value: 'artist', label: 'Artist' },
+    { value: 'songs', label: 'Most Songs' },
+    { value: 'plays', label: 'Most Played' },
+    { value: 'downloads', label: 'Most Downloaded' },
+    { value: 'views', label: 'Most Viewed' }
+  ];
+
+  // Calculate totals
+  const totalSongs = albumsData.reduce((acc, a) => acc + a.songCount, 0);
+  const totalPlays = albumsData.reduce((acc, a) => acc + a.plays, 0);
+  const totalDownloads = albumsData.reduce((acc, a) => acc + a.downloads, 0);
+  const totalViews = albumsData.reduce((acc, a) => acc + (a.views || 0), 0);
+
+  const content = `
+    <div style="margin-bottom: 20px;">
+        <!-- Header -->
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center;">
+                <h2 style="margin:0; font-size:1.3rem;"><i class="fas fa-compact-disc"></i> Albums Management</h2>
+                <a href="/admin/album/create" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Create New Album
+                </a>
+            </div>
+            
+            <!-- Search and Filter -->
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <div style="flex: 1; min-width: 200px;">
+                    <div style="position: relative;">
+                        <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #999;"></i>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Search albums, artists..." 
+                               value="${search}" style="padding-left: 40px;">
+                    </div>
+                </div>
+                <select id="sortSelect" class="form-control" style="width: auto; min-width: 150px;">
+                    ${sortOptions.map(opt => `
+                        <option value="${opt.value}" ${sort === opt.value ? 'selected' : ''}>Sort by: ${opt.label}</option>
+                    `).join('')}
+                </select>
+                <button onclick="applyFilters()" class="btn btn-primary">
+                    <i class="fas fa-filter"></i> Apply
+                </button>
+            </div>
+            
+            <!-- Stats Summary with Views -->
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 12px; border-radius: 8px;">
+                <div><i class="fas fa-compact-disc" style="color: #ff5500;"></i> Albums: <strong>${totalAlbums}</strong></div>
+                <div><i class="fas fa-music" style="color: #ff5500;"></i> Songs: <strong>${totalSongs}</strong></div>
+                <div><i class="fas fa-play" style="color: #ff5500;"></i> Plays: <strong>${formatNumber(totalPlays)}</strong></div>
+                <div><i class="fas fa-download" style="color: #ff5500;"></i> Downloads: <strong>${formatNumber(totalDownloads)}</strong></div>
+                <div><i class="fas fa-eye" style="color: #4a90e2;"></i> Views: <strong>${formatNumber(totalViews)}</strong></div>
+            </div>
+        </div>
+        
+        <!-- Mobile Cards -->
+        <div class="mobile-cards">
+            ${pageAlbums.map(album => generateMobileCard(album)).join('')}
+            ${pageAlbums.length === 0 ? `
+                <div class="empty-state">
+                    <i class="fas fa-compact-disc"></i>
+                    <h3>No albums found</h3>
+                    <p>Try adjusting your search or create a new album</p>
+                    <a href="/admin/album/create" class="btn btn-primary" style="margin-top: 15px;">
+                        <i class="fas fa-plus"></i> Create New Album
+                    </a>
+                </div>
+            ` : ''}
+        </div>
+        
+        <!-- Desktop Grid -->
+        <div class="albums-grid" style="display: none;">
+            ${pageAlbums.map(album => generateGridCard(album)).join('')}
+        </div>
+        
+        <!-- Pagination -->
+        ${generatePagination(page, totalPages, search, sort)}
+    </div>
     
-    const content = generateDashboardContent(stats, auth);
-    
-    return new Response(adminLayout('Dashboard', content, auth, 'dashboard', 0, 
-      { total: badgeStats.totalDuplicates }, 
-      { total: badgeStats.totalMissingIssues }, 
-      { total: badgeStats.totalQualityIssues },
-      { total: badgeStats.totalGenres }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-
-  // ===== HANDLE DELETE OPERATIONS =====
-  if (path === '/albums/delete') {
-    const result = await handleAdminAlbumDelete(req, env, ctx, auth);
-    return handleRedirect(result, '/admin/albums?deleted=1', auth, env);
-  }
-
-  if (path === '/songs/delete') {
-    const result = await handleAdminSongDelete(req, env, ctx, auth);
-    return handleRedirect(result, '/admin/songs?deleted=1', auth, env);
-  }
-
-  if (path === '/artists/delete') {
-    const result = await handleAdminArtistDelete(req, env, ctx, auth);
-    return handleRedirect(result, '/admin/artists?deleted=1', auth, env);
-  }
-
-  if (path === '/playlists/delete') {
-    const result = await handleAdminPlaylistDelete(req, env, ctx, auth);
-    return handleRedirect(result, '/admin/playlists?deleted=1', auth, env);
-  }
-
-  // ===== HANDLE EDIT OPERATIONS =====
-  if (path === '/songs/edit') {
-    return handleEditOperation(req, env, ctx, auth, 'songs', handleAdminSongEdit, handleAdminSongEditPost);
-  }
-
-  if (path === '/artists/edit') {
-    return handleEditOperation(req, env, ctx, auth, 'artists', handleAdminArtistEdit, handleAdminArtistEditPost);
-  }
-
-  if (path === '/albums/edit') {
-    return handleEditOperation(req, env, ctx, auth, 'albums', handleAdminAlbumEdit, handleAdminAlbumEditPost);
-  }
-
-  if (path === '/playlists/edit') {
-    return handleEditOperation(req, env, ctx, auth, 'playlists', handleAdminPlaylistEdit, handleAdminPlaylistEditPost);
-  }
-
-  // ===== HANDLE SPECIAL OPERATIONS =====
-  if (path === '/albums/songs') {
-    return handleAlbumSongsOperation(req, env, ctx, auth);
-  }
-
-  if (path === '/playlists/songs') {
-    return handlePlaylistSongsOperation(req, env, ctx, auth);
-  }
-
-  if (path === '/artists/merge') {
-    return handleArtistMergeOperation(req, env, ctx, auth);
-  }
-
-  // ===== HANDLE BULK POST =====
-  if (path === '/bulk' && req.method === 'POST') {
-    return await executeBulkAction(req, env, ctx, auth);
-  }
-
-  // ===== HANDLE ACTIVITY EXPORT =====
-  if (path === '/activity/export') {
-    return await handleAdminActivityExport(req, env, ctx, auth);
-  }
-
-  // ===== HANDLE MIGRATIONS =====
-  if (path === '/migrate' || path.startsWith('/migrate/')) {
-    return await handleAdminMigrations(req, env, ctx, auth);
-  }
-
-  // ===== HANDLE TRASH OPERATIONS =====
-  if (path === '/trash/restore' && req.method === 'POST') {
-    return await handleTrashRestore(req, env, ctx, auth);
-  }
-
-  if (path === '/trash/delete' && req.method === 'POST') {
-    return await handleTrashDelete(req, env, ctx, auth);
-  }
-
-  if (path === '/trash/empty' && req.method === 'POST') {
-    return await handleTrashEmpty(req, env, ctx, auth);
-  }
-
-  if (path === '/trash/settings' && req.method === 'POST') {
-    return await handleTrashSettings(req, env, ctx, auth);
-  }
-
-  // ===== HANDLE DETECTOR ROUTES =====
-  if (path === '/duplicate-detector') {
-    return await handleDuplicateDetector(req, env, ctx, auth);
-  }
-
-  if (path === '/duplicate-detector/scan') {
-    return await handleDuplicateDetectorScan(req, env, ctx, auth);
-  }
-
-  if (path === '/duplicate-detector/merge' && req.method === 'GET') {
-    return await handleDuplicateDetectorMerge(req, env, ctx, auth);
-  }
-
-  if (path === '/missing-metadata' || path.startsWith('/missing-metadata/')) {
-    return await handleMissingMetadata(req, env, ctx, auth);
-  }
-
-  if (path === '/content-quality' || path.startsWith('/content-quality/')) {
-    return await handleContentQuality(req, env, ctx, auth);
-  }
-
-  if (path === '/genres' || path.startsWith('/genres/')) {
-    return await handleGenres(req, env, ctx, auth);
-  }
-
-  // ===== HANDLE REGULAR ROUTES FROM CONFIG =====
-  for (const [routePath, handlers] of Object.entries(routeHandlers)) {
-    if (path === `/${routePath}` || (routePath === 'songs' && path === '/songs')) {
-      const handler = handlers[req.method];
-      if (handler) {
-        // For POST requests, handle directly without layout
-        if (req.method === 'POST') {
-          const result = await handler(req, env, ctx, auth);
-          if (result && result.redirect) {
-            return new Response(null, {
-              status: 302,
-              headers: { Location: result.redirect }
-            });
-          }
-          if (result && result.success === false) {
-            const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-            return new Response(adminLayout(handlers.title, content, auth, handlers.menu, 0,
-              { total: badgeStats.totalDuplicates },
-              { total: badgeStats.totalMissingIssues },
-              { total: badgeStats.totalQualityIssues },
-              { total: badgeStats.totalGenres }
-            ), {
-              headers: { 'Content-Type': 'text/html' }
-            });
-          }
-          return result;
-        }
-
-        // For GET requests, use layout
-        const content = await handler(req, env, ctx, auth);
-        if (content && content.redirect) {
-          return new Response(null, {
-            status: 302,
-            headers: { Location: content.redirect }
-          });
+    <style>
+        .albums-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
         }
         
-        return new Response(adminLayout(handlers.title, content, auth, handlers.menu, 0,
-          { total: badgeStats.totalDuplicates },
-          { total: badgeStats.totalMissingIssues },
-          { total: badgeStats.totalQualityIssues },
-          { total: badgeStats.totalGenres }
-        ), {
-          headers: { 'Content-Type': 'text/html' }
+        .album-grid-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+            border: 1px solid #e8e8e8;
+        }
+        
+        .album-grid-card:hover {
+            transform: translateY(-4px);
+            border-color: #ff5500;
+        }
+        
+        .album-thumbnail {
+            width: 100%;
+            aspect-ratio: 1;
+            background: linear-gradient(135deg, #f0f0f0, #e8e8e8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 3rem;
+            cursor: pointer;
+        }
+        
+        .album-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .album-info {
+            padding: 15px;
+        }
+        
+        .album-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+            cursor: pointer;
+        }
+        
+        .album-title:hover {
+            color: #ff5500;
+        }
+        
+        .album-artist {
+            color: #ff5500;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+        
+        .album-stats {
+            display: flex;
+            gap: 10px;
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .slug-info {
+            font-size: 0.7rem;
+            color: #4a90e2;
+            background: #f0f7ff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        
+        @media (min-width: 768px) {
+            .mobile-cards { display: none; }
+            .albums-grid { display: grid !important; }
+        }
+    </style>
+    
+    <script>
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value;
+            const sort = document.getElementById('sortSelect').value;
+            let url = '/admin/albums?';
+            if (search) url += 'search=' + encodeURIComponent(search) + '&';
+            url += 'sort=' + sort;
+            window.location.href = url;
+        }
+        
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyFilters();
         });
-      }
-      break;
-    }
+        
+        window.viewAlbum = function(slug) { 
+            window.open('/album/' + slug, '_blank'); 
+        };
+        
+        window.editAlbum = function(id) { 
+            window.location.href = '/admin/albums/edit?id=' + id; 
+        };
+        
+        window.manageSongs = function(id) { 
+            window.location.href = '/admin/albums/songs?id=' + id; 
+        };
+        
+        window.deleteAlbum = function(id) {
+            if (confirm('Delete this album? It will be moved to trash.')) {
+                window.location.href = '/admin/albums/delete?id=' + id;
+            }
+        };
+    </script>
+  `;
+
+  return content;
+}
+
+// ===== CREATE NEW ALBUM PAGE =====
+export async function handleAdminAlbumCreate(req, env, ctx, auth) {
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/albums" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-plus-circle" style="color: #ff5500;"></i> Create New Album
+            </h2>
+        </div>
+        
+        <form action="/admin/album/create" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Album Title <span style="color: #ff5500;">*</span></label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. My Awesome Album" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" placeholder="Album description..." required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"></textarea>
+            </div>
+            
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #ff5500;"></i> Album Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                            <i class="fas fa-ban" style="color: #999;"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => `
+                            <div class="genre-chip" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: #f0f0f0; color: #333; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid #e0e0e0;">
+                                <i class="fas ${g.icon}" style="color: ${g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="">
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Album Thumbnail <span style="color: #ff5500;">*</span></label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" required style="width: 100%; padding: 10px; border: 2px dashed #e0e0e0; border-radius: 8px;">
+                <p style="font-size: 0.8rem; color: #666; margin-top: 5px;">Square image recommended (JPG or PNG)</p>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 16px;">
+                    <i class="fas fa-save"></i> Create Album
+                </button>
+                <a href="/admin/albums" class="btn btn-secondary" style="width: 100%; padding: 14px; font-size: 16px; text-align: center; text-decoration: none;">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#ff5500';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#ff5500';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+    </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
+  `;
+  
+  return content;
+}
+
+// ===== HANDLE ALBUM CREATION POST =====
+export async function handleAdminAlbumCreatePost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const title = formData.get('title');
+  const description = formData.get('description');
+  const thumbnailFile = formData.get('thumbnail');
+  const genre = formData.get('genre');
+
+  if (!title || !thumbnailFile) {
+    return { success: false, error: 'Missing required fields' };
   }
 
-  // ===== PLACEHOLDER ROUTES (Lazy loaded when accessed) =====
-  const placeholderRoutes = {
-    '/announcements': { title: 'Announcement System', icon: 'bullhorn', menu: 'announcements' },
-    '/moderation': { title: 'Content Moderation', icon: 'shield-alt', menu: 'moderation' },
-    '/user-management': { title: 'User Management', icon: 'users-cog', menu: 'user-management' },
-    '/scheduled-tasks': { title: 'Scheduled Tasks', icon: 'clock', menu: 'scheduled-tasks' },
-    '/ai-tagging': { title: 'AI-Powered Tagging', icon: 'robot', menu: 'ai-tagging' },
-    '/ad-management': { title: 'Ad Management', icon: 'ad', menu: 'ad-management' },
-    '/system-settings': { title: 'System Settings', icon: 'cogs', menu: 'system-settings' },
-    '/theme-customizer': { title: 'Theme Customizer', icon: 'palette', menu: 'theme-customizer' }
+  const sanitize = (str) => str.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
+  const albumId = sanitize(title) + "_" + Date.now();
+  const albums = await getAlbums(env);
+
+  const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+  const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
+  await env.media.put(thumbnailKey, thumbnailFile.stream());
+
+  albums[albumId] = {
+    id: albumId,
+    title: title,
+    description: description || "",
+    thumbnail: thumbnailKey,
+    created: Date.now(),
+    songs: [],
+    artists: [],
+    genre: genre || undefined
   };
 
-  for (const [routePath, config] of Object.entries(placeholderRoutes)) {
-    if (path === routePath) {
-      const content = generatePlaceholderContent(config);
-      return new Response(adminLayout(config.title, content, auth, config.menu, 0,
-        { total: badgeStats.totalDuplicates },
-        { total: badgeStats.totalMissingIssues },
-        { total: badgeStats.totalQualityIssues },
-        { total: badgeStats.totalGenres }
-      ), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-  }
+  await saveAlbums(env, albums);
 
-  // ===== 404 - Page Not Found =====
-  return generate404Response();
-}
-
-// Helper function to handle redirects with error handling
-function handleRedirect(result, defaultRedirect, auth, env) {
-  if (result.success) {
-    return new Response(null, {
-      status: 302,
-      headers: { Location: result.redirect || defaultRedirect }
-    });
-  } else {
-    const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-    return new Response(adminLayout('Error', content, auth, '', 0,
-      { total: 0 }, { total: 0 }, { total: 0 }, { total: 0 }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-}
-
-// Helper function for edit operations
-async function handleEditOperation(req, env, ctx, auth, type, getHandler, postHandler) {
-  if (req.method === 'GET') {
-    const result = await getHandler(req, env, ctx, auth);
-    if (result.redirect) {
-      return new Response(null, { status: 302, headers: { Location: result.redirect } });
-    }
-    const badgeStats = await getBadgeStats(env);
-    return new Response(adminLayout(`Edit ${type.slice(0,-1)}`, result.content, auth, type, 0,
-      { total: badgeStats.totalDuplicates },
-      { total: badgeStats.totalMissingIssues },
-      { total: badgeStats.totalQualityIssues },
-      { total: badgeStats.totalGenres }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-  
-  if (req.method === 'POST') {
-    const result = await postHandler(req, env, ctx, auth);
-    if (result.success) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: result.redirect || `/admin/${type}?updated=1` }
-      });
-    } else {
-      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      const badgeStats = await getBadgeStats(env);
-      return new Response(adminLayout('Error', content, auth, type, 0,
-        { total: badgeStats.totalDuplicates },
-        { total: badgeStats.totalMissingIssues },
-        { total: badgeStats.totalQualityIssues },
-        { total: badgeStats.totalGenres }
-      ), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-  }
-}
-
-// Helper function for album songs operation
-async function handleAlbumSongsOperation(req, env, ctx, auth) {
-  if (req.method === 'GET') {
-    const result = await handleAdminAlbumSongs(req, env, ctx, auth);
-    if (result.redirect) {
-      return new Response(null, { status: 302, headers: { Location: result.redirect } });
-    }
-    const badgeStats = await getBadgeStats(env);
-    return new Response(adminLayout('Album Songs', result.content, auth, 'albums', 0,
-      { total: badgeStats.totalDuplicates },
-      { total: badgeStats.totalMissingIssues },
-      { total: badgeStats.totalQualityIssues },
-      { total: badgeStats.totalGenres }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-  
-  if (req.method === 'POST') {
-    const result = await handleAdminAlbumSongsPost(req, env, ctx, auth);
-    if (result.success) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: result.redirect || '/admin/albums?updated=1' }
-      });
-    } else {
-      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      const badgeStats = await getBadgeStats(env);
-      return new Response(adminLayout('Error', content, auth, 'albums', 0,
-        { total: badgeStats.totalDuplicates },
-        { total: badgeStats.totalMissingIssues },
-        { total: badgeStats.totalQualityIssues },
-        { total: badgeStats.totalGenres }
-      ), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-  }
-}
-
-// Similar helper for playlist songs operation
-async function handlePlaylistSongsOperation(req, env, ctx, auth) {
-  if (req.method === 'GET') {
-    const result = await handleAdminPlaylistSongs(req, env, ctx, auth);
-    if (result.redirect) {
-      return new Response(null, { status: 302, headers: { Location: result.redirect } });
-    }
-    const badgeStats = await getBadgeStats(env);
-    return new Response(adminLayout('Playlist Songs', result.content, auth, 'playlists', 0,
-      { total: badgeStats.totalDuplicates },
-      { total: badgeStats.totalMissingIssues },
-      { total: badgeStats.totalQualityIssues },
-      { total: badgeStats.totalGenres }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-  
-  if (req.method === 'POST') {
-    const result = await handleAdminPlaylistSongsPost(req, env, ctx, auth);
-    if (result.success) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: result.redirect || '/admin/playlists?updated=1' }
-      });
-    } else {
-      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      const badgeStats = await getBadgeStats(env);
-      return new Response(adminLayout('Error', content, auth, 'playlists', 0,
-        { total: badgeStats.totalDuplicates },
-        { total: badgeStats.totalMissingIssues },
-        { total: badgeStats.totalQualityIssues },
-        { total: badgeStats.totalGenres }
-      ), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-  }
-}
-
-// Helper for artist merge operation
-async function handleArtistMergeOperation(req, env, ctx, auth) {
-  if (req.method === 'GET') {
-    const result = await handleAdminArtistMerge(req, env, ctx, auth);
-    if (result.redirect) {
-      return new Response(null, { status: 302, headers: { Location: result.redirect } });
-    }
-    const badgeStats = await getBadgeStats(env);
-    return new Response(adminLayout('Merge Artists', result.content, auth, 'artists', 0,
-      { total: badgeStats.totalDuplicates },
-      { total: badgeStats.totalMissingIssues },
-      { total: badgeStats.totalQualityIssues },
-      { total: badgeStats.totalGenres }
-    ), {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-  
-  if (req.method === 'POST') {
-    const result = await handleAdminArtistMergePost(req, env, ctx, auth);
-    if (result.success) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: result.redirect || '/admin/artists?merged=1' }
-      });
-    } else {
-      const content = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-      const badgeStats = await getBadgeStats(env);
-      return new Response(adminLayout('Error', content, auth, 'artists', 0,
-        { total: badgeStats.totalDuplicates },
-        { total: badgeStats.totalMissingIssues },
-        { total: badgeStats.totalQualityIssues },
-        { total: badgeStats.totalGenres }
-      ), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-  }
-}
-
-// Generate dashboard content (extracted for better organization)
-function generateDashboardContent(stats, auth) {
-  return `
-    <div style="margin-bottom: 20px;">
-        <!-- Welcome Header -->
-        <div style="margin-bottom: 25px;">
-            <h2 style="font-size: 1.5rem; margin-bottom: 5px;">Welcome back, ${auth.session.username}!</h2>
-            <p style="color: #666;">${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-        </div>
-        
-        <!-- Stats Grid -->
-        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
-            <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">👁️ Views Today</h3>
-                    <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.viewsTrend}</span>
-                </div>
-                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 5px;">${formatNumber(stats.viewsToday)}</div>
-                <div style="font-size: 0.75rem; opacity: 0.9;">${stats.viewsTrendValue} from yesterday</div>
-            </div>
-            
-            <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #ff5500, #ff8c00); color: white; border: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">▶️ Plays Today</h3>
-                    <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.playsTrend}</span>
-                </div>
-                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 5px;">${formatNumber(stats.playsToday)}</div>
-                <div style="font-size: 0.75rem; opacity: 0.9;">${stats.playsTrendValue} from yesterday</div>
-            </div>
-            
-            <div class="stat-card" style="padding: 15px; background: linear-gradient(135deg, #28a745, #20c997); color: white; border: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 style="color: rgba(255,255,255,0.9); font-size: 0.8rem; margin:0;">⬇️ Downloads Today</h3>
-                    <span style="background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 20px; font-size: 0.7rem;">${stats.downloadsTrend}</span>
-                </div>
-                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 5px;">${formatNumber(stats.downloadsToday)}</div>
-                <div style="font-size: 0.75rem; opacity: 0.9;">${stats.downloadsTrendValue} from yesterday</div>
-            </div>
-        </div>
-        
-        <!-- Rest of your dashboard content remains the same -->
-        ${generateDashboardRest(stats)}
-    </div>
-  `;
-}
-
-function generateDashboardRest(stats) {
-  // Extract the rest of your dashboard HTML here
-  // (Keeping it short for brevity - copy your existing dashboard HTML)
-  return ``; // Add your existing dashboard HTML here
-}
-
-function generatePlaceholderContent(config) {
-  return `
-    <div class="empty-state">
-        <i class="fas fa-${config.icon}"></i>
-        <h3>${config.title}</h3>
-        <p>This feature is coming soon. You'll be able to manage all aspects of ${config.title.toLowerCase()} from here.</p>
-        <div style="margin-top: 30px;">
-            <a href="/admin/dashboard" class="btn btn-primary">
-                <i class="fas fa-tachometer-alt"></i> Back to Dashboard
-            </a>
-        </div>
-    </div>
-  `;
-}
-
-function generate404Response() {
-  return new Response(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Page Not Found - Admin</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                   background: #f0f2f5; display: flex; align-items: center; justify-content: center; 
-                   min-height: 100vh; margin: 0; padding: 20px; }
-            .error-box { background: white; padding: 40px; border-radius: 12px; text-align: center; 
-                         max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
-            h1 { color: #ff5500; font-size: 3rem; margin-bottom: 10px; }
-            h2 { color: #333; margin-bottom: 15px; }
-            p { color: #666; margin-bottom: 25px; }
-            .btn { display: inline-block; padding: 12px 24px; background: #ff5500; color: white; 
-                   text-decoration: none; border-radius: 6px; font-weight: 600; }
-            .btn:hover { background: #ff6a1a; }
-        </style>
-    </head>
-    <body>
-        <div class="error-box">
-            <h1>404</h1>
-            <h2>Page Not Found</h2>
-            <p>The admin page you're looking for doesn't exist.</p>
-            <a href="/admin" class="btn">
-                <i class="fas fa-arrow-left"></i> Back to Dashboard
-            </a>
-        </div>
-    </body>
-    </html>
-  `, { 
-    status: 404, 
-    headers: { 'Content-Type': 'text/html' } 
+  // Generate and register slug
+  const slugManager = new SlugManager(env);
+  const baseSlug = slugManager.generateAlbumSlug(title);
+  const finalSlug = await slugManager.generateUniqueSlug('albums', baseSlug);
+  await slugManager.registerSlug('albums', albumId, finalSlug, {
+    title,
+    genre,
+    created: Date.now()
   });
+  
+  // Log activity
+  await logAdminActivity(env, auth.session.id, 'create', 'album', albumId, title);
+
+  return { 
+    success: true, 
+    redirect: `/admin/albums?created=1` 
+  };
+}
+
+// ===== EDIT ALBUM PAGE =====
+export async function handleAdminAlbumEdit(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const albumId = url.searchParams.get('id');
+  
+  if (!albumId) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  const albums = await getAlbums(env);
+  const album = albums[albumId];
+  const artists = await getArtists(env);
+  const slugManager = new SlugManager(env);  // ADDED
+  
+  if (!album) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  // Get slug
+  const albumSlug = await slugManager.getSlugFromId('albums', albumId) || albumId;
+  
+  // Load genres for selection
+  const genreManager = new GenreManager(env);
+  const genresData = await genreManager.getGenres();
+  const genres = genresData.genres;
+  const albumGenre = album.genre || '';
+  
+  // Artist options for dropdown
+  const artistOptions = Object.entries(artists).map(([id, artist]) => {
+    const selected = album.artists?.includes(id) ? 'selected' : '';
+    return `<option value="${id}" ${selected}>${artist.name}</option>`;
+  }).join('');
+  
+  const content = `
+    <div style="max-width: 600px; margin: 0 auto; width: 100%; padding: 0 0 20px;">
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+            <a href="/admin/albums" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-edit" style="color: #ff5500;"></i> Edit Album: ${album.title}
+            </h2>
+            <div style="background: #f0f9ff; padding: 10px; border-radius: 8px; border-left: 4px solid #ff5500;">
+                <div style="margin-bottom: 5px;">
+                    <i class="fas fa-link" style="color: #ff5500;"></i>
+                    <span style="margin-left: 5px;">Album URL (slug):</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">/album/${albumSlug}</code>
+                </div>
+                <div>
+                    <i class="fas fa-database" style="color: #4a90e2;"></i>
+                    <span style="margin-left: 5px;">Internal ID:</span>
+                    <code style="background: white; padding: 4px 8px; border-radius: 4px; margin-left: 10px;">${albumId}</code>
+                </div>
+                <p style="font-size:0.8rem; color:#666; margin-top:5px; margin-bottom:0;">
+                    <i class="fas fa-info-circle"></i> Changing title will generate a new slug. Old URL will 404.
+                </p>
+            </div>
+        </div>
+        
+        <form id="editForm" action="/admin/albums/edit" method="POST" enctype="multipart/form-data" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+            <input type="hidden" name="albumId" value="${albumId}">
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Album Title</label>
+                <input type="text" name="title" class="form-control" value="${album.title}" required style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Description</label>
+                <textarea name="description" class="form-control" rows="4" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">${album.description || ''}</textarea>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Artists (select multiple)</label>
+                <select name="artists" multiple class="form-control" size="5" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                    ${artistOptions}
+                </select>
+                <p style="font-size:0.8rem; color:#666; margin-top:5px;">Hold Ctrl/Cmd to select multiple artists</p>
+            </div>
+            
+            <!-- GENRE SELECTION -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">
+                    <i class="fas fa-tags" style="color: #ff5500;"></i> Album Genre
+                </label>
+                
+                <div style="border: 2px solid #e0e0e0; border-radius: 12px; padding: 15px; background: #f8f9fa;">
+                    <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-hand-pointer"></i> Select a genre:
+                    </p>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;" id="genreChips">
+                        <div class="genre-chip ${!albumGenre ? 'selected' : ''}" 
+                             data-id=""
+                             onclick="selectGenre('')"
+                             style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${!albumGenre ? '#ff5500' : '#f0f0f0'}; color: ${!albumGenre ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${!albumGenre ? '#ff5500' : '#e0e0e0'};">
+                            <i class="fas fa-ban" style="color: ${!albumGenre ? 'white' : '#999'};"></i>
+                            <span>No Genre</span>
+                        </div>
+                        
+                        ${genres.map(g => {
+                          const isSelected = albumGenre === g.id;
+                          return `
+                            <div class="genre-chip ${isSelected ? 'selected' : ''}" 
+                                 data-id="${g.id}"
+                                 data-color="${g.color}"
+                                 onclick="selectGenre('${g.id}')"
+                                 style="display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px; background: ${isSelected ? g.color : '#f0f0f0'}; color: ${isSelected ? 'white' : '#333'}; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; border: 1px solid ${isSelected ? g.color : '#e0e0e0'};">
+                                <i class="fas ${g.icon}" style="color: ${isSelected ? 'white' : g.color};"></i>
+                                <span>${g.name}</span>
+                            </div>
+                          `;
+                        }).join('')}
+                    </div>
+                    
+                    <!-- Hidden input to store selected genre -->
+                    <input type="hidden" name="genre" id="selectedGenre" value="${albumGenre}">
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Current Thumbnail</label>
+                ${album.thumbnail ? 
+                    `<div style="margin-bottom:15px;">
+                        <img src="/albums/thumbnails/${albumId}.jpg" style="max-width:200px; max-height:200px; border-radius:8px; border:1px solid #e0e0e0;">
+                    </div>` : 
+                    '<p style="color:#999; margin-bottom:10px;">No thumbnail</p>'
+                }
+                <label>New Thumbnail (optional)</label>
+                <input type="file" name="thumbnail" accept="image/*" class="form-control" style="width:100%; padding:10px; border:2px dashed #e0e0e0; border-radius:8px;">
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="width:100%; padding:14px; font-size:16px;">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/albums" class="btn btn-secondary" style="width:100%; padding:14px; font-size:16px; text-align:center; text-decoration:none;">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function selectGenre(genreId) {
+            // Update hidden input
+            document.getElementById('selectedGenre').value = genreId;
+            
+            // Update chip styles
+            document.querySelectorAll('.genre-chip').forEach(chip => {
+                const chipGenreId = chip.dataset.id;
+                const color = chip.dataset.color;
+                
+                if (chipGenreId === genreId) {
+                    // Selected chip
+                    chip.style.background = color || '#ff5500';
+                    chip.style.color = 'white';
+                    chip.style.borderColor = color || '#ff5500';
+                    const icon = chip.querySelector('i');
+                    if (icon) icon.style.color = 'white';
+                } else {
+                    // Non-selected chip
+                    chip.style.background = '#f0f0f0';
+                    chip.style.color = '#333';
+                    chip.style.borderColor = '#e0e0e0';
+                    const icon = chip.querySelector('i');
+                    if (icon && chipGenreId) {
+                        icon.style.color = color || '#999';
+                    } else if (icon) {
+                        icon.style.color = '#999';
+                    }
+                }
+            });
+        }
+        
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            if (!confirm('Save changes to this album?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+
+    <style>
+        .genre-chip {
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .genre-chip:active {
+            transform: scale(0.95);
+        }
+        @media (max-width: 480px) {
+            .genre-chip {
+                padding: 10px 15px !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
+  `;
+  
+  return { content };
+}
+
+// ===== HANDLE ALBUM EDIT POST =====
+export async function handleAdminAlbumEditPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const albumId = formData.get('albumId');
+  const title = formData.get('title');
+  const description = formData.get('description');
+  const artists = formData.getAll('artists');
+  const genre = formData.get('genre');
+  const thumbnailFile = formData.get('thumbnail');
+  
+  if (!albumId || !title) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  try {
+    const albums = await getAlbums(env);
+    
+    if (!albums[albumId]) {
+      return { success: false, error: 'Album not found' };
+    }
+    
+    // Check if title changed
+    const oldTitle = albums[albumId].title;
+    
+    // Update album details
+    albums[albumId].title = title;
+    albums[albumId].description = description;
+    albums[albumId].artists = artists.filter(a => a);
+    albums[albumId].genre = genre || undefined;
+    
+    // Upload new thumbnail if provided
+    if (thumbnailFile && thumbnailFile.size > 0) {
+      const imgType = thumbnailFile.type.includes('png') ? 'png' : 'jpg';
+      const thumbnailKey = `albums/thumbnails/${albumId}.${imgType}`;
+      await env.media.put(thumbnailKey, thumbnailFile.stream());
+      albums[albumId].thumbnail = thumbnailKey;
+    }
+    
+    await saveAlbums(env, albums);
+    
+    // Regenerate slug if title changed
+    if (oldTitle !== title) {
+      const slugManager = new SlugManager(env);
+      const baseSlug = slugManager.generateAlbumSlug(title);
+      const newSlug = await slugManager.generateUniqueSlug('albums', baseSlug);
+      await slugManager.registerSlug('albums', albumId, newSlug, { title, genre });
+    }
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'edit', 'album', albumId, title);
+    
+    return { success: true, redirect: '/admin/albums?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== HANDLE ALBUM DELETION =====
+export async function handleAdminAlbumDelete(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const albumId = url.searchParams.get('id');
+  
+  if (!albumId) {
+    return { success: false, error: 'No album specified' };
+  }
+  
+  try {
+    const albums = await getAlbums(env);
+    const album = albums[albumId];
+    const albumTitle = album?.title || 'Unknown album';
+    
+    // Get thumbnail path
+    let thumbnailPath = null;
+    if (album?.thumbnail) {
+      thumbnailPath = album.thumbnail;
+    }
+    
+    // Calculate total size (sum of all songs in album)
+    let totalSize = 0;
+    if (album?.songs) {
+      for (const songId of album.songs) {
+        try {
+          const songObj = await env.media.get(`songs/${songId}.mp3`);
+          totalSize += songObj?.size || 0;
+        } catch (e) {}
+      }
+    }
+    
+    // Prepare metadata
+    const itemData = {
+      title: album?.title,
+      description: album?.description,
+      artists: album?.artists,
+      songs: album?.songs,
+      genre: album?.genre,
+      created: album?.created,
+      thumbnail: album?.thumbnail
+    };
+    
+    // Delete slug first
+    const slugManager = new SlugManager(env);
+    await slugManager.deleteSlug('albums', albumId);
+    
+    // Move to trash
+    const result = await moveToTrash(
+      env,
+      auth.session.id,
+      'album',
+      albumId,
+      albumTitle,
+      itemData,
+      totalSize
+    );
+    
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    
+    // Remove from albums index
+    delete albums[albumId];
+    await saveAlbums(env, albums);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'delete', 'album', albumId, albumTitle);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error moving album to trash:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== MANAGE ALBUM SONGS PAGE =====
+export async function handleAdminAlbumSongs(req, env, ctx, auth) {
+  const url = new URL(req.url);
+  const albumId = url.searchParams.get('id');
+  
+  if (!albumId) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  const albums = await getAlbums(env);
+  const album = albums[albumId];
+  const artists = await getArtists(env);
+  
+  if (!album) {
+    return { redirect: '/admin/albums' };
+  }
+  
+  // Get all songs
+  const songList = await env.media.list({ prefix: "songs/" });
+  const songs = songList.objects || [];
+  
+  // Build song options
+  const songOptions = await Promise.all(
+    songs.map(async (song) => {
+      const fileName = song.key.split('/')[1];
+      const baseName = fileName.replace('.mp3', '');
+      const inAlbum = album.songs?.includes(baseName);
+      const artistId = baseName.split('_')[0];
+      const artistName = artists[artistId]?.name || artistId;
+      const meta = await getMetadata(env, baseName);
+      const title = meta?.title || baseName;
+      const genre = meta?.genre ? ` (${meta.genre})` : '';
+      
+      return `
+        <tr>
+            <td><input type="checkbox" name="songs" value="${baseName}" ${inAlbum ? 'checked' : ''}></td>
+            <td>${title}</td>
+            <td>${artistName}</td>
+            <td>${inAlbum ? '<span class="badge badge-success">In Album</span>' : '-'}</td>
+            <td>${genre}</td>
+        </tr>
+      `;
+    })
+  );
+  
+  const content = `
+    <div style="max-width: 900px; margin: 0 auto;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <a href="/admin/albums" class="btn btn-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <h2 style="font-size: 1.3rem; margin:0;">
+                <i class="fas fa-music"></i> Manage Songs: ${album.title}
+            </h2>
+            ${album.genre ? `<span class="badge" style="background: #ff5500; color: white; margin-left: 10px;">${album.genre}</span>` : ''}
+        </div>
+        
+        <form id="songsForm" action="/admin/albums/songs" method="POST" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e8e8e8;">
+            <input type="hidden" name="albumId" value="${albumId}">
+            
+            <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <button type="button" onclick="checkAll()" class="btn btn-secondary btn-sm">Select All</button>
+                <button type="button" onclick="uncheckAll()" class="btn btn-secondary btn-sm">Deselect All</button>
+                <span style="margin-left: 15px;">Total Songs: ${album.songs?.length || 0}</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="toggleAll()"></th>
+                            <th>Song</th>
+                            <th>Artist</th>
+                            <th>Status</th>
+                            <th>Genre</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${songOptions.join('')}
+                        ${songOptions.length === 0 ? `
+                            <tr>
+                                <td colspan="5" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-music" style="font-size: 2rem; color: #ccc;"></i><br>
+                                    No songs found
+                                </td>
+                            </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="/admin/albums" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        function checkAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = true);
+            document.getElementById('selectAll').checked = true;
+        }
+        
+        function uncheckAll() {
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
+        }
+        
+        function toggleAll() {
+            const selectAll = document.getElementById('selectAll').checked;
+            document.querySelectorAll('input[name="songs"]').forEach(cb => cb.checked = selectAll);
+        }
+        
+        document.getElementById('songsForm').addEventListener('submit', function(e) {
+            if (!confirm('Update album songs?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+  `;
+  
+  return { content };
+}
+
+// ===== HANDLE ALBUM SONGS UPDATE =====
+export async function handleAdminAlbumSongsPost(req, env, ctx, auth) {
+  const formData = await req.formData();
+  const albumId = formData.get('albumId');
+  const selectedSongs = formData.getAll('songs');
+  
+  if (!albumId) {
+    return { success: false, error: 'No album specified' };
+  }
+  
+  try {
+    const albums = await getAlbums(env);
+    const albumTitle = albums[albumId]?.title || 'Unknown album';
+    
+    if (!albums[albumId]) {
+      return { success: false, error: 'Album not found' };
+    }
+    
+    // Update album songs
+    albums[albumId].songs = selectedSongs;
+    await saveAlbums(env, albums);
+    
+    // Log activity
+    await logAdminActivity(env, auth.session.id, 'update', 'album-songs', albumId, `Updated songs for ${albumTitle}`);
+    
+    return { success: true, redirect: '/admin/albums?updated=1' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== HELPER FUNCTIONS =====
+
+// Mobile card with views
+function generateMobileCard(album) {
+  const date = new Date(album.created).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+  
+  const genreHtml = album.genre ? 
+    `<span class="badge" style="background: #ff5500; color: white; margin-left: 5px;">${album.genre}</span>` : '';
+
+  return `
+    <div class="mobile-card">
+        <div style="font-weight:700; margin-bottom:5px;">${album.title} ${genreHtml}</div>
+        <div style="color:#ff5500; margin-bottom:8px;">${album.primaryArtist}</div>
+        <div style="font-size:0.7rem; color:#4a90e2; margin-bottom:8px;">
+            <i class="fas fa-link"></i> /album/${album.slug}
+        </div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:8px;">
+            <span><i class="fas fa-music"></i> ${album.songCount} songs</span>
+            <span><i class="fas fa-play" style="color:#ff5500;"></i> ${formatNumber(album.plays)}</span>
+            <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
+        </div>
+        <div style="font-size:0.75rem; color:#999; margin-bottom:10px;">${date}</div>
+        <div style="display:flex; gap:8px;">
+            <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
+            <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
+            <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+        </div>
+    </div>
+  `;
+}
+
+// Grid card with views
+function generateGridCard(album) {
+  return `
+    <div class="album-grid-card">
+        <div class="album-thumbnail" onclick="viewAlbum('${album.slug}')">
+            ${album.thumbnail ? `<img src="/albums/thumbnails/${album.id}.jpg">` : '💿'}
+        </div>
+        <div class="album-info">
+            <div class="album-title" onclick="viewAlbum('${album.slug}')">${album.title}</div>
+            <div class="album-artist" onclick="viewAlbum('${album.slug}')">${album.primaryArtist}</div>
+            ${album.genre ? `<div style="color: #ff5500; font-size: 0.8rem; margin-bottom: 5px;">${album.genre}</div>` : ''}
+            <div class="slug-info">
+                <i class="fas fa-link"></i> /album/${album.slug}
+            </div>
+            <div class="album-stats">
+                <span><i class="fas fa-music"></i> ${album.songCount}</span>
+                <span><i class="fas fa-play"></i> ${formatNumber(album.plays)}</span>
+                <span><i class="fas fa-eye" style="color:#4a90e2;"></i> ${formatNumber(album.views || 0)}</span>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+                <button onclick="editAlbum('${album.id}')" class="btn btn-primary btn-sm" style="flex:1;">Edit</button>
+                <button onclick="manageSongs('${album.id}')" class="btn btn-secondary btn-sm" style="flex:1;">Songs</button>
+                <button onclick="deleteAlbum('${album.id}')" class="btn btn-danger btn-sm" style="flex:1;">Delete</button>
+            </div>
+        </div>
+    </div>
+  `;
+}
+
+// Pagination helper
+function generatePagination(currentPage, totalPages, search, sort) {
+  if (totalPages <= 1) return '';
+  let html = '<div class="pagination" style="margin-top: 30px; justify-content: center;">';
+  if (currentPage > 1) {
+    html += `<a href="?page=${currentPage-1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-prev"><i class="fas fa-chevron-left"></i> Prev</a>`;
+  } else {
+    html += `<span class="pagination-item pagination-prev disabled"><i class="fas fa-chevron-left"></i> Prev</span>`;
+  }
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+      html += `<a href="?page=${i}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item ${i === currentPage ? 'active' : ''}">${i}</a>`;
+    } else if (i === currentPage - 3 || i === currentPage + 3) {
+      html += `<span class="pagination-ellipsis">...</span>`;
+    }
+  }
+  if (currentPage < totalPages) {
+    html += `<a href="?page=${currentPage+1}&search=${encodeURIComponent(search)}&sort=${sort}" class="pagination-item pagination-next">Next <i class="fas fa-chevron-right"></i></a>`;
+  } else {
+    html += `<span class="pagination-item pagination-next disabled">Next <i class="fas fa-chevron-right"></i></span>`;
+  }
+  html += '</div>';
+  return html;
 }
